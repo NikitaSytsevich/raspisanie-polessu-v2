@@ -134,6 +134,13 @@ function formatDuration(mins) {
   return `${m} м`;
 }
 
+// 750 → "12:30"
+function minutesToHHMM(mins) {
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
 function formatRelativeMinutes(iso) {
   if (!iso) return '—';
   const t = new Date(iso).getTime();
@@ -449,6 +456,60 @@ const Data = {
       return { state: 'matches', siteSessions: sessions, exact, dataQuality: fac.dataQuality, sourceCheckedAt: fac.sourceCheckedAt };
     }
     return { state: 'mismatch', siteSessions: sessions, dataQuality: fac.dataQuality, sourceCheckedAt: fac.sourceCheckedAt };
+  },
+
+  // «Фактическое» представление смены — то, что пользователь увидит на карточке.
+  //
+  // Когда есть данные сайта (dataQuality === 'ok'):
+  //   - окно [start, end] = min(siteStart) … max(siteEnd) в пределах смены пользователя
+  //   - minutes = сумма пересечений с сайтовыми сессиями
+  //   - activity = активность с сайта (первая из пересекающихся)
+  //   - gaps[]   = зазоры между смежными сайтовыми слотами (если есть)
+  //   - badge = 'confirmed'  → сайт подтвердил смену
+  //   - badge = 'not_in_site' → сайт известен, но в это время ничего нет
+  // Когда объект закрыт:           badge='closed', minutes=0, notice=…
+  // Когда данных сайта нет вообще: badge='no_data', minutes=schedule, fallback на shift
+  computeEffectiveShift(shift) {
+    const schedMin = toMinutes(shift.end) - toMinutes(shift.start);
+    const fac = this.getCachedFacility(shift.facilityId);
+    if (!fac) {
+      return { start: shift.start, end: shift.end, minutes: schedMin, badge: 'no_data', gaps: [] };
+    }
+    if (fac.dataQuality === 'closed') {
+      return { start: shift.start, end: shift.end, minutes: 0, badge: 'closed', gaps: [], notice: fac.notice };
+    }
+    if (fac.dataQuality !== 'ok') {
+      return { start: shift.start, end: shift.end, minutes: schedMin, badge: 'no_data', gaps: [] };
+    }
+    const sStart = toMinutes(shift.start);
+    const sEnd = toMinutes(shift.end);
+    const overlapping = this.getSiteSessionsForDay(shift.facilityId, shift.date)
+      .filter(ss => toMinutes(ss.start) < sEnd && toMinutes(ss.end) > sStart);
+    if (!overlapping.length) {
+      return { start: shift.start, end: shift.end, minutes: schedMin, badge: 'not_in_site', gaps: [] };
+    }
+    let minutes = 0;
+    const gaps = [];
+    let prevEnd = null;
+    for (const ss of overlapping) {
+      const ovStart = Math.max(sStart, toMinutes(ss.start));
+      const ovEnd = Math.min(sEnd, toMinutes(ss.end));
+      if (ovEnd > ovStart) minutes += (ovEnd - ovStart);
+      if (prevEnd !== null && ovStart > prevEnd) {
+        gaps.push({ from: minutesToHHMM(prevEnd), to: minutesToHHMM(ovStart), minutes: ovStart - prevEnd });
+      }
+      prevEnd = ovEnd;
+    }
+    const effStart = Math.max(sStart, toMinutes(overlapping[0].start));
+    const effEnd = Math.min(sEnd, toMinutes(overlapping[overlapping.length - 1].end));
+    return {
+      start: minutesToHHMM(effStart),
+      end: minutesToHHMM(effEnd),
+      minutes,
+      badge: 'confirmed',
+      gaps,
+      activity: overlapping[0].activity || null,
+    };
   },
 
   // ── Export / Import ──
