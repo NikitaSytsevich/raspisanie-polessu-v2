@@ -8,10 +8,14 @@
   },
   "scripts": {
     "dev": "node dev-server.js",
+    "build": "node scripts/build.js",
     "test": "node --test api/_parsers/*.test.js"
   },
   "dependencies": {
     "cheerio": "^1.0.0",
     "undici": "^6.21.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.0"
   }
 }

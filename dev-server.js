@@ -10,9 +10,23 @@ const fs = require('node:fs');
 const path = require('node:path');
 const url = require('node:url');
 const os = require('node:os');
+const { spawn } = require('node:child_process');
 
 const ROOT = __dirname;
 const PORT = Number(process.argv[2] || process.env.PORT || 3000);
+
+// Запускаем esbuild в watch-режиме как дочерний процесс. Это держит
+// app/bundle.js в актуальном состоянии при правках в app/*.jsx без
+// необходимости вручную дёргать npm run build.
+const NO_WATCH = process.argv.includes('--no-build') || process.env.NO_BUILD === '1';
+let builder = null;
+if (!NO_WATCH) {
+  builder = spawn(process.execPath, [path.join(ROOT, 'scripts', 'build.js'), '--watch'], {
+    stdio: 'inherit',
+  });
+  process.on('exit', () => { try { builder?.kill(); } catch {} });
+  process.on('SIGINT', () => { try { builder?.kill(); } catch {}; process.exit(0); });
+}
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',

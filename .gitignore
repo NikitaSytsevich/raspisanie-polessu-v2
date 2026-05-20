@@ -7,3 +7,7 @@ node_modules/
 
 # Временные файлы разведки (на случай повторного скачивания)
 polessu_*.tmp.html
+
+# Сборка esbuild (генерируется npm run build)
+app/bundle.js
+app/bundle.js.map

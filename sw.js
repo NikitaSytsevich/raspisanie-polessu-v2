@@ -1,0 +1,117 @@
+// sw.js — service worker для офлайна и SWR-кеша /api/schedule.
+//
+// Стратегии:
+//   1. App-shell (HTML, bundle.js, CSS, иконки, шрифты, manifest)
+//      → cache-first. Precache на install для гарантированного
+//        старта офлайн. Кеш версионируется, старые версии чистим
+//        на activate.
+//   2. /api/schedule → stale-while-revalidate. Возвращаем последний
+//      кешированный ответ мгновенно, параллельно идём в сеть и
+//      обновляем кеш для следующего вызова.
+//   3. Внешние шрифты Google → cache-first с TTL по факту (не
+//      инвалидируем явно — раз скачали, дальше офлайн).
+//   4. Прочее → network-only.
+
+const VERSION = 'v1-2026-05-20';
+const SHELL_CACHE = `rpgu-shell-${VERSION}`;
+const API_CACHE   = `rpgu-api-${VERSION}`;
+const FONT_CACHE  = `rpgu-fonts-${VERSION}`;
+
+const SHELL_ASSETS = [
+  '/',
+  '/index.html',
+  '/app/bundle.js',
+  '/app/styles.css',
+  '/manifest.webmanifest',
+  '/icon-192.png',
+  '/icon-512.png',
+  '/apple-touch-icon.png',
+  '/favicon-32.png',
+];
+
+self.addEventListener('install', (event) => {
+  event.waitUntil((async () => {
+    const cache = await caches.open(SHELL_CACHE);
+    // addAll прерывается, если хоть один файл не отдался. На dev-сервере
+    // часть путей может отсутствовать — используем individual fetch
+    // с suppress-errors, чтобы установка не падала из-за одного 404.
+    await Promise.all(SHELL_ASSETS.map(async (url) => {
+      try {
+        const res = await fetch(url, { cache: 'reload' });
+        if (res.ok) await cache.put(url, res);
+      } catch {}
+    }));
+    self.skipWaiting();
+  })());
+});
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil((async () => {
+    const names = await caches.keys();
+    await Promise.all(names.map(n => {
+      if (n !== SHELL_CACHE && n !== API_CACHE && n !== FONT_CACHE) {
+        return caches.delete(n);
+      }
+    }));
+    await self.clients.claim();
+  })());
+});
+
+self.addEventListener('fetch', (event) => {
+  const req = event.request;
+  if (req.method !== 'GET') return;
+  const url = new URL(req.url);
+
+  // 1. /api/schedule — stale-while-revalidate
+  if (url.pathname === '/api/schedule' && url.origin === self.location.origin) {
+    event.respondWith(swrFetch(req, API_CACHE));
+    return;
+  }
+
+  // 2. Google fonts — cache-first
+  if (url.host === 'fonts.googleapis.com' || url.host === 'fonts.gstatic.com') {
+    event.respondWith(cacheFirst(req, FONT_CACHE));
+    return;
+  }
+
+  // 3. Прочие same-origin GET — cache-first с network fallback
+  if (url.origin === self.location.origin) {
+    event.respondWith(cacheFirst(req, SHELL_CACHE));
+    return;
+  }
+});
+
+async function swrFetch(req, cacheName) {
+  const cache = await caches.open(cacheName);
+  const cached = await cache.match(req);
+  const networkPromise = fetch(req).then((res) => {
+    if (res && res.ok) cache.put(req, res.clone()).catch(() => {});
+    return res;
+  }).catch(() => null);
+  // Если кеш есть — отдаём его сразу, иначе ждём сеть.
+  return cached || networkPromise || new Response(
+    JSON.stringify({ error: 'offline', schemaVersion: 3, facilities: [], meta: { sourceCount: 0, sourceIssueCount: 0, sourceIssues: [] } }),
+    { status: 503, headers: { 'Content-Type': 'application/json' } }
+  );
+}
+
+async function cacheFirst(req, cacheName) {
+  const cache = await caches.open(cacheName);
+  const cached = await cache.match(req);
+  if (cached) {
+    // Опционально освежим из сети «в фоне», не блокируя.
+    fetch(req).then((res) => {
+      if (res && res.ok) cache.put(req, res.clone()).catch(() => {});
+    }).catch(() => {});
+    return cached;
+  }
+  try {
+    const res = await fetch(req);
+    if (res && res.ok) cache.put(req, res.clone()).catch(() => {});
+    return res;
+  } catch {
+    // Сеть упала, в кеше тоже ничего — отдаём оффлайн-страницу или 504.
+    const offline = await cache.match('/index.html');
+    return offline || new Response('Offline', { status: 504 });
+  }
+}
