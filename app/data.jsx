@@ -14,7 +14,15 @@ const STORAGE = {
 };
 
 const TZ = 'Europe/Minsk';
-const TODAY_ISO = (() => new Date().toISOString().slice(0, 10))();
+
+// Дата в зоне Минска как YYYY-MM-DD. Локаль en-CA фиксирует ISO-формат
+// независимо от системной локали браузера.
+const _ISO_DAY_FMT = new Intl.DateTimeFormat('en-CA', {
+  timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit',
+});
+function isoInMinsk(date) { return _ISO_DAY_FMT.format(date); }
+
+const TODAY_ISO = isoInMinsk(new Date());
 
 // ── Facility catalog (mirrors api/schedule.js) ──────────────────
 const FACILITIES = [
@@ -44,8 +52,8 @@ const INSTRUCTORS = [
 // ── Mock site response (used if /api/schedule fails) ─────────────
 const isoOffset = (days) => {
   const d = new Date();
-  d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
+  d.setUTCDate(d.getUTCDate() + days);
+  return isoInMinsk(d);
 };
 
 const MOCK_SCHEDULE = {
@@ -127,7 +135,10 @@ function formatDuration(mins) {
 }
 
 function formatRelativeMinutes(iso) {
-  const diff = Math.round((Date.now() - new Date(iso).getTime()) / 60_000);
+  if (!iso) return '—';
+  const t = new Date(iso).getTime();
+  if (!Number.isFinite(t)) return '—';
+  const diff = Math.round((Date.now() - t) / 60_000);
   if (diff < 1) return 'только что';
   if (diff < 60) return `${diff} мин назад`;
   const h = Math.floor(diff / 60);
@@ -398,6 +409,11 @@ const Data = {
   loadCachedSchedule() {
     const cached = loadJSON(STORAGE.cache, null);
     return cached?.payload || null;
+  },
+  // ISO-таймстемп последнего успешного fetchSchedule (или null, если ещё не было)
+  loadCachedAt() {
+    const cached = loadJSON(STORAGE.cache, null);
+    return cached?.at || null;
   },
   getCachedFacility(facilityId) {
     const payload = this.loadCachedSchedule();

@@ -96,7 +96,10 @@ function HomeScreen() {
 
       <window.UI.AppHeader
         title="Расписание"
-        meta={`обновлено ${window.Data.formatRelativeMinutes(new Date().toISOString())}`}
+        meta={(() => {
+          const at = window.Data.loadCachedAt();
+          return at ? `обновлено ${window.Data.formatRelativeMinutes(at)}` : 'ещё не загружено';
+        })()}
         right={
           <>
             <window.UI.IconBtn icon="edit_calendar" title="Редактор смен" onClick={() => router.push('editor')}/>
@@ -381,6 +384,8 @@ function AddShiftInlineLink({ date, onPush }) {
 // ── Bottom site-check card ──────────────────────────────────────
 function SiteCard({ change, onClick }) {
   const hasUnread = Boolean(change);
+  const checkedAt = change?.checkedAt || window.Data.loadCachedAt();
+  const facCount = window.Data.FACILITIES.length;
   return (
     <button className={`site-card ${hasUnread ? 'is-attention' : ''}`} onClick={onClick}>
       <div className="row">
@@ -400,7 +405,7 @@ function SiteCard({ change, onClick }) {
       <div className="footer">
         <span className="meta">
           <span className="material-symbols-outlined" style={{ fontSize: 14 }}>schedule</span>
-          {' '}проверено {window.Data.formatRelativeMinutes(change?.checkedAt || new Date(Date.now() - 120000).toISOString())} · 4 объекта
+          {' '}{checkedAt ? `проверено ${window.Data.formatRelativeMinutes(checkedAt)}` : 'ещё не проверено'} · {facCount} {pluralizeFacilities(facCount)}
         </span>
         <span className="open-link">{hasUnread ? 'разобрать →' : 'журнал →'}</span>
       </div>

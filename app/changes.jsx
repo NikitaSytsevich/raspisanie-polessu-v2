@@ -60,24 +60,34 @@ function ChangesScreen() {
     toast.show('Сверка обновлена');
   }
 
+  const checkedTime = latest?.checkedAt
+    ? new Date(latest.checkedAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
+    : null;
+  const kicker = checkedTime ? `Сегодня в ${checkedTime}` : 'Сверка ещё не запускалась';
+
+  const cached = window.Data.loadCachedSchedule();
+  const sourceCount = cached?.meta?.sourceCount ?? window.Data.FACILITIES.length;
+  const sourceIssueCount = cached?.meta?.sourceIssueCount ?? 0;
+  const okSources = Math.max(0, sourceCount - sourceIssueCount);
+
   const heroByState = {
     important: {
-      kicker: 'Сегодня в ' + new Date(latest?.checkedAt || Date.now()).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }),
+      kicker,
       title: <>Затронута<br/><em>ваша смена</em></>,
       brandMeta: 'требует внимания',
     },
     changes: {
-      kicker: 'Сегодня в ' + new Date(latest?.checkedAt || Date.now()).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }),
+      kicker,
       title: <>Есть<br/><em>обновления</em></>,
       brandMeta: 'новые события',
     },
     issue: {
-      kicker: 'Сегодня в 10:14',
+      kicker,
       title: <>Проверка<br/><em>неполная</em></>,
-      brandMeta: '3 из 4 источников',
+      brandMeta: `${okSources} из ${sourceCount} источников`,
     },
     stable: {
-      kicker: 'Сегодня в ' + new Date(latest?.checkedAt || Date.now()).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }),
+      kicker,
       title: <>Без новых<br/><em>изменений</em></>,
       brandMeta: 'всё тихо',
     },
@@ -107,13 +117,13 @@ function ChangesScreen() {
               {' '}Это пересекается с вашей сменой <strong>{affectedShifts[0].shift.start}&nbsp;— {affectedShifts[0].shift.end}</strong>.
             </>}
             {state === 'changes' && <>Последняя проверка нашла {latest?.events?.length || 0}&nbsp;событий. Ваши смены не затронуты.</>}
-            {state === 'stable' && <>Последняя сверка не нашла различий с предыдущим снимком. Все четыре источника ответили, ваши смены актуальны.</>}
+            {state === 'stable' && <>Последняя сверка не нашла различий с предыдущим снимком. Все {sourceCount} источников ответили, ваши смены актуальны.</>}
             {state === 'issue' && <>Не все источники ответили. Повторим попытку через несколько минут.</>}
           </p>
           <div className="hero-meta">
-            <span className="strong">4 источника</span>
+            <span className="strong">{sourceCount} {pluralizeSources(sourceCount)}</span>
             <span className="sep"/>
-            <span>проверено {window.Data.formatRelativeMinutes(latest?.checkedAt || new Date().toISOString())}</span>
+            <span>{latest?.checkedAt ? `проверено ${window.Data.formatRelativeMinutes(latest.checkedAt)}` : 'ещё не проверено'}</span>
           </div>
         </section>
 
@@ -139,15 +149,35 @@ function ChangesScreen() {
           </>
         )}
 
-        <window.UI.SecLabel count={4}>Источники</window.UI.SecLabel>
+        <window.UI.SecLabel count={facilities.length}>Источники</window.UI.SecLabel>
         <section className="sources">
-          {facilities.map(f => (
-            <div key={f.id} className={`src-row ${f.id === 'rowing_base' ? 'tmpl' : 'ok'}`}>
+          {facilities.map(f => {
+            const facData = cached?.facilities?.find(x => x.id === f.id);
+            const dq = facData?.dataQuality;
+            let cls = 'ok', status = 'ещё не проверен';
+            if (dq === 'ok') {
+              cls = 'ok';
+              status = facData.sourceCheckedAt
+                ? 'ок · ' + new Date(facData.sourceCheckedAt).toLocaleTimeString('ru-RU', {hour:'2-digit',minute:'2-digit'})
+                : 'ок';
+            } else if (dq === 'closed') {
+              cls = 'tmpl';
+              status = 'закрыт';
+            } else if (dq === 'template') {
+              cls = 'tmpl';
+              status = 'шаблон';
+            } else if (dq === 'parse_error') {
+              cls = 'tmpl';
+              status = 'ошибка парсера';
+            }
+            return (
+            <div key={f.id} className={`src-row ${cls}`}>
               <span className="dot"/>
               <span className="name">{f.name}</span>
-              <span className="status">{f.id === 'rowing_base' ? 'шаблон' : 'ок · ' + new Date().toLocaleTimeString('ru-RU', {hour:'2-digit',minute:'2-digit'})}</span>
+              <span className="status">{status}</span>
             </div>
-          ))}
+            );
+          })}
         </section>
 
         <window.UI.SecLabel count={changes.length}>Журнал проверок</window.UI.SecLabel>
@@ -257,6 +287,13 @@ function pluralizeEvents(n) {
   if (last === 1 && last2 !== 11) return 'событие';
   if (last >= 2 && last <= 4 && (last2 < 12 || last2 > 14)) return 'события';
   return 'событий';
+}
+
+function pluralizeSources(n) {
+  const last = n % 10, last2 = n % 100;
+  if (last === 1 && last2 !== 11) return 'источник';
+  if (last >= 2 && last <= 4 && (last2 < 12 || last2 > 14)) return 'источника';
+  return 'источников';
 }
 
 window.ChangesScreen = ChangesScreen;
