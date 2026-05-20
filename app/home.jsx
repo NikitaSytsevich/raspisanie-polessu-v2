@@ -20,11 +20,24 @@ function HomeScreen() {
     return () => clearInterval(t);
   }, []);
 
-  // Refresh shifts whenever screen re-mounts (e.g. after edit)
+  // Refresh shifts when:
+  //   • окно снова получает фокус (вернулись из вкладки),
+  //   • editor сохранил/удалил смену (Data.saveShifts → событие),
+  //   • история сверки сайта обновилась (Data.saveSiteChanges → событие).
+  // Home — persistent screen, не перемонтируется на router.pop(), поэтому без
+  // подписки на эти события он бы не узнал об изменениях localStorage.
   _he(() => {
-    function onFocus() { setShifts(window.Data.loadShifts()); setChanges(window.Data.loadSiteChanges()); }
+    function reloadShifts() { setShifts(window.Data.loadShifts()); }
+    function reloadChanges() { setChanges(window.Data.loadSiteChanges()); }
+    function onFocus() { reloadShifts(); reloadChanges(); }
     window.addEventListener('focus', onFocus);
-    return () => window.removeEventListener('focus', onFocus);
+    window.addEventListener('rpgu:shifts-changed', reloadShifts);
+    window.addEventListener('rpgu:site-changes-changed', reloadChanges);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('rpgu:shifts-changed', reloadShifts);
+      window.removeEventListener('rpgu:site-changes-changed', reloadChanges);
+    };
   }, []);
 
   // Автозагрузка расписания при первом запуске — чтобы карточки смен сразу

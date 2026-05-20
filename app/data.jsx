@@ -281,7 +281,13 @@ const Data = {
     if (stored === null) return DEMO_SHIFTS.slice();
     return stored;
   },
-  saveShifts(list) { saveJSON(STORAGE.shifts, list); },
+  saveShifts(list) {
+    saveJSON(STORAGE.shifts, list);
+    // Уведомляем подписчиков (HomeScreen и т.п.), что список смен изменился.
+    // Нужно потому что HomeScreen — persistent в роутере и не перемонтируется
+    // при возврате из editor; без события он не узнает об изменениях.
+    try { window.dispatchEvent(new CustomEvent('rpgu:shifts-changed')); } catch {}
+  },
   upsertShift(shift) {
     const list = this.loadShifts();
     const i = list.findIndex(s => s.id === shift.id);
@@ -302,7 +308,10 @@ const Data = {
     if (stored === null) return DEMO_CHANGES.slice();
     return stored;
   },
-  saveSiteChanges(list) { saveJSON(STORAGE.siteChanges, list); },
+  saveSiteChanges(list) {
+    saveJSON(STORAGE.siteChanges, list);
+    try { window.dispatchEvent(new CustomEvent('rpgu:site-changes-changed')); } catch {}
+  },
   ackChange(id) {
     const list = this.loadSiteChanges().map(c =>
       c.id === id ? { ...c, acknowledgedAt: new Date().toISOString() } : c
