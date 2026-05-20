@@ -1,0 +1,1433 @@
+<!DOCTYPE html>
+<html lang="ru" class="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Редактор смен — Расписание</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400;1,6..72,500&family=Inter:wght@400;500;600;700&display=swap"
+    rel="stylesheet"
+  />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,200,0,0&display=block"
+    rel="stylesheet"
+  />
+  <style>
+    :root { --studio-bg: #0d0b0a; }
+
+    html.dark {
+      --bg: #181513;
+      --bg-elevated: #23201d;
+      --bg-raised: #2c2824;
+      --bg-sunken: #14110f;
+      --hairline: rgba(245, 241, 235, 0.08);
+      --hairline-strong: rgba(245, 241, 235, 0.14);
+      --border: rgba(217, 119, 87, 0.18);
+      --text: #f5f1eb;
+      --text-strong: #fffaf3;
+      --text-muted: #a8a098;
+      --text-subtle: #6b665f;
+      --accent: #d97757;
+      --accent-hover: #c96442;
+      --accent-soft: rgba(217, 119, 87, 0.13);
+      --accent-glow: rgba(217, 119, 87, 0.34);
+      --accent-ink: #f5cdb8;
+      --success: #7a9e7e;
+      --success-soft: rgba(122, 158, 126, 0.16);
+      --warning: #c9a96e;
+      --warning-soft: rgba(201, 169, 110, 0.16);
+      --danger: #c97064;
+      --danger-soft: rgba(201, 112, 100, 0.16);
+    }
+
+    html.light {
+      --bg: #f5f1eb;
+      --bg-elevated: #ffffff;
+      --bg-raised: #efe9df;
+      --bg-sunken: #ebe4d7;
+      --hairline: rgba(24, 21, 19, 0.08);
+      --hairline-strong: rgba(24, 21, 19, 0.14);
+      --border: rgba(201, 100, 66, 0.22);
+      --text: #181513;
+      --text-strong: #0a0807;
+      --text-muted: #5a544c;
+      --text-subtle: #8a847a;
+      --accent: #c96442;
+      --accent-hover: #b3522f;
+      --accent-soft: rgba(201, 100, 66, 0.10);
+      --accent-glow: rgba(201, 100, 66, 0.22);
+      --accent-ink: #6b2a14;
+      --success: #4f7558;
+      --success-soft: rgba(79, 117, 88, 0.14);
+      --warning: #93732e;
+      --warning-soft: rgba(147, 115, 46, 0.14);
+      --danger: #a8453b;
+      --danger-soft: rgba(168, 69, 59, 0.12);
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+
+    body {
+      background: var(--studio-bg);
+      min-height: 100dvh;
+      font-family: "Inter", system-ui, sans-serif;
+      color: var(--text);
+      -webkit-font-smoothing: antialiased;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 56px 16px 96px;
+      background-image:
+        radial-gradient(circle at 18% 4%, rgba(217, 119, 87, 0.06), transparent 38%),
+        radial-gradient(circle at 88% 22%, rgba(217, 119, 87, 0.04), transparent 42%);
+    }
+
+    .studio-head { max-width: 480px; margin-bottom: 28px; color: #f5f1eb; }
+    .studio-head .eyebrow {
+      font-family: "Newsreader", Georgia, serif;
+      font-style: italic;
+      font-size: 13px;
+      color: var(--accent);
+      margin-bottom: 6px;
+    }
+    .studio-head h1 {
+      font-family: "Newsreader", Georgia, serif;
+      font-weight: 500;
+      font-size: 28px;
+      letter-spacing: -0.02em;
+      margin: 0;
+      color: #f5f1eb;
+    }
+    .studio-head p {
+      margin: 8px 0 0;
+      font-size: 13px;
+      line-height: 1.55;
+      color: #a8a098;
+      max-width: 460px;
+    }
+    .studio-head em { color: var(--accent); font-style: italic; }
+
+    .material-symbols-outlined {
+      font-family: 'Material Symbols Outlined';
+      font-weight: normal;
+      font-style: normal;
+      line-height: 1;
+      letter-spacing: normal;
+      text-transform: none;
+      display: inline-block;
+      white-space: nowrap;
+      direction: ltr;
+      font-feature-settings: 'liga';
+      -webkit-font-feature-settings: 'liga';
+      font-variation-settings: 'FILL' 0, 'wght' 200, 'GRAD' 0, 'opsz' 24;
+      font-size: 20px;
+      vertical-align: middle;
+    }
+
+    /* ── Phone ─────────────────────────────────── */
+    .phone {
+      width: 390px;
+      min-height: 844px;
+      background: var(--bg);
+      color: var(--text);
+      border-radius: 44px;
+      border: 1px solid rgba(245, 241, 235, 0.06);
+      overflow: hidden;
+      position: relative;
+      box-shadow:
+        0 30px 80px -40px rgba(0, 0, 0, 0.9),
+        0 0 0 8px #1a1715,
+        0 0 0 9px rgba(245, 241, 235, 0.04);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .status-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 18px 28px 6px;
+      font-size: 15px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      color: var(--text);
+      letter-spacing: -0.01em;
+    }
+    .status-bar .icons { display: flex; align-items: center; gap: 6px; }
+    .status-bar .icons svg path,
+    .status-bar .icons svg rect,
+    .status-bar .icons svg circle { fill: var(--text); }
+    .status-bar .icons svg .outline { fill: none; stroke: var(--text); stroke-opacity: 0.35; }
+
+    .notch {
+      position: absolute;
+      top: 12px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 120px;
+      height: 32px;
+      background: #000;
+      border-radius: 18px;
+      z-index: 30;
+    }
+
+    .app-header {
+      padding: 14px 22px 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .app-header .brand { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+    .app-header .brand-name {
+      font-family: "Newsreader", Georgia, serif;
+      font-weight: 500;
+      font-size: 17px;
+      letter-spacing: -0.01em;
+    }
+    .app-header .brand-meta {
+      font-size: 11px;
+      color: var(--text-subtle);
+      font-style: italic;
+      font-family: "Newsreader", Georgia, serif;
+    }
+
+    .icon-btn {
+      width: 38px; height: 38px;
+      border-radius: 14px;
+      border: 1px solid var(--hairline);
+      background: transparent;
+      color: var(--text-muted);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 160ms ease;
+    }
+    .icon-btn:hover {
+      background: var(--bg-elevated);
+      color: var(--text);
+      border-color: var(--hairline-strong);
+    }
+    .icon-btn:active { transform: scale(0.96); }
+    .icon-btn .material-symbols-outlined { font-size: 22px; }
+    .icon-btn.is-danger { color: var(--danger); }
+    .icon-btn.is-danger:hover { background: var(--danger-soft); border-color: color-mix(in srgb, var(--danger) 30%, transparent); }
+
+    /* ── Mode switch (single / batch) ──────────── */
+    .mode-switch {
+      margin: 6px 22px 8px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4px;
+      padding: 4px;
+      background: var(--bg-sunken);
+      border-radius: 14px;
+      border: 1px solid var(--hairline);
+    }
+
+    .mode-switch button {
+      appearance: none;
+      border: 0;
+      background: transparent;
+      padding: 10px 12px;
+      border-radius: 10px;
+      color: var(--text-muted);
+      font-family: "Inter", system-ui, sans-serif;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 160ms ease;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+    .mode-switch button .material-symbols-outlined { font-size: 17px; }
+
+    .mode-switch button.is-active {
+      background: var(--bg-elevated);
+      color: var(--text-strong);
+      box-shadow: 0 1px 0 var(--hairline-strong);
+    }
+
+    .mode-switch button .ital {
+      font-family: "Newsreader", Georgia, serif;
+      font-style: italic;
+      font-weight: 500;
+    }
+
+    /* ── Hero (live preview of the draft) ──────── */
+    .hero {
+      padding: 14px 24px 18px;
+    }
+
+    .hero-kicker {
+      font-family: "Newsreader", Georgia, serif;
+      font-style: italic;
+      font-size: 13px;
+      color: var(--accent);
+      margin: 0 0 6px;
+      letter-spacing: 0.005em;
+    }
+
+    .hero-title {
+      font-family: "Newsreader", Georgia, serif;
+      font-weight: 500;
+      font-size: 30px;
+      line-height: 1.1;
+      letter-spacing: -0.022em;
+      color: var(--text-strong);
+      margin: 0;
+    }
+
+    .hero-title .draft {
+      color: var(--text-subtle);
+      font-style: italic;
+    }
+
+    .hero-title em {
+      font-style: italic;
+      color: var(--accent);
+      font-weight: 500;
+    }
+
+    .hero-meta {
+      margin-top: 10px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px 12px;
+      font-size: 12px;
+      color: var(--text-muted);
+      font-variant-numeric: tabular-nums;
+    }
+    .hero-meta .sep { width: 3px; height: 3px; border-radius: 50%; background: var(--text-subtle); align-self: center; }
+    .hero-meta strong { color: var(--text); font-weight: 600; }
+
+    /* ── Section label ─────────────────────────── */
+    .sec-label {
+      padding: 10px 24px 8px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 10px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--text-subtle);
+      font-weight: 600;
+    }
+    .sec-label::after { content: ''; flex: 1; height: 1px; background: var(--hairline); }
+    .sec-label .hint {
+      font-family: "Newsreader", Georgia, serif;
+      font-style: italic;
+      font-weight: 400;
+      text-transform: none;
+      letter-spacing: 0;
+      font-size: 12px;
+      color: var(--accent);
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+
+    /* ── Date chips ────────────────────────────── */
+    .date-strip {
+      padding: 0 16px 4px;
+      display: flex;
+      gap: 6px;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+    .date-strip::-webkit-scrollbar { display: none; }
+
+    .date-chip {
+      flex: 0 0 auto;
+      min-width: 64px;
+      padding: 9px 10px 8px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--hairline);
+      border-radius: 14px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+      cursor: pointer;
+      transition: all 160ms ease;
+      color: var(--text);
+    }
+    .date-chip:first-child { margin-left: 8px; }
+    .date-chip:last-child  { margin-right: 8px; }
+
+    .date-chip:hover {
+      border-color: var(--hairline-strong);
+      background: var(--bg-raised);
+    }
+
+    .date-chip .wd {
+      font-size: 9.5px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-subtle);
+      font-weight: 600;
+    }
+    .date-chip .num {
+      font-family: "Newsreader", Georgia, serif;
+      font-weight: 500;
+      font-size: 17px;
+      letter-spacing: -0.01em;
+      line-height: 1;
+    }
+    .date-chip .mo {
+      font-size: 10px;
+      color: var(--text-subtle);
+    }
+
+    .date-chip.is-active {
+      background: var(--accent-soft);
+      border-color: var(--border);
+      box-shadow: inset 0 0 0 1px var(--accent);
+    }
+    .date-chip.is-active .wd  { color: var(--accent); }
+    .date-chip.is-active .num { color: var(--accent); }
+    .date-chip.is-active .mo  { color: var(--accent); }
+
+    .date-chip.is-plus {
+      min-width: 48px;
+      color: var(--text-muted);
+    }
+    .date-chip.is-plus .num { font-size: 22px; }
+
+    .date-chip.has-shift::after {
+      content: '';
+      width: 3px; height: 3px; border-radius: 50%;
+      background: var(--text-subtle);
+      margin-top: 1px;
+    }
+    .date-chip.is-active.has-shift::after { background: var(--accent); }
+
+    /* ── Facility row ──────────────────────────── */
+    .facility-row {
+      padding: 0 22px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .fc-btn {
+      appearance: none;
+      border: 1px solid var(--hairline);
+      background: var(--bg-elevated);
+      border-radius: 14px;
+      padding: 12px 12px 11px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      cursor: pointer;
+      transition: all 160ms ease;
+      color: var(--text);
+      text-align: left;
+    }
+    .fc-btn:hover {
+      background: var(--bg-raised);
+      border-color: var(--hairline-strong);
+    }
+
+    .fc-btn .ic {
+      width: 32px; height: 32px;
+      border-radius: 10px;
+      background: var(--bg-raised);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      color: var(--text-muted);
+    }
+    .fc-btn .ic .material-symbols-outlined { font-size: 18px; }
+
+    .fc-btn .text { min-width: 0; }
+    .fc-btn .name {
+      font-family: "Newsreader", Georgia, serif;
+      font-size: 14px;
+      font-weight: 500;
+      letter-spacing: -0.005em;
+      color: var(--text);
+      display: block;
+      line-height: 1.15;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .fc-btn .hint {
+      font-size: 10.5px;
+      color: var(--text-subtle);
+      letter-spacing: 0.02em;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .fc-btn.is-active {
+      background: var(--accent-soft);
+      border-color: var(--border);
+      box-shadow: inset 3px 0 0 var(--accent);
+    }
+    .fc-btn.is-active .ic {
+      background: color-mix(in srgb, var(--accent) 18%, var(--bg-raised));
+      color: var(--accent);
+    }
+    .fc-btn.is-active .name { color: var(--accent); }
+
+    /* ── Time row ──────────────────────────────── */
+    .time-row {
+      padding: 4px 22px 0;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .time-cell {
+      background: var(--bg-elevated);
+      border: 1px solid var(--hairline);
+      border-radius: 14px;
+      padding: 12px 14px 10px;
+      cursor: pointer;
+      transition: all 160ms ease;
+    }
+    .time-cell:hover {
+      background: var(--bg-raised);
+      border-color: var(--hairline-strong);
+    }
+    .time-cell.is-focus {
+      border-color: var(--border);
+      box-shadow: 0 0 0 3px var(--accent-soft);
+    }
+    .time-cell .label {
+      font-size: 10px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--text-subtle);
+      font-weight: 600;
+    }
+    .time-cell .value {
+      margin-top: 2px;
+      font-family: "Newsreader", Georgia, serif;
+      font-weight: 500;
+      font-size: 30px;
+      letter-spacing: -0.025em;
+      color: var(--text-strong);
+      font-variant-numeric: tabular-nums;
+      line-height: 1.1;
+    }
+
+    .time-cell.is-focus .label { color: var(--accent); }
+    .time-cell.is-focus .value { color: var(--accent); }
+
+    .duration-pill {
+      margin: 12px 22px 4px;
+      padding: 9px 12px;
+      border-radius: 999px;
+      background: var(--bg-sunken);
+      border: 1px solid var(--hairline);
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: var(--text-muted);
+      font-family: "Newsreader", Georgia, serif;
+      font-style: italic;
+      font-weight: 400;
+    }
+    .duration-pill strong {
+      color: var(--text);
+      font-weight: 500;
+      font-style: normal;
+      font-variant-numeric: tabular-nums;
+    }
+    .duration-pill .material-symbols-outlined { font-size: 14px; color: var(--accent); }
+
+    .preset-row {
+      padding: 8px 16px 0;
+      display: flex;
+      gap: 6px;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+    .preset-row::-webkit-scrollbar { display: none; }
+
+    .preset-chip {
+      flex: 0 0 auto;
+      padding: 7px 11px;
+      border-radius: 999px;
+      background: transparent;
+      border: 1px solid var(--hairline);
+      color: var(--text-muted);
+      font-size: 11.5px;
+      font-family: "Newsreader", Georgia, serif;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap;
+      transition: all 140ms ease;
+    }
+    .preset-chip:first-child { margin-left: 8px; }
+    .preset-chip:last-child  { margin-right: 8px; }
+    .preset-chip:hover {
+      border-color: var(--border);
+      color: var(--text);
+      background: var(--accent-soft);
+    }
+    .preset-chip em {
+      font-style: italic;
+      color: var(--accent);
+      font-weight: 500;
+    }
+    .preset-chip .tm {
+      font-family: "Inter", system-ui, sans-serif;
+      font-variant-numeric: tabular-nums;
+      font-size: 11px;
+      color: var(--text-subtle);
+    }
+
+    /* ── Instructors ───────────────────────────── */
+    .insts {
+      padding: 2px 22px 0;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px 6px;
+    }
+
+    .inst-chip {
+      appearance: none;
+      background: var(--bg-elevated);
+      border: 1px solid var(--hairline);
+      color: var(--text-muted);
+      border-radius: 999px;
+      padding: 5px 11px 5px 5px;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 12.5px;
+      cursor: pointer;
+      transition: all 160ms ease;
+    }
+    .inst-chip:hover { background: var(--bg-raised); border-color: var(--hairline-strong); color: var(--text); }
+
+    .inst-chip .av {
+      width: 22px; height: 22px;
+      border-radius: 999px;
+      background: var(--bg-raised);
+      color: var(--text-muted);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-variant: small-caps;
+    }
+
+    .inst-chip.is-selected {
+      background: var(--accent-soft);
+      border-color: var(--border);
+      color: var(--accent);
+    }
+    .inst-chip.is-selected .av {
+      background: var(--accent);
+      color: #fff;
+    }
+    html.light .inst-chip.is-selected .av { color: #fff; }
+
+    /* ── Note ─────────────────────────────────── */
+    .note-wrap {
+      padding: 4px 22px 0;
+    }
+    .note {
+      width: 100%;
+      min-height: 64px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--hairline);
+      border-radius: 14px;
+      padding: 11px 13px;
+      color: var(--text);
+      font-family: "Newsreader", Georgia, serif;
+      font-size: 14px;
+      line-height: 1.5;
+      resize: none;
+      outline: none;
+      transition: border-color 160ms ease;
+    }
+    .note::placeholder {
+      color: var(--text-subtle);
+      font-style: italic;
+    }
+    .note:focus {
+      border-color: var(--border);
+      box-shadow: 0 0 0 3px var(--accent-soft);
+    }
+
+    /* ── Smart suggestion ─────────────────────── */
+    .suggest {
+      margin: 14px 22px 0;
+      padding: 12px 14px;
+      border-radius: 14px;
+      background: var(--bg-sunken);
+      border: 1px dashed var(--border);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+    .suggest .material-symbols-outlined { font-size: 18px; color: var(--accent); flex-shrink: 0; }
+    .suggest .body {
+      font-family: "Newsreader", Georgia, serif;
+      line-height: 1.4;
+    }
+    .suggest .body strong { color: var(--text); font-weight: 500; font-style: italic; }
+    .suggest a {
+      color: var(--accent);
+      font-family: "Newsreader", Georgia, serif;
+      font-style: italic;
+      font-weight: 500;
+      text-decoration: none;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    /* ── Actions ──────────────────────────────── */
+    .actions {
+      margin: 18px 22px 4px;
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 8px;
+    }
+
+    .btn {
+      appearance: none;
+      width: 100%;
+      min-height: 48px;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      background: var(--accent);
+      color: #fffaf3;
+      font-family: "Inter", system-ui, sans-serif;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      letter-spacing: 0.01em;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: all 160ms ease;
+      box-shadow: 0 8px 20px -10px var(--accent-glow);
+    }
+    .btn:hover { background: var(--accent-hover); }
+    .btn:active { transform: translateY(1px); box-shadow: 0 4px 10px -8px var(--accent-glow); }
+    .btn .material-symbols-outlined { font-size: 18px; }
+
+    .btn.secondary {
+      background: transparent;
+      color: var(--text-muted);
+      border-color: var(--hairline-strong);
+      box-shadow: none;
+    }
+    .btn.secondary:hover {
+      background: var(--bg-elevated);
+      color: var(--text);
+    }
+    .btn.danger {
+      background: transparent;
+      color: var(--danger);
+      border-color: color-mix(in srgb, var(--danger) 30%, transparent);
+      box-shadow: none;
+    }
+    .btn.danger:hover {
+      background: var(--danger-soft);
+    }
+
+    /* ── Recent shifts list ────────────────────── */
+    .recent {
+      padding: 4px 22px 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .recent-row {
+      display: grid;
+      grid-template-columns: 56px 1fr 28px;
+      gap: 12px;
+      align-items: center;
+      padding: 12px 6px 12px 8px;
+      border-bottom: 1px solid var(--hairline);
+      cursor: pointer;
+      transition: all 160ms ease;
+      margin: 0 -6px;
+      border-radius: 10px;
+    }
+    .recent-row:hover {
+      background: var(--bg-elevated);
+      border-bottom-color: transparent;
+    }
+    .recent-row:last-child { border-bottom: 0; }
+
+    .recent-row .when {
+      font-family: "Newsreader", Georgia, serif;
+      font-variant-numeric: tabular-nums;
+    }
+    .recent-row .when .num {
+      font-size: 19px;
+      font-weight: 500;
+      letter-spacing: -0.02em;
+      color: var(--text);
+      line-height: 1;
+      display: block;
+    }
+    .recent-row .when .wd {
+      font-size: 10px;
+      color: var(--text-subtle);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      font-family: "Inter", system-ui, sans-serif;
+      margin-top: 4px;
+      display: block;
+    }
+
+    .recent-row .body { min-width: 0; }
+    .recent-row .place {
+      font-family: "Newsreader", Georgia, serif;
+      font-size: 15px;
+      font-weight: 500;
+      color: var(--text);
+      letter-spacing: -0.005em;
+      line-height: 1.2;
+      margin: 0 0 3px;
+    }
+    .recent-row .time {
+      font-size: 11.5px;
+      color: var(--text-muted);
+      font-variant-numeric: tabular-nums;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .recent-row .src {
+      font-family: "Newsreader", Georgia, serif;
+      font-style: italic;
+      font-size: 11px;
+      color: var(--text-subtle);
+    }
+    .recent-row .src.site { color: var(--accent); }
+
+    .recent-row .chev {
+      color: var(--text-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .recent-row.is-site .when .num { color: var(--accent); }
+    .recent-row.is-editing {
+      background: var(--accent-soft);
+      border-bottom-color: transparent;
+      box-shadow: inset 3px 0 0 var(--accent);
+    }
+    .recent-row.is-editing .place { color: var(--accent); }
+
+    /* ── Batch mode ─────────────────────────── */
+    .range-row {
+      padding: 4px 22px 0;
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .range-cell {
+      background: var(--bg-elevated);
+      border: 1px solid var(--hairline);
+      border-radius: 14px;
+      padding: 12px 14px 10px;
+      cursor: pointer;
+    }
+    .range-cell:hover { background: var(--bg-raised); border-color: var(--hairline-strong); }
+    .range-cell .label {
+      font-size: 10px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--text-subtle);
+      font-weight: 600;
+    }
+    .range-cell .value {
+      margin-top: 4px;
+      font-family: "Newsreader", Georgia, serif;
+      font-weight: 500;
+      font-size: 20px;
+      letter-spacing: -0.02em;
+      color: var(--text);
+      font-variant-numeric: tabular-nums;
+      line-height: 1.1;
+    }
+    .range-cell .small {
+      font-size: 11px;
+      color: var(--text-subtle);
+      margin-top: 1px;
+      letter-spacing: 0.02em;
+    }
+    .range-arrow {
+      color: var(--text-subtle);
+      font-family: "Newsreader", Georgia, serif;
+      font-size: 22px;
+      font-style: italic;
+      padding-top: 14px;
+    }
+
+    .weekdays {
+      padding: 6px 22px 0;
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 4px;
+    }
+    .wd-btn {
+      appearance: none;
+      border: 1px solid var(--hairline);
+      background: var(--bg-elevated);
+      border-radius: 10px;
+      padding: 9px 0 8px;
+      color: var(--text-muted);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 140ms ease;
+    }
+    .wd-btn:hover {
+      background: var(--bg-raised);
+      border-color: var(--hairline-strong);
+    }
+    .wd-btn.is-active {
+      background: var(--accent-soft);
+      border-color: var(--border);
+      color: var(--accent);
+    }
+
+    .weekday-presets {
+      padding: 8px 22px 0;
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      font-size: 12px;
+    }
+    .weekday-presets a {
+      font-family: "Newsreader", Georgia, serif;
+      font-style: italic;
+      color: var(--accent);
+      cursor: pointer;
+      text-decoration: none;
+    }
+    .weekday-presets .dim { color: var(--text-subtle); }
+
+    .batch-preview {
+      margin: 14px 22px 0;
+      padding: 14px 16px 12px;
+      border-radius: 14px;
+      background: var(--accent-soft);
+      border: 1px solid var(--border);
+      box-shadow: inset 3px 0 0 var(--accent);
+    }
+    .batch-preview .kicker {
+      font-size: 10px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--accent);
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+    .batch-preview .head {
+      font-family: "Newsreader", Georgia, serif;
+      font-weight: 500;
+      font-size: 22px;
+      letter-spacing: -0.02em;
+      color: var(--text-strong);
+      line-height: 1.15;
+    }
+    .batch-preview .head em { color: var(--accent); font-style: italic; }
+    .batch-preview .body {
+      margin-top: 6px;
+      font-size: 12.5px;
+      color: var(--text-muted);
+      font-family: "Newsreader", Georgia, serif;
+      font-style: italic;
+      line-height: 1.4;
+    }
+    .batch-preview .body strong { font-style: normal; font-weight: 500; color: var(--text); }
+
+    /* ── Mode visibility ───────────────────────── */
+    .phone[data-mode="batch"] .single-only { display: none; }
+    .phone[data-mode="single"] .batch-only { display: none; }
+    .phone[data-mode="single"][data-edit="true"] .add-only { display: none; }
+    .phone:not([data-edit="true"]) .edit-only { display: none; }
+
+    .home-indicator {
+      width: 134px;
+      height: 5px;
+      border-radius: 999px;
+      background: var(--text);
+      opacity: 0.6;
+      margin: 18px auto 8px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="studio-head">
+    <div class="eyebrow">экран · «редактор смен»</div>
+    <h1>Записать смену быстрее, чем напомнить себе.</h1>
+    <p>
+      Один экран: дата&nbsp;— объект&nbsp;— время&nbsp;— коллеги&nbsp;— комментарий.
+      По мере заполнения сверху <em>складывается</em> серифная фраза&nbsp;— это и&nbsp;есть итог.
+      Внизу&nbsp;— ваши ближайшие смены: тап редактирует, длинный жест удаляет.
+      Можно переключиться в&nbsp;<em>пакетный режим</em>&nbsp;— добавить целую серию по&nbsp;дням недели.
+    </p>
+  </div>
+
+  <div class="phone" id="phone" data-mode="single" data-edit="false">
+    <div class="notch"></div>
+
+    <div class="status-bar">
+      <span>10:14</span>
+      <div class="icons">
+        <svg width="18" height="11" viewBox="0 0 18 11"><rect x="0" y="6.5" width="3" height="4.5" rx="0.7"/><rect x="4.5" y="4" width="3" height="7" rx="0.7"/><rect x="9" y="1.5" width="3" height="9.5" rx="0.7"/><rect x="13.5" y="0" width="3" height="11" rx="0.7"/></svg>
+        <svg width="16" height="11" viewBox="0 0 16 11"><path d="M8 3C10.2 3 12.2 3.9 13.7 5.3L14.7 4.3C13 2.6 10.6 1.5 8 1.5C5.4 1.5 3 2.6 1.3 4.3L2.3 5.3C3.8 3.9 5.8 3 8 3Z"/><path d="M8 6.4C9.4 6.4 10.6 6.9 11.4 7.8L12.4 6.8C11.2 5.6 9.7 4.8 8 4.8C6.3 4.8 4.8 5.6 3.6 6.8L4.6 7.8C5.4 6.9 6.6 6.4 8 6.4Z"/><circle cx="8" cy="9.8" r="1.4"/></svg>
+        <svg width="26" height="12" viewBox="0 0 26 12"><rect class="outline" x="0.5" y="0.5" width="22" height="11" rx="3.2"/><rect x="2" y="2" width="19" height="8" rx="1.8"/><path d="M24 4.2V7.8C24.7 7.5 25.3 6.7 25.3 6C25.3 5.3 24.7 4.5 24 4.2Z" opacity="0.45"/></svg>
+      </div>
+    </div>
+
+    <header class="app-header">
+      <button class="icon-btn" title="Назад">
+        <span class="material-symbols-outlined">arrow_back</span>
+      </button>
+      <div class="brand">
+        <span class="brand-name" id="headerTitle">Новая смена</span>
+        <span class="brand-meta" id="headerMeta">черновик · не сохранён</span>
+      </div>
+      <button class="icon-btn edit-only is-danger" title="Удалить смену">
+        <span class="material-symbols-outlined">delete</span>
+      </button>
+    </header>
+
+    <!-- ── Mode switch ─────────────────────────── -->
+    <div class="mode-switch" id="modeSwitch">
+      <button data-mode="single" class="is-active">
+        <span class="material-symbols-outlined">edit_calendar</span>
+        <span>Одна смена</span>
+      </button>
+      <button data-mode="batch">
+        <span class="material-symbols-outlined">date_range</span>
+        <span class="ital">по&nbsp;дням недели</span>
+      </button>
+    </div>
+
+    <!-- ── Hero preview ────────────────────────── -->
+    <section class="hero">
+      <p class="hero-kicker single-only" id="heroKicker">Вы сейчас добавляете</p>
+      <p class="hero-kicker batch-only">Пакетная запись</p>
+
+      <!-- SINGLE preview -->
+      <h1 class="hero-title single-only" id="heroTitleSingle">
+        <span>Ср, 21&nbsp;мая</span> · <em>09:45&nbsp;— 11:15</em><br>
+        <span>на&nbsp;Ледовой&nbsp;арене</span>
+      </h1>
+
+      <!-- BATCH preview -->
+      <h1 class="hero-title batch-only" id="heroTitleBatch">
+        <em>10&nbsp;смен</em> по&nbsp;будням<br>
+        19&nbsp;— 30&nbsp;мая, 09:45&nbsp;— 11:15
+      </h1>
+
+      <div class="hero-meta single-only" id="heroMetaSingle">
+        <span><strong>1 ч 30 м</strong></span>
+        <span class="sep"></span>
+        <span>с Липчуком А.С., Крыльчуком П.С.</span>
+      </div>
+
+      <div class="hero-meta batch-only" id="heroMetaBatch">
+        <span><strong>15 ч</strong> работы</span>
+        <span class="sep"></span>
+        <span>Ледовая&nbsp;арена · пн–пт</span>
+      </div>
+    </section>
+
+    <!-- ── Date strip (single) ─────────────────── -->
+    <div class="single-only">
+      <div class="sec-label">Дата<span class="hint">выбрать в&nbsp;календаре →</span></div>
+      <div class="date-strip" id="dateStrip">
+        <div class="date-chip has-shift" data-date="2026-05-17">
+          <span class="wd">Вс</span><span class="num">17</span><span class="mo">мая</span>
+        </div>
+        <div class="date-chip has-shift" data-date="2026-05-18">
+          <span class="wd">Пн</span><span class="num">18</span><span class="mo">мая</span>
+        </div>
+        <div class="date-chip has-shift" data-date="2026-05-19">
+          <span class="wd">Вт</span><span class="num">19</span><span class="mo">сегодня</span>
+        </div>
+        <div class="date-chip has-shift" data-date="2026-05-20">
+          <span class="wd">Ср</span><span class="num">20</span><span class="mo">завтра</span>
+        </div>
+        <div class="date-chip is-active has-shift" data-date="2026-05-21">
+          <span class="wd">Чт</span><span class="num">21</span><span class="mo">мая</span>
+        </div>
+        <div class="date-chip" data-date="2026-05-22">
+          <span class="wd">Пт</span><span class="num">22</span><span class="mo">мая</span>
+        </div>
+        <div class="date-chip has-shift" data-date="2026-05-23">
+          <span class="wd">Сб</span><span class="num">23</span><span class="mo">мая</span>
+        </div>
+        <div class="date-chip is-plus" data-date="other">
+          <span class="num">+</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Date range (batch) ──────────────────── -->
+    <div class="batch-only">
+      <div class="sec-label">Период</div>
+      <div class="range-row">
+        <button class="range-cell" type="button">
+          <div class="label">С</div>
+          <div class="value">19 мая</div>
+          <div class="small">пн</div>
+        </button>
+        <span class="range-arrow">→</span>
+        <button class="range-cell" type="button">
+          <div class="label">По</div>
+          <div class="value">30 мая</div>
+          <div class="small">пт</div>
+        </button>
+      </div>
+
+      <div class="sec-label">Дни недели</div>
+      <div class="weekdays" id="weekdays">
+        <button class="wd-btn is-active" data-wd="1">Пн</button>
+        <button class="wd-btn is-active" data-wd="2">Вт</button>
+        <button class="wd-btn is-active" data-wd="3">Ср</button>
+        <button class="wd-btn is-active" data-wd="4">Чт</button>
+        <button class="wd-btn is-active" data-wd="5">Пт</button>
+        <button class="wd-btn" data-wd="6">Сб</button>
+        <button class="wd-btn" data-wd="0">Вс</button>
+      </div>
+      <div class="weekday-presets">
+        <a data-preset="weekdays">будни</a>
+        <a data-preset="weekend">выходные</a>
+        <a data-preset="all">каждый день</a>
+        <span class="dim">·</span>
+        <a data-preset="clear" class="dim">сбросить</a>
+      </div>
+    </div>
+
+    <!-- ── Facility ────────────────────────────── -->
+    <div class="sec-label">Объект</div>
+    <div class="facility-row" id="facilityRow">
+      <button class="fc-btn is-active" data-fac="ice_arena" type="button">
+        <span class="ic"><span class="material-symbols-outlined">ac_unit</span></span>
+        <span class="text">
+          <span class="name">Ледовая арена</span>
+          <span class="hint">массовое · хоккей</span>
+        </span>
+      </button>
+      <button class="fc-btn" data-fac="sports_pool" type="button">
+        <span class="ic"><span class="material-symbols-outlined">pool</span></span>
+        <span class="text">
+          <span class="name">Большой бассейн</span>
+          <span class="hint">25 м · 5 дорожек</span>
+        </span>
+      </button>
+      <button class="fc-btn" data-fac="small_pool" type="button">
+        <span class="ic"><span class="material-symbols-outlined">water_drop</span></span>
+        <span class="text">
+          <span class="name">Малый бассейн</span>
+          <span class="hint">детский</span>
+        </span>
+      </button>
+      <button class="fc-btn" data-fac="rowing_base" type="button">
+        <span class="ic"><span class="material-symbols-outlined">rowing</span></span>
+        <span class="text">
+          <span class="name">Гребная база</span>
+          <span class="hint">зал · штанга</span>
+        </span>
+      </button>
+    </div>
+
+    <!-- ── Time ─────────────────────────────────── -->
+    <div class="sec-label">Время</div>
+    <div class="time-row">
+      <button class="time-cell is-focus" type="button">
+        <div class="label">Начало</div>
+        <div class="value">09:45</div>
+      </button>
+      <button class="time-cell" type="button">
+        <div class="label">Конец</div>
+        <div class="value">11:15</div>
+      </button>
+    </div>
+
+    <div class="duration-pill">
+      <span class="material-symbols-outlined">schedule</span>
+      <span>длительность <strong>1&nbsp;ч&nbsp;30&nbsp;м</strong></span>
+    </div>
+
+    <div class="preset-row">
+      <button class="preset-chip" type="button">
+        <em>утренняя</em><span class="tm">07:30 – 09:00</span>
+      </button>
+      <button class="preset-chip" type="button">
+        <em>детская</em><span class="tm">09:45 – 11:15</span>
+      </button>
+      <button class="preset-chip" type="button">
+        <em>дневная</em><span class="tm">14:30 – 16:00</span>
+      </button>
+      <button class="preset-chip" type="button">
+        <em>вечерняя</em><span class="tm">17:30 – 19:30</span>
+      </button>
+      <button class="preset-chip" type="button">
+        <em>+30 мин</em>
+      </button>
+    </div>
+
+    <!-- ── Instructors ─────────────────────────── -->
+    <div class="sec-label">С кем работаю<span class="hint">только лёд</span></div>
+    <div class="insts" id="insts">
+      <button class="inst-chip is-selected" data-inst="lapchuk_as" type="button">
+        <span class="av">ЛА</span>Липчук А.С.
+      </button>
+      <button class="inst-chip is-selected" data-inst="krylychuk_ps" type="button">
+        <span class="av">КП</span>Крыльчук П.С.
+      </button>
+      <button class="inst-chip" data-inst="melnikova_ov" type="button">
+        <span class="av">МО</span>Мельникова О.В.
+      </button>
+      <button class="inst-chip" data-inst="ivshin_my" type="button">
+        <span class="av">ИМ</span>Ившина М.Ю.
+      </button>
+      <button class="inst-chip" data-inst="moiseenko_vv" type="button">
+        <span class="av">МВ</span>Моисеенко В.В.
+      </button>
+      <button class="inst-chip" data-inst="karavaychik_kv" type="button">
+        <span class="av">КК</span>Каравайчик К.В.
+      </button>
+    </div>
+
+    <!-- ── Note ─────────────────────────────────── -->
+    <div class="sec-label">Комментарий <span class="hint">опционально</span></div>
+    <div class="note-wrap">
+      <textarea class="note" placeholder="например, замена Мельниковой · группа U-12"></textarea>
+    </div>
+
+    <!-- ── Smart suggestion ─────────────────────── -->
+    <div class="suggest single-only" id="suggestSingle">
+      <span class="material-symbols-outlined">history</span>
+      <div class="body">
+        Такая&nbsp;же смена была <strong>17&nbsp;мая</strong>&nbsp;— <a>повторить точь&#8209;в&#8209;точь&nbsp;→</a>
+      </div>
+    </div>
+
+    <!-- ── Batch preview ───────────────────────── -->
+    <div class="batch-preview batch-only" id="batchPreview">
+      <div class="kicker">Будет создано</div>
+      <div class="head"><em>10 смен</em> в&nbsp;течение 12&nbsp;дней</div>
+      <div class="body">
+        <strong>пн, вт, ср, чт, пт</strong> с&nbsp;19&nbsp;по&nbsp;30&nbsp;мая · 09:45 – 11:15 ·
+        Ледовая&nbsp;арена · с&nbsp;Липчуком и&nbsp;Крыльчуком
+      </div>
+    </div>
+
+    <!-- ── Actions ──────────────────────────────── -->
+    <div class="actions">
+      <button class="btn add-only" type="button">
+        <span class="material-symbols-outlined">check</span>
+        <span>Добавить смену</span>
+      </button>
+      <button class="btn edit-only" type="button">
+        <span class="material-symbols-outlined">check</span>
+        <span>Сохранить изменения</span>
+      </button>
+      <button class="btn secondary" type="button">Отменить</button>
+      <button class="btn danger edit-only" type="button">
+        <span class="material-symbols-outlined">delete_outline</span>
+        <span>Удалить эту смену</span>
+      </button>
+    </div>
+
+    <!-- ── Recent shifts ────────────────────────── -->
+    <div class="sec-label single-only">
+      Ближайшие смены
+      <span class="hint">тап → редактировать</span>
+    </div>
+
+    <section class="recent single-only">
+      <div class="recent-row is-site is-editing" data-shift="1">
+        <div class="when"><span class="num">21</span><span class="wd">чт май</span></div>
+        <div class="body">
+          <p class="place">Ледовая арена</p>
+          <span class="time">09:45 — 11:15 · <span class="src site">по&nbsp;сайту</span></span>
+        </div>
+        <div class="chev"><span class="material-symbols-outlined">edit</span></div>
+      </div>
+      <div class="recent-row is-site" data-shift="2">
+        <div class="when"><span class="num">20</span><span class="wd">ср май</span></div>
+        <div class="body">
+          <p class="place">Большой бассейн</p>
+          <span class="time">16:30 — 18:00 · <span class="src site">по&nbsp;сайту</span></span>
+        </div>
+        <div class="chev"><span class="material-symbols-outlined">chevron_right</span></div>
+      </div>
+      <div class="recent-row" data-shift="3">
+        <div class="when"><span class="num">19</span><span class="wd">вт май</span></div>
+        <div class="body">
+          <p class="place">Малый бассейн</p>
+          <span class="time">14:30 — 16:00 · <span class="src">по&nbsp;графику</span></span>
+        </div>
+        <div class="chev"><span class="material-symbols-outlined">chevron_right</span></div>
+      </div>
+      <div class="recent-row is-site" data-shift="4">
+        <div class="when"><span class="num">18</span><span class="wd">пн май</span></div>
+        <div class="body">
+          <p class="place">Ледовая арена</p>
+          <span class="time">07:30 — 09:00 · <span class="src site">по&nbsp;сайту</span></span>
+        </div>
+        <div class="chev"><span class="material-symbols-outlined">chevron_right</span></div>
+      </div>
+    </section>
+
+    <div class="home-indicator"></div>
+  </div>
+
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+  <script type="text/babel" src="tweaks-panel.jsx"></script>
+
+  <div id="tweaks-root"></div>
+
+  <script type="text/babel" data-presets="react">
+    const { useEffect } = React;
+
+    const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+      "theme": "dark",
+      "mode": "batch",
+      "editing": false
+    }/*EDITMODE-END*/;
+
+    function App() {
+      const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
+
+      useEffect(() => {
+        document.documentElement.classList.remove('dark', 'light');
+        document.documentElement.classList.add(t.theme);
+      }, [t.theme]);
+
+      useEffect(() => {
+        const phone = document.getElementById('phone');
+        phone.dataset.mode = t.mode;
+        phone.dataset.edit = t.editing ? 'true' : 'false';
+
+        const headerTitle = document.getElementById('headerTitle');
+        const headerMeta = document.getElementById('headerMeta');
+        if (t.mode === 'batch') {
+          headerTitle.textContent = 'Серия смен';
+          headerMeta.textContent = 'добавляем по дням недели';
+        } else if (t.editing) {
+          headerTitle.textContent = 'Редактировать смену';
+          headerMeta.textContent = '21 мая · черновик с изменениями';
+        } else {
+          headerTitle.textContent = 'Новая смена';
+          headerMeta.textContent = 'черновик · не сохранён';
+        }
+
+        document.querySelectorAll('#modeSwitch button').forEach(b => {
+          b.classList.toggle('is-active', b.dataset.mode === t.mode);
+        });
+      }, [t.mode, t.editing]);
+
+      // Wire up date strip
+      useEffect(() => {
+        document.querySelectorAll('#dateStrip .date-chip').forEach(chip => {
+          chip.onclick = () => {
+            document.querySelectorAll('#dateStrip .date-chip').forEach(c => c.classList.remove('is-active'));
+            chip.classList.add('is-active');
+          };
+        });
+
+        // Facility
+        document.querySelectorAll('#facilityRow .fc-btn').forEach(btn => {
+          btn.onclick = () => {
+            document.querySelectorAll('#facilityRow .fc-btn').forEach(b => b.classList.remove('is-active'));
+            btn.classList.add('is-active');
+          };
+        });
+
+        // Instructor chips
+        document.querySelectorAll('#insts .inst-chip').forEach(chip => {
+          chip.onclick = () => chip.classList.toggle('is-selected');
+        });
+
+        // Weekday buttons
+        document.querySelectorAll('#weekdays .wd-btn').forEach(btn => {
+          btn.onclick = () => btn.classList.toggle('is-active');
+        });
+
+        // Weekday presets
+        document.querySelectorAll('.weekday-presets a').forEach(a => {
+          a.onclick = () => {
+            const preset = a.dataset.preset;
+            const wd2active = (vals) => {
+              document.querySelectorAll('#weekdays .wd-btn').forEach(b => {
+                b.classList.toggle('is-active', vals.includes(b.dataset.wd));
+              });
+            };
+            if (preset === 'weekdays') wd2active(['1','2','3','4','5']);
+            if (preset === 'weekend')  wd2active(['6','0']);
+            if (preset === 'all')      wd2active(['0','1','2','3','4','5','6']);
+            if (preset === 'clear')    wd2active([]);
+          };
+        });
+      }, []);
+
+      return (
+        <TweaksPanel title="Tweaks">
+          <TweakSection title="Сценарий">
+            <TweakRadio
+              label="Режим"
+              value={t.mode}
+              onChange={v => setTweak('mode', v)}
+              options={[
+                { value: 'single', label: 'Одна' },
+                { value: 'batch',  label: 'Серия' },
+              ]}
+            />
+            <TweakToggle
+              label="Редактирование существующей"
+              value={t.editing}
+              onChange={v => setTweak('editing', v)}
+            />
+          </TweakSection>
+
+          <TweakSection title="Тема">
+            <TweakRadio
+              label="Палитра"
+              value={t.theme}
+              onChange={v => setTweak('theme', v)}
+              options={[
+                { value: 'dark',  label: 'Тёмная' },
+                { value: 'light', label: 'Светлая' },
+              ]}
+            />
+          </TweakSection>
+        </TweaksPanel>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('tweaks-root')).render(<App />);
+  </script>
+
+</body>
+</html>

@@ -1,0 +1,9 @@
+node_modules/
+.vercel/
+.env
+.env.local
+*.log
+.DS_Store
+
+# Временные файлы разведки (на случай повторного скачивания)
+polessu_*.tmp.html

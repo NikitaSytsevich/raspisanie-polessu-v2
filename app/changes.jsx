@@ -1,0 +1,262 @@
+// ──────────────────────────────────────────────────────────────────
+// app/changes.jsx — site verification screen
+// ──────────────────────────────────────────────────────────────────
+
+const { useState: _cs, useEffect: _ce, useMemo: _cm } = React;
+
+function ChangesScreen() {
+  const router = window.useRouter();
+  const toast = window.UI.useToast();
+  const [changes, setChanges] = _cs(() => window.Data.loadSiteChanges());
+  const [refreshing, setRefreshing] = _cs(false);
+  const shifts = _cm(() => window.Data.loadShifts(), []);
+
+  const latest = changes[0];
+  const ackPending = !latest?.acknowledgedAt && (latest?.hasChanges || latest?.hasSourceIssues);
+
+  const facilities = window.Data.FACILITIES;
+
+  let state = 'stable';
+  if (latest && ackPending) {
+    if (latest.hasSourceIssues && !latest.hasChanges) state = 'issue';
+    else if (latest.affectsMe) state = 'important';
+    else state = 'changes';
+  }
+
+  // Group latest events by facility + date
+  const groupedEvents = _cm(() => {
+    if (!latest?.events?.length) return [];
+    const map = new Map();
+    for (const ev of latest.events) {
+      const key = `${ev.facilityId}::${ev.date}`;
+      if (!map.has(key)) map.set(key, { facilityId: ev.facilityId, date: ev.date, events: [] });
+      map.get(key).events.push(ev);
+    }
+    return Array.from(map.values());
+  }, [latest]);
+
+  // Affected shifts (events that link to my shift)
+  const affectedShifts = _cm(() => {
+    if (!latest?.events?.length) return [];
+    const out = [];
+    for (const ev of latest.events) {
+      if (!ev.affectsShiftId) continue;
+      const shift = shifts.find(s => s.id === ev.affectsShiftId);
+      if (shift) out.push({ shift, event: ev });
+    }
+    return out;
+  }, [latest, shifts]);
+
+  function handleAck() {
+    if (!latest) return;
+    setChanges(window.Data.ackChange(latest.id));
+    toast.show('Помечено как просмотренное');
+  }
+
+  async function handleRefresh() {
+    setRefreshing(true);
+    await window.Data.fetchSchedule({ force: true });
+    setRefreshing(false);
+    toast.show('Сверка обновлена');
+  }
+
+  const heroByState = {
+    important: {
+      kicker: 'Сегодня в ' + new Date(latest?.checkedAt || Date.now()).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }),
+      title: <>Затронута<br/><em>ваша смена</em></>,
+      brandMeta: 'требует внимания',
+    },
+    changes: {
+      kicker: 'Сегодня в ' + new Date(latest?.checkedAt || Date.now()).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }),
+      title: <>Есть<br/><em>обновления</em></>,
+      brandMeta: 'новые события',
+    },
+    issue: {
+      kicker: 'Сегодня в 10:14',
+      title: <>Проверка<br/><em>неполная</em></>,
+      brandMeta: '3 из 4 источников',
+    },
+    stable: {
+      kicker: 'Сегодня в ' + new Date(latest?.checkedAt || Date.now()).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }),
+      title: <>Без новых<br/><em>изменений</em></>,
+      brandMeta: 'всё тихо',
+    },
+  };
+  const hero = heroByState[state];
+
+  return (
+    <div className={`screen changes-screen`} data-state={state}>
+      <window.UI.StatusBar/>
+      <window.UI.AppHeader
+        left={<window.UI.IconBtn icon="arrow_back" title="Назад" onClick={() => router.pop()}/>}
+        title="Проверка сайта"
+        meta={hero.brandMeta}
+        metaImportant={state !== 'stable'}
+        right={<window.UI.IconBtn icon="refresh" title="Перепроверить" onClick={handleRefresh}/>}
+      />
+
+      <div className="screen-scroll">
+        <section className="hero changes-hero">
+          <p className="hero-kicker">{hero.kicker}</p>
+          <h1 className="hero-title">{hero.title}</h1>
+          <p className="hero-lede">
+            {state === 'important' && affectedShifts[0] && <>
+              <strong>{window.Data.getFacility(affectedShifts[0].event.facilityId)?.name}</strong>
+              {' '}{affectedShifts[0].event.kind === 'add' ? 'добавил сеанс' : 'изменил сеанс'}{' '}
+              <strong>{affectedShifts[0].event.start}&nbsp;— {affectedShifts[0].event.end}</strong>.
+              {' '}Это пересекается с вашей сменой <strong>{affectedShifts[0].shift.start}&nbsp;— {affectedShifts[0].shift.end}</strong>.
+            </>}
+            {state === 'changes' && <>Последняя проверка нашла {latest?.events?.length || 0}&nbsp;событий. Ваши смены не затронуты.</>}
+            {state === 'stable' && <>Последняя сверка не нашла различий с предыдущим снимком. Все четыре источника ответили, ваши смены актуальны.</>}
+            {state === 'issue' && <>Не все источники ответили. Повторим попытку через несколько минут.</>}
+          </p>
+          <div className="hero-meta">
+            <span className="strong">4 источника</span>
+            <span className="sep"/>
+            <span>проверено {window.Data.formatRelativeMinutes(latest?.checkedAt || new Date().toISOString())}</span>
+          </div>
+        </section>
+
+        {affectedShifts.length > 0 && (
+          <>
+            <window.UI.SecLabel count={affectedShifts.length}>Влияние на мои смены</window.UI.SecLabel>
+            <section className="affected">
+              {affectedShifts.map(({ shift, event }) => (
+                <AffectedCard key={shift.id} shift={shift} event={event}/>
+              ))}
+            </section>
+          </>
+        )}
+
+        {groupedEvents.length > 0 && (
+          <>
+            <window.UI.SecLabel count={latest.events.length}>Что изменилось</window.UI.SecLabel>
+            <section className="diff">
+              {groupedEvents.map((g, i) => (
+                <DiffGroup key={i} group={g}/>
+              ))}
+            </section>
+          </>
+        )}
+
+        <window.UI.SecLabel count={4}>Источники</window.UI.SecLabel>
+        <section className="sources">
+          {facilities.map(f => (
+            <div key={f.id} className={`src-row ${f.id === 'rowing_base' ? 'tmpl' : 'ok'}`}>
+              <span className="dot"/>
+              <span className="name">{f.name}</span>
+              <span className="status">{f.id === 'rowing_base' ? 'шаблон' : 'ок · ' + new Date().toLocaleTimeString('ru-RU', {hour:'2-digit',minute:'2-digit'})}</span>
+            </div>
+          ))}
+        </section>
+
+        <window.UI.SecLabel count={changes.length}>Журнал проверок</window.UI.SecLabel>
+        <section className="journal">
+          {changes.map((c, i) => (
+            <JournalRow key={c.id} entry={c} isLatest={i === 0}/>
+          ))}
+        </section>
+
+        {ackPending && (
+          <div className="ack-row">
+            <button className="ack-btn" onClick={handleAck}>
+              <span className="material-symbols-outlined">done_all</span>
+              <span>Просмотрено</span>
+            </button>
+          </div>
+        )}
+
+        <window.UI.HomeIndicator/>
+      </div>
+    </div>
+  );
+}
+
+function AffectedCard({ shift, event }) {
+  const fac = window.Data.getFacility(shift.facilityId);
+  const kindWord = event.kind === 'add' ? 'добавлен' : event.kind === 'rem' ? 'снят' : 'перенесён';
+  return (
+    <article className="aff-card">
+      <div className="time">
+        <span className="from">{shift.start}</span>
+        <span className="to">— {shift.end}</span>
+      </div>
+      <div className="body">
+        <p className="place">{fac?.name}</p>
+        <p className="when">{window.Data.formatDayHeading(shift.date)} · по сайту</p>
+        <p className="conflict">
+          <span className="conflict-glyph">↳</span>
+          сеанс «{event.activity || 'без названия'}» {kindWord} в {event.start}&nbsp;— {event.end}.
+        </p>
+      </div>
+    </article>
+  );
+}
+
+function DiffGroup({ group }) {
+  const fac = window.Data.getFacility(group.facilityId);
+  return (
+    <div className="diff-group">
+      <div className="diff-group-head">
+        <span className="diff-group-name"><em>{fac?.name}</em></span>
+        <span className="diff-group-when">{window.Data.formatDayHeading(group.date)}</span>
+      </div>
+      {group.events.map(ev => <DiffRow key={ev.id} event={ev}/>)}
+    </div>
+  );
+}
+
+function DiffRow({ event }) {
+  const isAdd = event.kind === 'add';
+  const isRem = event.kind === 'rem';
+  const isMod = event.kind === 'mod';
+  const glyph = isAdd ? '+' : isRem ? '−' : '↔';
+  const kindWord = isAdd ? 'добавлен' : isRem ? 'снят' : 'перенесён';
+  return (
+    <div className={`diff-row ${isAdd ? 'is-add' : ''} ${isRem ? 'is-rem' : ''} ${isMod ? 'is-mod' : ''} ${event.affectsShiftId ? 'affects-me' : ''}`}>
+      <span className="glyph">{glyph}</span>
+      <span className="when">{event.start}&nbsp;—&nbsp;{event.end}</span>
+      <span className="body">
+        <span className="activity">{event.activity || 'Сеанс'}</span>
+        <span className="kind">{kindWord}</span>
+        {isMod && event.wasStart && <span className="was">было {event.wasStart}&nbsp;—&nbsp;{event.wasEnd}</span>}
+      </span>
+    </div>
+  );
+}
+
+function JournalRow({ entry, isLatest }) {
+  if (entry.baseline) {
+    return (
+      <div className="jr-row is-baseline">
+        <span className="time">{window.Data.formatDayHeading(entry.checkedAt.slice(0, 10))}</span>
+        <span className="desc">первый локальный снимок</span>
+        <span className="pill">basis</span>
+      </div>
+    );
+  }
+  const t = new Date(entry.checkedAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+  const eventCount = entry.events?.length || 0;
+  const isStable = !entry.hasChanges;
+  const isAck = Boolean(entry.acknowledgedAt);
+  return (
+    <div className={`jr-row ${isLatest && !isAck ? 'is-active' : ''} ${isStable ? 'is-stable' : ''}`}>
+      <span className="time">{t}</span>
+      <span className="desc">
+        {isStable ? 'без изменений' : <><span className="em">{eventCount} {pluralizeEvents(eventCount)}</span></>}
+      </span>
+      <span className="pill">
+        {isStable ? 'тихо' : isLatest && !isAck ? 'сейчас' : 'просмотрено'}
+      </span>
+    </div>
+  );
+}
+
+function pluralizeEvents(n) {
+  const last = n % 10, last2 = n % 100;
+  if (last === 1 && last2 !== 11) return 'событие';
+  if (last >= 2 && last <= 4 && (last2 < 12 || last2 > 14)) return 'события';
+  return 'событий';
+}
+
+window.ChangesScreen = ChangesScreen;

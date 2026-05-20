@@ -1,0 +1,16 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "functions": {
+    "api/schedule.js": { "maxDuration": 15, "memory": 256 }
+  },
+  "rewrites": [
+    { "source": "/", "destination": "/index.html" }
+  ],
+  "cleanUrls": true,
+  "headers": [
+    {
+      "source": "/app/(.*)",
+      "headers": [{ "key": "Cache-Control", "value": "public, max-age=300, must-revalidate" }]
+    }
+  ]
+}

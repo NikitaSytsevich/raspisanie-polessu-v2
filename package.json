@@ -1,0 +1,17 @@
+{
+  "name": "raspisanie-polessu",
+  "version": "1.0.0",
+  "description": "Парсер расписания спортивных объектов ПолесГУ — фронтенд и Vercel-функция",
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "node dev-server.js",
+    "test": "node --test api/_parsers/*.test.js"
+  },
+  "dependencies": {
+    "cheerio": "^1.0.0",
+    "undici": "^6.21.0"
+  }
+}

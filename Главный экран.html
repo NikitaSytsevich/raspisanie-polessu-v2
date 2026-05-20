@@ -1,0 +1,1575 @@
+<!DOCTYPE html>
+<html lang="ru" class="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Расписание — главный экран</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400;1,6..72,500&family=Inter:wght@400;500;600;700&display=swap"
+    rel="stylesheet"
+  />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,200,0,0&display=block"
+    rel="stylesheet"
+  />
+  <style>
+    :root {
+      --studio-bg: #0d0b0a;
+      --studio-grid: rgba(245, 241, 235, 0.04);
+    }
+
+    html.dark {
+      --bg: #181513;
+      --bg-elevated: #23201d;
+      --bg-raised: #2c2824;
+      --bg-sunken: #14110f;
+      --hairline: rgba(245, 241, 235, 0.08);
+      --hairline-strong: rgba(245, 241, 235, 0.14);
+      --border: rgba(217, 119, 87, 0.18);
+      --text: #f5f1eb;
+      --text-strong: #fffaf3;
+      --text-muted: #a8a098;
+      --text-subtle: #6b665f;
+      --accent: #d97757;
+      --accent-hover: #c96442;
+      --accent-soft: rgba(217, 119, 87, 0.13);
+      --accent-glow: rgba(217, 119, 87, 0.34);
+      --accent-ink: #f5cdb8;
+      --success: #7a9e7e;
+      --warning: #c9a96e;
+    }
+
+    html.light {
+      --bg: #f5f1eb;
+      --bg-elevated: #ffffff;
+      --bg-raised: #efe9df;
+      --bg-sunken: #ebe4d7;
+      --hairline: rgba(24, 21, 19, 0.08);
+      --hairline-strong: rgba(24, 21, 19, 0.14);
+      --border: rgba(201, 100, 66, 0.22);
+      --text: #181513;
+      --text-strong: #0a0807;
+      --text-muted: #5a544c;
+      --text-subtle: #8a847a;
+      --accent: #c96442;
+      --accent-hover: #b3522f;
+      --accent-soft: rgba(201, 100, 66, 0.10);
+      --accent-glow: rgba(201, 100, 66, 0.24);
+      --accent-ink: #6b2a14;
+      --success: #4f7558;
+      --warning: #93732e;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+
+    body {
+      background: var(--studio-bg);
+      min-height: 100dvh;
+      font-family: "Inter", system-ui, sans-serif;
+      color: var(--text);
+      -webkit-font-smoothing: antialiased;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 56px 16px 96px;
+      background-image:
+        radial-gradient(circle at 18% 4%, rgba(217, 119, 87, 0.06), transparent 38%),
+        radial-gradient(circle at 88% 22%, rgba(217, 119, 87, 0.04), transparent 42%);
+    }
+
+    .studio-head {
+      max-width: 480px;
+      margin-bottom: 28px;
+      color: #f5f1eb;
+    }
+
+    .studio-head .eyebrow {
+      font-family: "Newsreader", Georgia, serif;
+      font-style: italic;
+      font-size: 13px;
+      letter-spacing: 0.02em;
+      color: var(--accent);
+      margin-bottom: 6px;
+    }
+
+    .studio-head h1 {
+      font-family: "Newsreader", Georgia, serif;
+      font-weight: 500;
+      font-size: 28px;
+      letter-spacing: -0.02em;
+      margin: 0;
+      color: #f5f1eb;
+    }
+
+    .studio-head p {
+      margin: 8px 0 0;
+      font-size: 13px;
+      line-height: 1.55;
+      color: #a8a098;
+      max-width: 460px;
+    }
+
+    .material-symbols-outlined {
+      font-family: 'Material Symbols Outlined';
+      font-weight: normal;
+      font-style: normal;
+      line-height: 1;
+      letter-spacing: normal;
+      text-transform: none;
+      display: inline-block;
+      white-space: nowrap;
+      direction: ltr;
+      font-feature-settings: 'liga';
+      -webkit-font-feature-settings: 'liga';
+      font-variation-settings: 'FILL' 0, 'wght' 200, 'GRAD' 0, 'opsz' 24;
+      font-size: 20px;
+      vertical-align: middle;
+    }
+
+    /* ─────────────────────────────────────────────────
+       Phone shell
+       ───────────────────────────────────────────────── */
+    .phone {
+      width: 390px;
+      min-height: 844px;
+      background: var(--bg);
+      color: var(--text);
+      border-radius: 44px;
+      border: 1px solid rgba(245, 241, 235, 0.06);
+      overflow: hidden;
+      position: relative;
+      box-shadow:
+        0 30px 80px -40px rgba(0, 0, 0, 0.9),
+        0 0 0 8px #1a1715,
+        0 0 0 9px rgba(245, 241, 235, 0.04);
+      display: flex;
+      flex-direction: column;
+    }
+
+    html.light .phone {
+      box-shadow:
+        0 30px 80px -40px rgba(0, 0, 0, 0.6),
+        0 0 0 8px #1a1715,
+        0 0 0 9px rgba(245, 241, 235, 0.04);
+    }
+
+    /* Status bar */
+    .status-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 18px 28px 6px;
+      font-size: 15px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      color: var(--text);
+      letter-spacing: -0.01em;
+    }
+    .status-bar .icons {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .status-bar .icons svg path,
+    .status-bar .icons svg rect,
+    .status-bar .icons svg circle {
+      fill: var(--text);
+    }
+    .status-bar .icons svg .outline {
+      fill: none;
+      stroke: var(--text);
+      stroke-opacity: 0.35;
+    }
+
+    /* Notch */
+    .notch {
+      position: absolute;
+      top: 12px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 120px;
+      height: 32px;
+      background: #000;
+      border-radius: 18px;
+      z-index: 30;
+    }
+
+    /* App header */
+    .app-header {
+      padding: 14px 22px 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .app-header .brand {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .app-header .brand-name {
+      font-family: "Newsreader", Georgia, serif;
+      font-weight: 500;
+      font-size: 18px;
+      letter-spacing: -0.01em;
+      color: var(--text);
+    }
+
+    .app-header .brand-meta {
+      font-size: 11px;
+      color: var(--text-subtle);
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .app-header .brand-meta .pulse {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: var(--success);
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--success) 18%, transparent);
+    }
+
+    .icon-btn {
+      width: 38px;
+      height: 38px;
+      border-radius: 14px;
+      border: 1px solid var(--hairline);
+      background: transparent;
+      color: var(--text-muted);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 160ms ease;
+    }
+    .icon-btn:hover {
+      background: var(--bg-elevated);
+      color: var(--text);
+      border-color: var(--hairline-strong);
+    }
+    .icon-btn:active { transform: scale(0.96); }
+    .icon-btn .material-symbols-outlined { font-size: 22px; }
+
+    /* ─────────────────────────────────────────────────
+       Hero day
+       ───────────────────────────────────────────────── */
+    .hero {
+      padding: 14px 24px 18px;
+    }
+
+    .hero-kicker {
+      font-family: "Newsreader", Georgia, serif;
+      font-style: italic;
+      font-size: 14px;
+      color: var(--accent);
+      letter-spacing: 0.005em;
+      margin: 0 0 4px;
+    }
+
+    .hero-title {
+      font-family: "Newsreader", Georgia, serif;
+      font-weight: 500;
+      font-size: 38px;
+      line-height: 1;
+      letter-spacing: -0.025em;
+      color: var(--text-strong);
+      margin: 0;
+    }
+
+    .hero-title em {
+      font-style: italic;
+      font-weight: 500;
+      color: var(--accent);
+    }
+
+    .hero-stats {
+      margin-top: 14px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px 14px;
+      font-size: 12px;
+      color: var(--text-muted);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .hero-stats .stat {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .hero-stats .stat strong {
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    .hero-stats .sep {
+      width: 3px;
+      height: 3px;
+      border-radius: 50%;
+      background: var(--text-subtle);
+    }
+
+    /* ─────────────────────────────────────────────────
+       Week strip
+       ───────────────────────────────────────────────── */
+    .week-strip {
+      margin: 0 16px 14px;
+      padding: 10px 6px 8px;
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 2px;
+      border-top: 1px solid var(--hairline);
+      border-bottom: 1px solid var(--hairline);
+    }
+
+    .wd {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 3px;
+      padding: 7px 0;
+      border-radius: 12px;
+      cursor: pointer;
+      position: relative;
+    }
+    .wd:hover { background: var(--bg-elevated); }
+
+    .wd .label {
+      font-size: 10px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-subtle);
+    }
+
+    .wd .num {
+      font-family: "Newsreader", Georgia, serif;
+      font-weight: 500;
+      font-size: 16px;
+      color: var(--text-muted);
+      letter-spacing: -0.01em;
+    }
+
+    .wd .dot {
+      width: 4px;
+      height: 4px;
+      border-radius: 50%;
+      background: transparent;
+    }
+
+    .wd.has .dot { background: var(--text-subtle); }
+    .wd.has .num { color: var(--text); }
+
+    .wd.today {
+      background: var(--accent-soft);
+    }
+    .wd.today .label { color: var(--accent); }
+    .wd.today .num { color: var(--text-strong); font-weight: 600; }
+    .wd.today .dot { background: var(--accent); }
+
+    .wd.off .num { color: var(--text-subtle); font-style: italic; }
+    .wd.off .dot { background: transparent; }
+
+    /* ─────────────────────────────────────────────────
+       Now strip
+       ───────────────────────────────────────────────── */
+    .now-strip {
+      margin: 0 22px 8px;
+      padding: 12px 14px;
+      border-radius: 14px;
+      background: var(--accent-soft);
+      border: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .now-strip .pulse {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 0 4px var(--accent-glow);
+      flex-shrink: 0;
+      animation: pulse 1.8s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { box-shadow: 0 0 0 4px var(--accent-glow); }
+      50% { box-shadow: 0 0 0 8px transparent; }
+    }
+
+    .now-strip .body {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+    }
+
+    .now-strip .label {
+      font-size: 10px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--accent);
+      font-weight: 700;
+      font-feature-settings: "tnum";
+    }
+
+    .now-strip .title {
+      font-family: "Newsreader", Georgia, serif;
+      font-size: 16px;
+      font-weight: 500;
+      color: var(--text);
+      letter-spacing: -0.01em;
+      line-height: 1.2;
+    }
+
+    .now-strip .countdown {
+      font-size: 12px;
+      color: var(--text-muted);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .now-strip .countdown strong {
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    /* ─────────────────────────────────────────────────
+       Timeline
+       ───────────────────────────────────────────────── */
+    .timeline {
+      padding: 12px 22px 24px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .seg {
+      display: grid;
+      grid-template-columns: 64px 1fr;
+      gap: 16px;
+      padding: 10px 0;
+      position: relative;
+    }
+
+    .seg .time {
+      font-variant-numeric: tabular-nums;
+      padding-top: 2px;
+    }
+
+    .seg .time .from {
+      font-family: "Newsreader", Georgia, serif;
+      font-weight: 500;
+      font-size: 19px;
+      letter-spacing: -0.02em;
+      color: var(--text);
+      display: block;
+      line-height: 1;
+    }
+
+    .seg .time .to {
+      font-size: 12px;
+      color: var(--text-subtle);
+      margin-top: 5px;
+      display: block;
+    }
+
+    .seg .card {
+      background: var(--bg-elevated);
+      border: 1px solid var(--hairline);
+      border-radius: 14px;
+      padding: 12px 14px;
+      position: relative;
+      transition: transform 200ms ease, box-shadow 200ms ease;
+    }
+
+    .seg .card .place {
+      font-family: "Newsreader", Georgia, serif;
+      font-weight: 500;
+      font-size: 17px;
+      letter-spacing: -0.01em;
+      color: var(--text-strong);
+      line-height: 1.2;
+      margin: 0 0 4px;
+    }
+
+    .seg .card .activity {
+      font-size: 13px;
+      color: var(--text-muted);
+      line-height: 1.4;
+      margin: 0;
+    }
+
+    .seg .card .meta-row {
+      margin-top: 10px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px 10px;
+      font-size: 11px;
+      color: var(--text-subtle);
+    }
+
+    .seg .card .duration {
+      font-variant-numeric: tabular-nums;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    .seg .card .meta-row .sep {
+      width: 3px;
+      height: 3px;
+      border-radius: 50%;
+      background: var(--text-subtle);
+    }
+
+    .src-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 8px;
+      border-radius: 999px;
+      font-size: 10px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      font-weight: 700;
+      background: var(--bg-raised);
+      color: var(--text-subtle);
+      border: 1px solid var(--hairline);
+    }
+
+    .src-pill .material-symbols-outlined { font-size: 13px; }
+
+    /* SITE-VERIFIED — the accent state */
+    .seg.is-site .card {
+      background:
+        linear-gradient(180deg, var(--accent-soft) 0%, var(--bg-elevated) 60%);
+      border-color: var(--border);
+      box-shadow: inset 3px 0 0 0 var(--accent);
+    }
+
+    .seg.is-site .src-pill {
+      background: var(--accent-soft);
+      color: var(--accent);
+      border-color: var(--border);
+    }
+
+    .seg.is-site .time .from {
+      color: var(--accent);
+    }
+
+    /* NOW — active block */
+    .seg.is-now .card {
+      box-shadow:
+        inset 3px 0 0 0 var(--accent),
+        0 0 0 1px var(--border),
+        0 12px 32px -20px var(--accent-glow);
+    }
+
+    .seg.is-now .card::after {
+      content: '';
+      position: absolute;
+      top: 14px;
+      right: 14px;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 0 4px var(--accent-glow);
+      animation: pulse 1.8s ease-in-out infinite;
+    }
+
+    .seg.is-personal .card {
+      background: var(--bg-elevated);
+      border-style: dashed;
+      border-color: var(--hairline-strong);
+    }
+
+    .seg.is-past .card {
+      opacity: 0.55;
+    }
+
+    .seg.is-past .time .from,
+    .seg.is-past .time .to,
+    .seg.is-past .card .place {
+      color: var(--text-muted);
+    }
+
+    /* ─────────────────────────────────────────────────
+       Break dividers
+       ───────────────────────────────────────────────── */
+    .brk {
+      display: grid;
+      grid-template-columns: 64px 1fr;
+      gap: 16px;
+      padding: 3px 0;
+      align-items: center;
+    }
+
+    .brk .brk-spine {
+      display: flex;
+      justify-content: flex-end;
+      padding-right: 12px;
+      font-size: 11px;
+      color: var(--text-subtle);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .brk .brk-line {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 4px;
+    }
+
+    .brk .brk-line .rule {
+      flex: 1;
+      height: 1px;
+      background-image: linear-gradient(to right, var(--hairline-strong) 50%, transparent 50%);
+      background-size: 6px 1px;
+      background-repeat: repeat-x;
+    }
+
+    .brk .brk-line .label {
+      font-size: 11px;
+      letter-spacing: 0.04em;
+      color: var(--text-subtle);
+      font-style: italic;
+      font-family: "Newsreader", Georgia, serif;
+    }
+
+    .brk .brk-line .label strong {
+      font-style: normal;
+      font-family: "Inter", system-ui, sans-serif;
+      font-weight: 600;
+      font-size: 10px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-right: 4px;
+    }
+
+    .brk.is-ice .brk-line .label strong { color: #8ab4d4; }
+    .brk.is-cross .brk-line .label strong { color: var(--warning); }
+
+    /* ─────────────────────────────────────────────────
+       Changes-from-site card (bottom)
+       ───────────────────────────────────────────────── */
+    .site-card {
+      margin: 4px 22px 0;
+      padding: 16px 16px 14px;
+      border-radius: 18px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--hairline);
+      cursor: pointer;
+      transition: all 200ms ease;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .site-card:hover {
+      border-color: var(--border);
+      background: var(--bg-raised);
+    }
+
+    .site-card .row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .site-card .icon-cell {
+      width: 36px;
+      height: 36px;
+      border-radius: 12px;
+      background: var(--bg-raised);
+      border: 1px solid var(--hairline);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      color: var(--text-muted);
+    }
+    .site-card .icon-cell .material-symbols-outlined { font-size: 20px; }
+
+    .site-card .body { flex: 1; min-width: 0; }
+
+    .site-card .kicker {
+      font-size: 10px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--text-subtle);
+      font-weight: 700;
+      margin-bottom: 3px;
+    }
+
+    .site-card .head {
+      font-family: "Newsreader", Georgia, serif;
+      font-weight: 500;
+      font-size: 16px;
+      letter-spacing: -0.01em;
+      color: var(--text);
+      line-height: 1.25;
+    }
+
+    .site-card .head em {
+      font-style: italic;
+      color: var(--accent);
+    }
+
+    .site-card .arrow {
+      color: var(--text-subtle);
+    }
+
+    .site-card .footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-top: 10px;
+      border-top: 1px solid var(--hairline);
+      font-size: 11px;
+      color: var(--text-subtle);
+    }
+
+    .site-card .footer .meta {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .site-card .footer .open-link {
+      color: var(--accent);
+      font-weight: 600;
+      font-family: "Newsreader", Georgia, serif;
+      font-style: italic;
+      font-size: 13px;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    /* Home indicator */
+    .home-indicator {
+      width: 134px;
+      height: 5px;
+      border-radius: 999px;
+      background: var(--text);
+      opacity: 0.6;
+      margin: 12px auto 8px;
+    }
+
+    /* ─────────────────────────────────────────────────
+       Density variants
+       ───────────────────────────────────────────────── */
+    .phone.density-compact .timeline { padding-top: 8px; padding-bottom: 18px; }
+    .phone.density-compact .seg { padding: 6px 0; }
+    .phone.density-compact .seg .card { padding: 9px 12px; }
+    .phone.density-compact .seg .card .place { font-size: 16px; }
+    .phone.density-compact .seg .card .activity { font-size: 12.5px; }
+    .phone.density-compact .seg .card .meta-row { margin-top: 6px; }
+
+    .phone.density-roomy .timeline { padding-top: 16px; }
+    .phone.density-roomy .seg { padding: 14px 0; }
+
+    /* Variant: where the accent stripe lives */
+    .phone.accent-fill .seg.is-site .card {
+      background: var(--accent-soft);
+      box-shadow: none;
+      border-color: var(--border);
+    }
+
+    .phone.accent-dot .seg.is-site .card {
+      background: var(--bg-elevated);
+      box-shadow: none;
+      border-color: var(--border);
+    }
+    .phone.accent-dot .seg.is-site .card::before {
+      content: '';
+      position: absolute;
+      left: -22px;
+      top: 18px;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 0 4px var(--accent-glow);
+    }
+    .phone.accent-dot .seg.is-site .time .from { color: var(--accent); }
+
+    /* Inline "add shift" link at the end of the day */
+    .add-shift-link {
+      margin-top: 8px;
+      padding: 14px 14px 14px 0;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-family: "Newsreader", Georgia, serif;
+      font-style: italic;
+      font-size: 15px;
+      color: var(--accent);
+      text-decoration: none;
+      cursor: pointer;
+      border-top: 1px dashed var(--border);
+    }
+    .add-shift-link .plus {
+      width: 28px; height: 28px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--accent-soft);
+      color: var(--accent);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-style: normal;
+      font-family: "Inter", system-ui, sans-serif;
+      font-weight: 500;
+      font-size: 17px;
+      flex-shrink: 0;
+      transition: all 160ms ease;
+    }
+    .add-shift-link:hover .plus {
+      background: var(--accent);
+      color: #fff;
+    }
+    html.light .add-shift-link:hover .plus { color: #fffaf3; }
+    .add-shift-link .arrow {
+      margin-left: auto;
+      font-size: 16px;
+      font-style: normal;
+      color: var(--text-subtle);
+      transition: transform 160ms ease;
+    }
+    .add-shift-link:hover .arrow {
+      color: var(--accent);
+      transform: translateX(2px);
+    }
+
+    /* Tweak: hide inline link */
+    .phone.no-inline-add .add-shift-link { display: none; }
+    .phone.no-header-add .header-add-btn { display: none; }
+
+    /* ─────────────────────────────────────────────────
+       Empty / caught-up state
+       ───────────────────────────────────────────────── */
+    .phone[data-state="empty"] .week-strip,
+    .phone[data-state="empty"] .now-strip,
+    .phone[data-state="empty"] .timeline,
+    .phone[data-state="empty"] .hero,
+    .phone[data-state="caught_up"] .week-strip,
+    .phone[data-state="caught_up"] .now-strip,
+    .phone[data-state="caught_up"] .timeline {
+      display: none;
+    }
+    .phone[data-state="normal"] .empty-state { display: none; }
+
+    /* In "caught_up" we keep the hero (so user still sees the date), but reframe it */
+    .phone[data-state="caught_up"] .hero-stats { display: none; }
+    .phone[data-state="caught_up"] .hero-title em { color: var(--text-muted); font-style: italic; }
+    .phone[data-state="caught_up"] .hero { padding-bottom: 10px; }
+
+    /* "needs_sync" — user has shifts, but site verification hasn't run yet.
+       Timeline stays, but every site-pill is muted and the bottom card invites a first check. */
+    .phone[data-state="needs_sync"] .seg.is-site .card {
+      background: var(--bg-elevated);
+      box-shadow: none;
+      border-color: var(--hairline);
+    }
+    .phone[data-state="needs_sync"] .seg.is-site .time .from { color: var(--text); }
+    .phone[data-state="needs_sync"] .seg.is-site .src-pill {
+      background: var(--bg-raised);
+      color: var(--text-subtle);
+      border-color: var(--hairline);
+    }
+    .phone[data-state="needs_sync"] .seg.is-site .src-pill .material-symbols-outlined::before {
+      content: 'edit_note';
+    }
+    .phone[data-state="needs_sync"] .seg.is-site .src-pill .material-symbols-outlined { visibility: hidden; position: relative; }
+    .phone[data-state="needs_sync"] .seg.is-site .src-pill .material-symbols-outlined::before { visibility: visible; position: absolute; left: 0; top: 0; }
+
+    .site-card.is-invite {
+      background:
+        radial-gradient(120% 80% at 0% 0%, var(--accent-soft), transparent 55%),
+        linear-gradient(180deg, var(--bg-elevated), var(--bg-raised));
+      border-color: var(--border);
+      box-shadow: inset 3px 0 0 var(--accent), 0 12px 28px -18px var(--accent-glow);
+    }
+    .site-card.is-invite .icon-cell {
+      background: var(--accent-soft);
+      color: var(--accent);
+      border-color: var(--border);
+    }
+    .site-card.is-invite .kicker { color: var(--accent); }
+    .site-card.is-invite .head em { color: var(--accent); font-style: italic; }
+    .site-card.is-invite .open-link { color: var(--accent); }
+
+    .empty-state {
+      margin: 4px 22px 18px;
+      padding: 22px 22px 20px;
+      border-radius: 20px;
+      background:
+        radial-gradient(120% 80% at 0% 0%, var(--accent-soft), transparent 55%),
+        linear-gradient(180deg, var(--bg-elevated), var(--bg-raised));
+      border: 1px solid var(--hairline);
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+    }
+
+    .empty-state::before {
+      content: '';
+      position: absolute;
+      top: -38px;
+      right: -38px;
+      width: 150px;
+      height: 150px;
+      background: radial-gradient(circle, var(--accent-glow), transparent 70%);
+      filter: blur(22px);
+      pointer-events: none;
+    }
+
+    .empty-mark {
+      position: relative;
+      width: 56px;
+      height: 56px;
+      border-radius: 18px;
+      background: var(--bg-sunken);
+      border: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--accent);
+      margin-bottom: 16px;
+    }
+    .empty-mark .material-symbols-outlined {
+      font-size: 28px;
+      font-variation-settings: 'FILL' 0, 'wght' 250, 'GRAD' 0, 'opsz' 24;
+    }
+    .empty-mark::after {
+      content: '';
+      position: absolute;
+      inset: -6px;
+      border-radius: 22px;
+      border: 1px dashed var(--border);
+      opacity: 0.6;
+    }
+
+    .empty-kicker {
+      position: relative;
+      font-family: "Newsreader", Georgia, serif;
+      font-style: italic;
+      font-size: 13px;
+      color: var(--accent);
+      margin: 0 0 4px;
+      letter-spacing: 0.005em;
+    }
+
+    .empty-title {
+      position: relative;
+      font-family: "Newsreader", Georgia, serif;
+      font-weight: 500;
+      font-size: 30px;
+      line-height: 1.05;
+      letter-spacing: -0.024em;
+      color: var(--text-strong);
+      margin: 0;
+    }
+    .empty-title em {
+      font-style: italic;
+      color: var(--accent);
+      font-weight: 500;
+    }
+
+    .empty-lede {
+      position: relative;
+      font-family: "Newsreader", Georgia, serif;
+      font-size: 15px;
+      line-height: 1.5;
+      color: var(--text-muted);
+      margin: 12px 0 0;
+      font-weight: 400;
+    }
+    .empty-lede strong {
+      color: var(--text);
+      font-weight: 500;
+      font-style: italic;
+    }
+
+    .empty-actions {
+      position: relative;
+      margin-top: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .empty-btn {
+      appearance: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      min-height: 48px;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      background: var(--accent);
+      color: #fffaf3;
+      font-family: "Inter", system-ui, sans-serif;
+      font-size: 14px;
+      font-weight: 600;
+      letter-spacing: 0.01em;
+      cursor: pointer;
+      text-decoration: none;
+      transition: all 160ms ease;
+      box-shadow: 0 10px 24px -12px var(--accent-glow);
+    }
+    .empty-btn:hover { background: var(--accent-hover); }
+    .empty-btn:active { transform: translateY(1px); box-shadow: 0 4px 10px -8px var(--accent-glow); }
+    .empty-btn .material-symbols-outlined { font-size: 18px; }
+
+    .empty-btn.secondary {
+      background: transparent;
+      color: var(--text);
+      border-color: var(--hairline-strong);
+      box-shadow: none;
+    }
+    .empty-btn.secondary:hover {
+      background: var(--bg-sunken);
+      border-color: var(--border);
+      color: var(--text-strong);
+    }
+
+    .empty-aside {
+      position: relative;
+      margin-top: 12px;
+      font-family: "Newsreader", Georgia, serif;
+      font-style: italic;
+      font-size: 12.5px;
+      color: var(--text-subtle);
+      line-height: 1.5;
+      text-align: center;
+    }
+    .empty-aside a {
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 500;
+    }
+
+    .empty-list {
+      position: relative;
+      margin: 18px 0 0;
+      padding: 16px 0 0;
+      border-top: 1px dashed var(--border);
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .empty-list li {
+      display: grid;
+      grid-template-columns: 24px 1fr;
+      gap: 10px;
+      align-items: baseline;
+      font-family: "Newsreader", Georgia, serif;
+      font-size: 13.5px;
+      color: var(--text-muted);
+      line-height: 1.4;
+    }
+    .empty-list li .num {
+      font-style: italic;
+      color: var(--accent);
+      font-size: 14px;
+      font-weight: 500;
+      text-align: right;
+    }
+    .empty-list li em {
+      font-style: italic;
+      color: var(--text);
+      font-weight: 500;
+    }
+
+  </style>
+</head>
+<body>
+
+  <div class="studio-head">
+    <div class="eyebrow">главный экран · «мой график»</div>
+    <h1>Понять день за&nbsp;секунду.</h1>
+    <p>
+      Работа и&nbsp;перерывы&nbsp;— два разных визуальных слоя. Сеансы, подтверждённые
+      сайтом ПолесГУ, выделены тёплым акцентом&nbsp;— это сигнал «парсер сматчил
+      смену». Перерывы между сменами помечены ярлыками: <em>заливка льда</em>,
+      <em>пауза</em>, <em>переход между объектами</em>.
+    </p>
+  </div>
+
+  <div class="phone" id="phone">
+    <div class="notch"></div>
+
+    <div class="status-bar">
+      <span>10:14</span>
+      <div class="icons">
+        <svg width="18" height="11" viewBox="0 0 18 11" aria-hidden="true">
+          <rect x="0" y="6.5" width="3" height="4.5" rx="0.7"/>
+          <rect x="4.5" y="4" width="3" height="7" rx="0.7"/>
+          <rect x="9" y="1.5" width="3" height="9.5" rx="0.7"/>
+          <rect x="13.5" y="0" width="3" height="11" rx="0.7"/>
+        </svg>
+        <svg width="16" height="11" viewBox="0 0 16 11" aria-hidden="true">
+          <path d="M8 3C10.2 3 12.2 3.9 13.7 5.3L14.7 4.3C13 2.6 10.6 1.5 8 1.5C5.4 1.5 3 2.6 1.3 4.3L2.3 5.3C3.8 3.9 5.8 3 8 3Z"/>
+          <path d="M8 6.4C9.4 6.4 10.6 6.9 11.4 7.8L12.4 6.8C11.2 5.6 9.7 4.8 8 4.8C6.3 4.8 4.8 5.6 3.6 6.8L4.6 7.8C5.4 6.9 6.6 6.4 8 6.4Z"/>
+          <circle cx="8" cy="9.8" r="1.4"/>
+        </svg>
+        <svg width="26" height="12" viewBox="0 0 26 12" aria-hidden="true">
+          <rect class="outline" x="0.5" y="0.5" width="22" height="11" rx="3.2"/>
+          <rect x="2" y="2" width="19" height="8" rx="1.8"/>
+          <path d="M24 4.2V7.8C24.7 7.5 25.3 6.7 25.3 6C25.3 5.3 24.7 4.5 24 4.2Z" opacity="0.45"/>
+        </svg>
+      </div>
+    </div>
+
+    <header class="app-header">
+      <div class="brand">
+        <span class="brand-name">Расписание</span>
+        <span class="brand-meta">
+          <span class="pulse"></span>
+          <span id="updatedAt">обновлено 2 мин назад</span>
+        </span>
+      </div>
+      <button class="icon-btn header-add-btn" title="Редактор смен">
+        <a href="Редактор смен.html" style="color:inherit;display:flex;align-items:center;text-decoration:none;">
+          <span class="material-symbols-outlined">edit_calendar</span>
+        </a>
+      </button>
+      <button class="icon-btn" title="Обновить">
+        <span class="material-symbols-outlined">refresh</span>
+      </button>
+      <button class="icon-btn" title="Настройки">
+        <span class="material-symbols-outlined">tune</span>
+      </button>
+    </header>
+
+    <section class="hero">
+      <p class="hero-kicker">Сегодня</p>
+      <h1 class="hero-title">Вт, <em>19&nbsp;мая</em></h1>
+      <div class="hero-stats">
+        <span class="stat"><strong>4</strong> смены</span>
+        <span class="sep"></span>
+        <span class="stat"><strong>5&nbsp;ч&nbsp;30&nbsp;м</strong> работы</span>
+        <span class="sep"></span>
+        <span class="stat"><strong>3</strong> объекта</span>
+      </div>
+    </section>
+
+    <!-- ───── Empty state (first run / caught up) ───── -->
+    <section class="empty-state" id="emptyState">
+      <div class="empty-mark" aria-hidden="true">
+        <span class="material-symbols-outlined" id="emptyIcon">calendar_clock</span>
+      </div>
+      <p class="empty-kicker" id="emptyKicker">Первый запуск</p>
+      <h1 class="empty-title" id="emptyTitle">График&nbsp;пока<br><em>пустой</em>.</h1>
+      <p class="empty-lede" id="emptyLede">
+        Загрузите <strong>резервный JSON</strong>, если вы уже вели смены
+        раньше,&nbsp;— либо начните с первой смены вручную. Оба способа
+        сохраняются в этом браузере.
+      </p>
+
+      <div class="empty-actions">
+        <a class="empty-btn" href="Редактор смен.html">
+          <span class="material-symbols-outlined">add</span>
+          <span id="emptyPrimaryLabel">Добавить первую смену</span>
+        </a>
+        <button class="empty-btn secondary" type="button">
+          <span class="material-symbols-outlined">upload_file</span>
+          <span>Загрузить JSON</span>
+        </button>
+      </div>
+
+      <ol class="empty-list" id="emptyList">
+        <li><span class="num">i.</span><span><em>JSON</em>&nbsp;— экспорт из этого же приложения на другом устройстве.</span></li>
+        <li><span class="num">ii.</span><span>После первой смены появится <em>сверка</em> со сменами на сайте ПолесГУ.</span></li>
+        <li><span class="num">iii.</span><span>Можно добавлять поодиночке или <em>серией по дням недели</em>.</span></li>
+      </ol>
+
+      <p class="empty-aside">
+        всё хранится локально · <a>подробнее о&nbsp;формате →</a>
+      </p>
+    </section>
+
+    <div class="week-strip" aria-label="Неделя">
+      <div class="wd has"><span class="label">Пн</span><span class="num">18</span><span class="dot"></span></div>
+      <div class="wd today has"><span class="label">Вт</span><span class="num">19</span><span class="dot"></span></div>
+      <div class="wd has"><span class="label">Ср</span><span class="num">20</span><span class="dot"></span></div>
+      <div class="wd has"><span class="label">Чт</span><span class="num">21</span><span class="dot"></span></div>
+      <div class="wd off"><span class="label">Пт</span><span class="num">22</span><span class="dot"></span></div>
+      <div class="wd has"><span class="label">Сб</span><span class="num">23</span><span class="dot"></span></div>
+      <div class="wd off"><span class="label">Вс</span><span class="num">24</span><span class="dot"></span></div>
+    </div>
+
+    <div class="now-strip" role="status">
+      <span class="pulse"></span>
+      <div class="body">
+        <span class="label">сейчас · 10:14</span>
+        <span class="title">Хоккей — секция · Ледовая&nbsp;арена</span>
+      </div>
+      <span class="countdown">осталось&nbsp;<strong>1&nbsp;ч&nbsp;01&nbsp;м</strong></span>
+    </div>
+
+    <section class="timeline" aria-label="График на сегодня">
+
+      <!-- Past, site-verified -->
+      <article class="seg is-site is-past">
+        <div class="time">
+          <span class="from">07:30</span>
+          <span class="to">— 09:00</span>
+        </div>
+        <div class="card">
+          <p class="place">Ледовая арена</p>
+          <p class="activity">Массовое катание · 4 группы</p>
+          <div class="meta-row">
+            <span class="duration">1 ч 30 м</span>
+            <span class="sep"></span>
+            <span class="src-pill" title="Сматчено с сайтом ПолесГУ">
+              <span class="material-symbols-outlined">verified</span>
+              по&nbsp;сайту
+            </span>
+          </div>
+        </div>
+      </article>
+
+      <!-- Break: ice fill -->
+      <div class="brk is-ice">
+        <div class="brk-spine">45 м</div>
+        <div class="brk-line">
+          <span class="label"><strong>заливка льда</strong>09:00&nbsp;— 09:45</span>
+          <span class="rule"></span>
+        </div>
+      </div>
+
+      <!-- NOW: site-verified, in-progress -->
+      <article class="seg is-site is-now">
+        <div class="time">
+          <span class="from">09:45</span>
+          <span class="to">— 11:15</span>
+        </div>
+        <div class="card">
+          <p class="place">Ледовая арена</p>
+          <p class="activity">Хоккей — детская секция · группа U-12</p>
+          <div class="meta-row">
+            <span class="duration">1 ч 30 м</span>
+            <span class="sep"></span>
+            <span class="src-pill" title="Сматчено с сайтом ПолесГУ">
+              <span class="material-symbols-outlined">verified</span>
+              по&nbsp;сайту
+            </span>
+          </div>
+        </div>
+      </article>
+
+      <!-- Break: long pause -->
+      <div class="brk">
+        <div class="brk-spine">3 ч 15 м</div>
+        <div class="brk-line">
+          <span class="label"><strong>перерыв</strong>11:15&nbsp;— 14:30</span>
+          <span class="rule"></span>
+        </div>
+      </div>
+
+      <!-- Personal-only (not site-verified) -->
+      <article class="seg is-personal">
+        <div class="time">
+          <span class="from">14:30</span>
+          <span class="to">— 16:00</span>
+        </div>
+        <div class="card">
+          <p class="place">Малый бассейн</p>
+          <p class="activity">Индивидуальные занятия · мл.&nbsp;группа</p>
+          <div class="meta-row">
+            <span class="duration">1 ч 30 м</span>
+            <span class="sep"></span>
+            <span class="src-pill" title="Только в личном графике — на сайте не опубликовано">
+              <span class="material-symbols-outlined">edit_note</span>
+              по&nbsp;графику
+            </span>
+          </div>
+        </div>
+      </article>
+
+      <!-- Cross-facility break -->
+      <div class="brk is-cross">
+        <div class="brk-spine">30 м</div>
+        <div class="brk-line">
+          <span class="label"><strong>переход</strong>Малый бассейн → Большой бассейн</span>
+          <span class="rule"></span>
+        </div>
+      </div>
+
+      <!-- Site-verified future -->
+      <article class="seg is-site">
+        <div class="time">
+          <span class="from">16:30</span>
+          <span class="to">— 18:00</span>
+        </div>
+        <div class="card">
+          <p class="place">Большой бассейн</p>
+          <p class="activity">Свободное плавание · 5 дорожек</p>
+          <div class="meta-row">
+            <span class="duration">1 ч 30 м</span>
+            <span class="sep"></span>
+            <span class="src-pill" title="Сматчено с сайтом ПолесГУ">
+              <span class="material-symbols-outlined">verified</span>
+              по&nbsp;сайту
+            </span>
+          </div>
+        </div>
+      </article>
+
+      <a class="add-shift-link" href="Редактор смен.html">
+        <span class="plus">+</span>
+        <span>добавить смену сегодня</span>
+        <span class="material-symbols-outlined arrow">arrow_forward</span>
+      </a>
+
+    </section>
+
+    <button class="site-card" aria-label="Открыть проверку расписания">
+      <div class="row">
+        <div class="icon-cell">
+          <span class="material-symbols-outlined">sync</span>
+        </div>
+        <div class="body">
+          <p class="kicker">Проверка сайта</p>
+          <p class="head">Все источники сматчены, изменений&nbsp;<em>не&nbsp;найдено</em></p>
+        </div>
+        <span class="material-symbols-outlined arrow">chevron_right</span>
+      </div>
+      <div class="footer">
+        <span class="meta">
+          <span class="material-symbols-outlined" style="font-size:14px;">schedule</span>
+          проверено 2 мин назад · 4 объекта
+        </span>
+        <span class="open-link">журнал →</span>
+      </div>
+    </button>
+
+    <div class="home-indicator"></div>
+  </div>
+
+  <script type="text/babel" src="tweaks-panel.jsx"></script>
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+  <div id="tweaks-root"></div>
+
+  <script type="text/babel" data-presets="react">
+    const { useEffect } = React;
+
+    const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+      "theme": "dark",
+      "density": "roomy",
+      "accentStyle": "stripe",
+      "showWeekStrip": true,
+      "showNowStrip": true,
+      "showHeaderAdd": true,
+      "showInlineAdd": true,
+      "state": "normal"
+    }/*EDITMODE-END*/;
+
+    const STATES = {
+      normal: {},
+      empty: {
+        icon: 'calendar_clock',
+        kicker: 'Первый запуск',
+        title: 'График&nbsp;пока<br><em>пустой</em>.',
+        lede: 'Загрузите <strong>резервный JSON</strong>, если вы уже вели смены раньше,&nbsp;— либо начните с первой смены вручную. Оба способа сохраняются в этом браузере.',
+        primary: 'Добавить первую смену',
+        listVisible: true,
+      },
+      caught_up: {
+        icon: 'check_circle',
+        kicker: 'Графика на сегодня нет',
+        title: 'Вы прошли<br><em>весь записанный график</em>.',
+        lede: 'Последняя смена была <strong>17 мая</strong>. Добавьте новые смены или загрузите свежий JSON, чтобы продолжить.',
+        primary: 'Добавить смену',
+        listVisible: false,
+      },
+      needs_sync: {
+        siteCard: {
+          kicker: 'Сверка с&nbsp;сайтом',
+          head: 'Запустите <em>первую проверку</em>&nbsp;— сверим ваши смены с&nbsp;сайтом ПолесГУ',
+          icon: 'cloud_sync',
+          meta: 'после первой проверки сюда придут изменения',
+          cta: 'запустить →',
+        },
+      },
+    };
+
+    function App() {
+      const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
+
+      useEffect(() => {
+        document.documentElement.classList.remove('dark', 'light');
+        document.documentElement.classList.add(t.theme);
+      }, [t.theme]);
+
+      useEffect(() => {
+        const phone = document.getElementById('phone');
+        if (!phone) return;
+        phone.classList.remove('density-default', 'density-compact', 'density-roomy');
+        phone.classList.add('density-' + t.density);
+        phone.classList.remove('accent-stripe', 'accent-fill', 'accent-dot');
+        phone.classList.add('accent-' + t.accentStyle);
+      }, [t.density, t.accentStyle]);
+
+      useEffect(() => {
+        const ws = document.querySelector('.week-strip');
+        if (ws) ws.style.display = t.showWeekStrip ? '' : 'none';
+        const ns = document.querySelector('.now-strip');
+        if (ns) ns.style.display = t.showNowStrip ? '' : 'none';
+      }, [t.showWeekStrip, t.showNowStrip]);
+
+      useEffect(() => {
+        const phone = document.getElementById('phone');
+        if (!phone) return;
+        phone.classList.toggle('no-header-add', !t.showHeaderAdd);
+        phone.classList.toggle('no-inline-add', !t.showInlineAdd);
+      }, [t.showHeaderAdd, t.showInlineAdd]);
+
+      useEffect(() => {
+        const phone = document.getElementById('phone');
+        if (!phone) return;
+        phone.dataset.state = t.state;
+        const cfg = STATES[t.state];
+        if (!cfg) return;
+
+        // Empty-state block
+        if (cfg.icon) {
+          document.getElementById('emptyIcon').textContent = cfg.icon;
+          document.getElementById('emptyKicker').textContent = cfg.kicker;
+          document.getElementById('emptyTitle').innerHTML = cfg.title;
+          document.getElementById('emptyLede').innerHTML = cfg.lede;
+          document.getElementById('emptyPrimaryLabel').textContent = cfg.primary;
+          document.getElementById('emptyList').style.display = cfg.listVisible ? '' : 'none';
+        }
+
+        // Site card (bottom)
+        const siteCard = document.querySelector('.site-card');
+        if (siteCard) {
+          if (cfg.siteCard) {
+            siteCard.classList.add('is-invite');
+            siteCard.querySelector('.icon-cell .material-symbols-outlined').textContent = cfg.siteCard.icon;
+            siteCard.querySelector('.kicker').innerHTML = cfg.siteCard.kicker;
+            siteCard.querySelector('.head').innerHTML = cfg.siteCard.head;
+            siteCard.querySelector('.footer .meta').lastChild.textContent = ' ' + cfg.siteCard.meta;
+            siteCard.querySelector('.open-link').textContent = cfg.siteCard.cta;
+          } else {
+            siteCard.classList.remove('is-invite');
+            siteCard.querySelector('.icon-cell .material-symbols-outlined').textContent = 'sync';
+            siteCard.querySelector('.kicker').textContent = 'Проверка сайта';
+            siteCard.querySelector('.head').innerHTML = 'Все источники сматчены, изменений&nbsp;<em>не&nbsp;найдено</em>';
+            siteCard.querySelector('.footer .meta').lastChild.textContent = ' проверено 2 мин назад · 4 объекта';
+            siteCard.querySelector('.open-link').textContent = 'журнал →';
+          }
+        }
+      }, [t.state]);
+
+      return (
+        <TweaksPanel title="Tweaks">
+          <TweakSection title="Сценарий">
+            <TweakSelect
+              label="Состояние"
+              value={t.state}
+              onChange={v => setTweak('state', v)}
+              options={[
+                { value: 'normal',     label: 'Есть смены сегодня' },
+                { value: 'needs_sync', label: 'Смены есть · сайт не сверяли' },
+                { value: 'empty',      label: 'Первый запуск · пусто' },
+                { value: 'caught_up',  label: 'Смены кончились' },
+              ]}
+            />
+          </TweakSection>
+
+          <TweakSection title="Тема">
+            <TweakRadio
+              label="Палитра"
+              value={t.theme}
+              onChange={v => setTweak('theme', v)}
+              options={[
+                { value: 'dark', label: 'Тёмная' },
+                { value: 'light', label: 'Светлая' },
+              ]}
+            />
+          </TweakSection>
+
+          <TweakSection title="Сетка">
+            <TweakRadio
+              label="Плотность"
+              value={t.density}
+              onChange={v => setTweak('density', v)}
+              options={[
+                { value: 'compact', label: 'Плотно' },
+                { value: 'default', label: 'Норма' },
+                { value: 'roomy', label: 'Свободно' },
+              ]}
+            />
+          </TweakSection>
+
+          <TweakSection title="Акцент «сматчено с сайтом»">
+            <TweakSelect
+              label="Стиль выделения"
+              value={t.accentStyle}
+              onChange={v => setTweak('accentStyle', v)}
+              options={[
+                { value: 'stripe', label: 'Полоса слева + лёгкая заливка' },
+                { value: 'fill', label: 'Полная цветная заливка' },
+                { value: 'dot', label: 'Только точка на ленте' },
+              ]}
+            />
+          </TweakSection>
+
+          <TweakSection title="Кнопки «добавить смену»">
+            <TweakToggle
+              label="Иконка в шапке"
+              value={t.showHeaderAdd}
+              onChange={v => setTweak('showHeaderAdd', v)}
+            />
+            <TweakToggle
+              label="Ссылка в конце дня"
+              value={t.showInlineAdd}
+              onChange={v => setTweak('showInlineAdd', v)}
+            />
+          </TweakSection>
+
+          <TweakSection title="Дополнительно">
+            <TweakToggle
+              label="Полоска недели"
+              value={t.showWeekStrip}
+              onChange={v => setTweak('showWeekStrip', v)}
+            />
+            <TweakToggle
+              label="Бейдж «сейчас»"
+              value={t.showNowStrip}
+              onChange={v => setTweak('showNowStrip', v)}
+            />
+          </TweakSection>
+        </TweaksPanel>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('tweaks-root')).render(<App />);
+  </script>
+
+</body>
+</html>
