@@ -11,6 +11,7 @@ function HomeScreen() {
   const [changes, setChanges] = _hs(() => window.Data.loadSiteChanges());
   const [selectedDate, setSelectedDate] = _hs(() => window.Data.TODAY_ISO);
   const [mode, setMode]       = _hs('day'); // 'day' | 'feed'
+  const [aboutOpen, setAboutOpen] = _hs(false);
   const [_, force]            = _hs(0);
   const scrollRef             = _hr(null);
 
@@ -118,6 +119,7 @@ function HomeScreen() {
 
       <window.UI.AppHeader
         title="Расписание"
+        onBrandClick={() => setAboutOpen(true)}
         meta={(() => {
           const at = window.Data.loadCachedAt();
           return at ? `обновлено ${window.Data.formatRelativeMinutes(at)}` : 'ещё не загружено';
@@ -170,6 +172,77 @@ function HomeScreen() {
 
         </window.UI.PullToRefresh>
         <window.UI.HomeIndicator/>
+      </div>
+
+      <AboutModal open={aboutOpen} onClose={() => setAboutOpen(false)}/>
+    </div>
+  );
+}
+
+// ── About modal — описание + ссылки на GitHub/Telegram ──────────
+function AboutModal({ open, onClose }) {
+  _he(() => {
+    if (!open) return;
+    function onKey(e) { if (e.key === 'Escape') onClose?.(); }
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
+
+  if (!open) return null;
+  return (
+    <div className="about-modal-root" role="dialog" aria-modal="true" aria-labelledby="about-title">
+      <div className="about-backdrop" onClick={onClose}/>
+      <div className="about-sheet">
+        <button type="button" className="about-close" onClick={onClose} aria-label="Закрыть">
+          <span className="material-symbols-outlined">close</span>
+        </button>
+
+        <div className="about-logo" aria-hidden="true">
+          <img src="/icon-192.png" alt=""/>
+        </div>
+
+        <p className="about-eyebrow">о&nbsp;приложении</p>
+        <h2 id="about-title" className="about-title">
+          Расписание <em>ПолесГУ</em>
+        </h2>
+        <p className="about-tagline">
+          Личный график тренера, сверенный с публичным расписанием спортивных
+          объектов&nbsp;университета. Показывает реальное время работы, а&nbsp;не
+          плановое.
+        </p>
+
+        <ul className="about-features">
+          <li><span className="material-symbols-outlined">verified</span><span>сверка с&nbsp;сайтом ПолесГУ</span></li>
+          <li><span className="material-symbols-outlined">view_list</span><span>день и&nbsp;лента всех смен</span></li>
+          <li><span className="material-symbols-outlined">cloud_off</span><span>работает офлайн&nbsp;— данные локально</span></li>
+        </ul>
+
+        <div className="about-links">
+          <a className="about-link is-primary"
+             href="https://github.com/NikitaSytsevich/raspisanie-polessu-v2"
+             target="_blank" rel="noopener noreferrer">
+            <span className="material-symbols-outlined">code</span>
+            <span className="body">
+              <span className="head">GitHub</span>
+              <span className="sub">исходники открыты</span>
+            </span>
+            <span className="material-symbols-outlined arrow">open_in_new</span>
+          </a>
+          <a className="about-link"
+             href="https://t.me/nikita_sytsevich"
+             target="_blank" rel="noopener noreferrer">
+            <span className="material-symbols-outlined">send</span>
+            <span className="body">
+              <span className="head">Telegram</span>
+              <span className="sub">@nikita_sytsevich</span>
+            </span>
+            <span className="material-symbols-outlined arrow">open_in_new</span>
+          </a>
+        </div>
+
+        <p className="about-footer">
+          сделано <em>с&nbsp;любовью к&nbsp;деталям</em>
+        </p>
       </div>
     </div>
   );

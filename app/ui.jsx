@@ -21,19 +21,34 @@ function IconBtn({ icon, title, onClick, danger = false, children }) {
   );
 }
 
-function AppHeader({ left, title, meta, metaImportant = false, right }) {
+function AppHeader({ left, title, meta, metaImportant = false, right, onBrandClick }) {
+  const brandInner = (
+    <>
+      <span className="brand-name">{title}</span>
+      {meta && (
+        <span className={`brand-meta ${metaImportant ? 'is-important' : ''}`}>
+          <span className="pulse"/>
+          <span>{meta}</span>
+        </span>
+      )}
+    </>
+  );
   return (
     <header className="app-header">
       {left}
-      <div className="brand">
-        <span className="brand-name">{title}</span>
-        {meta && (
-          <span className={`brand-meta ${metaImportant ? 'is-important' : ''}`}>
-            <span className="pulse"/>
-            <span>{meta}</span>
-          </span>
-        )}
-      </div>
+      {onBrandClick ? (
+        <button
+          type="button"
+          className="brand is-clickable"
+          onClick={onBrandClick}
+          title="О приложении"
+          aria-label="О приложении"
+        >
+          {brandInner}
+        </button>
+      ) : (
+        <div className="brand">{brandInner}</div>
+      )}
       {right}
     </header>
   );
