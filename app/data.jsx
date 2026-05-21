@@ -114,6 +114,21 @@ const DEMO_CHANGES = [
 ];
 
 // ── Helpers ─────────────────────────────────────────────────────
+
+// Уведомление подписчиков об изменении хранилища — ASYNC, чтобы не
+// прерывать текущий вызывающий код (например handleDelete в editor,
+// который сразу после save вызывает router.pop()). Без асинхронности
+// listener'ы успевают сработать, дёргают setState в Home, и React
+// перерасчёт стэка роутера успевает обнулить условие pop() до того,
+// как тот выполнится.
+function notifyAsync(eventName) {
+  try {
+    const fire = () => window.dispatchEvent(new CustomEvent(eventName));
+    if (typeof queueMicrotask === 'function') queueMicrotask(fire);
+    else Promise.resolve().then(fire);
+  } catch {}
+}
+
 function classifyBreak(minutes, facilityId) {
   if (facilityId === 'ice_arena' && minutes >= 20 && minutes <= 90) return 'заливка льда';
   if (minutes >= 120) return 'перерыв';
@@ -283,10 +298,10 @@ const Data = {
   },
   saveShifts(list) {
     saveJSON(STORAGE.shifts, list);
-    // Уведомляем подписчиков (HomeScreen и т.п.), что список смен изменился.
-    // Нужно потому что HomeScreen — persistent в роутере и не перемонтируется
-    // при возврате из editor; без события он не узнает об изменениях.
-    try { window.dispatchEvent(new CustomEvent('rpgu:shifts-changed')); } catch {}
+    // Уведомляем подписчиков ASYNC (через microtask), чтобы listener'ы
+    // (например HomeScreen) не сработали посреди обработчика кнопки и не
+    // конкурировали с следующими шагами (router.pop, toast.show и т.д.).
+    notifyAsync('rpgu:shifts-changed');
   },
   upsertShift(shift) {
     const list = this.loadShifts();
@@ -310,7 +325,7 @@ const Data = {
   },
   saveSiteChanges(list) {
     saveJSON(STORAGE.siteChanges, list);
-    try { window.dispatchEvent(new CustomEvent('rpgu:site-changes-changed')); } catch {}
+    notifyAsync('rpgu:site-changes-changed');
   },
   ackChange(id) {
     const list = this.loadSiteChanges().map(c =>

@@ -170,13 +170,31 @@ function Router({ screens, persistent = [], initial = 'home', initialProps = {} 
   }, [screens]);
 
   const pop = useCallback(() => {
-    if (stackRef.current.length <= 1) return;
+    const cur = stackRef.current;
+    if (cur.length <= 1) {
+      // Стэк пуст / в нём ровно один экран. Раньше тут был тихий return,
+      // из-за чего pop() из editor (открытого через router.replace из recent-row)
+      // ничего не делал — экран «висел». Теперь fallback на initial (home).
+      const onlyTop = cur[0];
+      if (onlyTop && onlyTop.name !== initial && screens[initial]) {
+        const entry = makeEntry(initial);
+        const next = [entry];
+        stackRef.current = next;
+        history.replaceState(
+          { __rs: true, name: entry.name, depth: 1, props: {} },
+          '',
+          '#' + entry.name
+        );
+        setStack(next);
+      }
+      return;
+    }
     suppressPopRef.current = true;
     history.back();
-    const next = stackRef.current.slice(0, -1);
+    const next = cur.slice(0, -1);
     stackRef.current = next;
     setStack(next);
-  }, []);
+  }, [initial, screens]);
 
   const replace = useCallback((name, props = {}) => {
     if (!screens[name]) return;
