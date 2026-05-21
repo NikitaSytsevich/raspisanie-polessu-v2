@@ -158,7 +158,9 @@ body {
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
   position: relative;
-  padding-bottom: env(safe-area-inset-bottom, 0px);
+  /* Запас снизу: нижняя панель Safari (~80px), iOS home indicator (~34px)
+     и просто визуальный воздух. max() гарантирует хотя бы 40px на всех платформах. */
+  padding-bottom: max(40px, env(safe-area-inset-bottom, 40px));
 }
 
 /* iOS-имитация status bar убрана; класс остаётся скрытым на случай старого кеша. */
@@ -2099,6 +2101,7 @@ html.light .add-shift-link:hover .plus { color: #fffaf3; }
    ────────────────────────────────────────────────────────────────── */
 .brand.is-clickable {
   appearance: none;
+  -webkit-appearance: none;
   background: transparent;
   border: 0;
   padding: 4px 8px;
@@ -2113,7 +2116,12 @@ html.light .add-shift-link:hover .plus { color: #fffaf3; }
   gap: 2px;
   flex: 1;
   min-width: 0;
+  /* iOS Safari иначе подкрашивает <button> как ссылку (синий) и подсвечивает тап */
+  color: inherit;
+  font: inherit;
+  -webkit-tap-highlight-color: transparent;
 }
+.brand.is-clickable .brand-name { color: var(--text); }
 .brand.is-clickable:hover { background: var(--bg-elevated); }
 .brand.is-clickable:active { transform: scale(0.98); }
 
