@@ -16,7 +16,6 @@ function HomeScreen() {
   const [weekOffset, setWeekOffset] = _hs(0); // 0 — текущая неделя, ±1 — соседние
   const [_, force]            = _hs(0);
   const scrollRef             = _hr(null);
-  const dateInputRef          = _hr(null);
 
   // Re-render every minute so "now" status stays accurate. Таймер ставим на
   // паузу когда вкладка/PWA свёрнуты — не сжигаем CPU в фоне.
@@ -232,7 +231,6 @@ function HomeScreen() {
                       }
                     }}
                     onPick={(date) => date && setSelectedDate(date)}
-                    dateInputRef={dateInputRef}
                   />
                   {currentNow && <NowStrip shift={currentNow.shift} eff={currentNow.eff}/>}
                   <Timeline
@@ -502,7 +500,11 @@ function Feed({ shifts, today, nowMins, currentShiftId, onPickDate }) {
 }
 
 // ── Week strip ──────────────────────────────────────────────────
-function WeekStrip({ days, selectedDate, weekOffset, onSelect, onShift, onPick, dateInputRef }) {
+function WeekStrip({ days, selectedDate, weekOffset, onSelect, onShift, onPick }) {
+  const [pickerOpen, setPickerOpen] = _hs(false);
+  const monthBtnRef = _hr(null);
+  const popoverRef  = _hr(null);
+
   // Заголовок: «май» или «май — июнь» если окно покрывает два месяца.
   const monthsInView = [];
   const seenMonth = new Set();
@@ -517,14 +519,54 @@ function WeekStrip({ days, selectedDate, weekOffset, onSelect, onShift, onPick, 
     ? monthsInView[0]
     : monthsInView.join(' — ');
 
+  // Outside click / Esc — закрывают попап.
+  _he(() => {
+    if (!pickerOpen) return;
+    function onDown(e) {
+      if (popoverRef.current?.contains(e.target)) return;
+      if (monthBtnRef.current?.contains(e.target)) return;
+      setPickerOpen(false);
+    }
+    function onKey(e) { if (e.key === 'Escape') setPickerOpen(false); }
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('touchstart', onDown, { passive: true });
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('touchstart', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [pickerOpen]);
+
+  const handleMonthPick = (year, monthIdx) => {
+    const todayIso = window.Data.TODAY_ISO;
+    const t = new Date(todayIso + 'T12:00:00');
+    let targetIso;
+    if (t.getFullYear() === year && t.getMonth() === monthIdx) {
+      targetIso = todayIso;
+    } else {
+      const sel = new Date(selectedDate + 'T12:00:00');
+      // Если меняем только месяц/год — пытаемся сохранить день; иначе 1-е число.
+      const day = (sel.getFullYear() === year || sel.getMonth() === monthIdx)
+        ? Math.min(sel.getDate(), daysInMonth(year, monthIdx))
+        : 1;
+      targetIso = `${year}-${String(monthIdx + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    }
+    onPick?.(targetIso);
+    setPickerOpen(false);
+  };
+
   return (
     <div className="week-nav">
       <div className="week-head">
         <button
+          ref={monthBtnRef}
           type="button"
-          className="month-label"
-          onClick={() => dateInputRef?.current?.showPicker?.() || dateInputRef?.current?.click?.()}
-          title="Выбрать дату"
+          className={`month-label ${pickerOpen ? 'is-open' : ''}`}
+          onClick={() => setPickerOpen(o => !o)}
+          aria-haspopup="dialog"
+          aria-expanded={pickerOpen}
+          title="Выбрать месяц"
         >
           <span>{monthLabel}</span>
           <span className="material-symbols-outlined">expand_more</span>
@@ -538,6 +580,14 @@ function WeekStrip({ days, selectedDate, weekOffset, onSelect, onShift, onPick, 
             <span className="material-symbols-outlined">undo</span>
             к&nbsp;сегодня
           </button>
+        )}
+
+        {pickerOpen && (
+          <MonthPicker
+            popoverRef={popoverRef}
+            anchorDate={selectedDate}
+            onSelect={handleMonthPick}
+          />
         )}
       </div>
 
@@ -577,16 +627,61 @@ function WeekStrip({ days, selectedDate, weekOffset, onSelect, onShift, onPick, 
           <span className="material-symbols-outlined">chevron_right</span>
         </button>
       </div>
+    </div>
+  );
+}
 
-      <input
-        ref={dateInputRef}
-        type="date"
-        className="ws-date-input"
-        value={selectedDate}
-        onChange={(e) => onPick?.(e.target.value)}
-        tabIndex={-1}
-        aria-hidden="true"
-      />
+function daysInMonth(year, monthIdx) {
+  return new Date(year, monthIdx + 1, 0).getDate();
+}
+
+// ── Month picker popover ────────────────────────────────────────
+function MonthPicker({ popoverRef, anchorDate, onSelect }) {
+  const todayIso = window.Data.TODAY_ISO;
+  const today = new Date(todayIso + 'T12:00:00');
+  const todayY = today.getFullYear();
+  const todayM = today.getMonth();
+  const anchor = new Date(anchorDate + 'T12:00:00');
+
+  const [viewYear, setViewYear] = _hs(anchor.getFullYear());
+
+  return (
+    <div className="month-popover" ref={popoverRef} role="dialog" aria-label="Выбор месяца">
+      <div className="month-popover-head">
+        <button
+          type="button"
+          className="month-popover-nav"
+          onClick={() => setViewYear(y => y - 1)}
+          aria-label="Предыдущий год"
+        >
+          <span className="material-symbols-outlined">chevron_left</span>
+        </button>
+        <span className="month-popover-year">{viewYear}</span>
+        <button
+          type="button"
+          className="month-popover-nav"
+          onClick={() => setViewYear(y => y + 1)}
+          aria-label="Следующий год"
+        >
+          <span className="material-symbols-outlined">chevron_right</span>
+        </button>
+      </div>
+      <div className="month-popover-grid">
+        {window.Data.RU_MONTHS.map((name, i) => {
+          const isCurrent = viewYear === todayY && i === todayM;
+          const isSelected = viewYear === anchor.getFullYear() && i === anchor.getMonth();
+          return (
+            <button
+              key={i}
+              type="button"
+              className={`month-cell ${isSelected ? 'is-selected' : ''} ${isCurrent ? 'is-today' : ''}`}
+              onClick={() => onSelect(viewYear, i)}
+            >
+              {name.slice(0, 3)}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
