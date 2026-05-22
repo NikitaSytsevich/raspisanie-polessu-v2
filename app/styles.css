@@ -159,9 +159,16 @@ body {
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
   position: relative;
-  /* Запас снизу: нижняя панель Safari (~80px), iOS home indicator (~34px)
-     и просто визуальный воздух. max() гарантирует хотя бы 40px на всех платформах. */
+  /* Запас снизу: в браузере оставляем 40px флор (нижняя панель Safari /
+     визуальный воздух). В standalone-PWA (добавлено на главный экран iOS)
+     нет URL-бара — обходимся только home-indicator-инсетом, без лишней
+     полосы внизу. */
   padding-bottom: max(40px, env(safe-area-inset-bottom, 40px));
+}
+@media (display-mode: standalone) {
+  .screen-scroll {
+    padding-bottom: env(safe-area-inset-bottom, 16px);
+  }
 }
 
 /* iOS-имитация status bar убрана; класс остаётся скрытым на случай старого кеша. */
