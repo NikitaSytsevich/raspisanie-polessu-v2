@@ -21,7 +21,7 @@ function HomeScreen() {
   // паузу когда вкладка/PWA свёрнуты — не сжигаем CPU в фоне.
   _he(() => {
     let t = null;
-    const tick = () => force(x => (x + 1) | 0);
+    const tick = () => force(x => x + 1);
     const start = () => { if (!t) t = setInterval(tick, 60_000); };
     const stop  = () => { if (t) { clearInterval(t); t = null; } };
     const onVis = () => {
@@ -60,7 +60,7 @@ function HomeScreen() {
     window.Data.fetchSchedule().then(() => {
       if (!cancelled) {
         setChanges(window.Data.loadSiteChanges());
-        force(x => (x + 1) | 0);
+        force(x => x + 1);
       }
     }).catch(() => {});
     return () => { cancelled = true; };
@@ -70,6 +70,8 @@ function HomeScreen() {
   const isToday = selectedDate === today;
   const dayShifts = _hm(() => shifts.filter(s => s.date === selectedDate), [shifts, selectedDate]);
   const allDates = _hm(() => Array.from(new Set(shifts.map(s => s.date))).sort(), [shifts]);
+  // Set всех дат — для O(1) проверки hasShift в weekDays-map.
+  const dateSet = _hm(() => new Set(shifts.map(s => s.date)), [shifts]);
 
   // Empty-state detection (based on the whole library, not the selected day)
   let state = 'normal';
@@ -78,30 +80,42 @@ function HomeScreen() {
 
   const rows = _hm(() => window.Data.buildTimelineForDate(shifts, selectedDate), [shifts, selectedDate]);
 
+  // Один проход через computeEffectiveShift на день: { shift, eff } для всех
+  // смен. Раньше функцию звали отдельно в Hero (totalMin), в currentNow и
+  // потом в каждом ShiftCard — три раза на одну смену. Теперь карты строим
+  // здесь и прокидываем готовые eff внутрь.
+  const dayEffShifts = _hm(
+    () => dayShifts.map(s => ({ shift: s, eff: window.Data.computeEffectiveShift(s) })),
+    [dayShifts]
+  );
+  const effById = _hm(() => {
+    const m = new Map();
+    for (const e of dayEffShifts) m.set(e.shift.id, e.eff);
+    return m;
+  }, [dayEffShifts]);
+
   // Hero stats — суммируем «фактическое» время по сайту.
   // Подтверждённые смены идут в totalMin; неподтверждённые (нет данных или
   // объект работает, но в это окно ничего) — в unconfirmedMin как контекст.
-  let totalMin = 0;
-  let unconfirmedMin = 0;
-  for (const s of dayShifts) {
-    const e = window.Data.computeEffectiveShift(s);
-    if (e.badge === 'closed') continue;
-    if (e.badge === 'confirmed') totalMin += e.minutes;
-    else unconfirmedMin += e.minutes;
-  }
-  const facCount = new Set(dayShifts.map(s => s.facilityId)).size;
+  const { totalMin, unconfirmedMin, facCount } = _hm(() => {
+    let t = 0, u = 0;
+    const facs = new Set();
+    for (const { shift: s, eff: e } of dayEffShifts) {
+      facs.add(s.facilityId);
+      if (e.badge === 'closed') continue;
+      if (e.badge === 'confirmed') t += e.minutes;
+      else u += e.minutes;
+    }
+    return { totalMin: t, unconfirmedMin: u, facCount: facs.size };
+  }, [dayEffShifts]);
 
   // Current "now" shift — only when looking at today.
-  // Считаем по «эффективному» окну (после сверки с сайтом), чтобы NowStrip
-  // и подсветка .is-now на карточках были согласованы. При пересечении
-  // смен берём ту, что началась **позже** — пользователь физически на
-  // одном объекте, и в момент старта более поздней смены переходит туда.
-  // Если объект закрыт — пропускаем (стрип не показываем, карточка не
-  // подсвечивается).
+  // При пересечении смен берём ту, что началась **позже** — пользователь
+  // физически на одном объекте, и в момент старта более поздней смены
+  // переходит туда. Если объект закрыт — пропускаем.
   const nowMins = new Date().getHours() * 60 + new Date().getMinutes();
   const currentNow = isToday
-    ? dayShifts
-        .map(s => ({ shift: s, eff: window.Data.computeEffectiveShift(s) }))
+    ? [...dayEffShifts]
         .sort((a, b) => window.Data.toMinutes(b.eff.start) - window.Data.toMinutes(a.eff.start))
         .find(({ eff }) => {
           if (eff.badge === 'closed') return false;
@@ -150,12 +164,12 @@ function HomeScreen() {
         showMonth: month !== lastMonth,
         isToday: i === 0,
         isSelected: date === selectedDate,
-        hasShift: shifts.some(s => s.date === date),
+        hasShift: dateSet.has(date),
       });
       lastMonth = month;
     }
     return arr;
-  }, [shifts, selectedDate, weekOffset]);
+  }, [dateSet, selectedDate, weekOffset]);
 
   // Когда меняется selectedDate — синхронизируем weekOffset так, чтобы
   // выбранный день попадал в текущее окно (если только что вернулись из
@@ -239,6 +253,7 @@ function HomeScreen() {
                     date={selectedDate}
                     nowMins={nowMins}
                     currentShiftId={currentNow?.shift?.id}
+                    effById={effById}
                     onAddDay={() => router.push('editor', { date: selectedDate })}
                   />
                   {rows.length > 0 && (
@@ -707,7 +722,7 @@ function NowStrip({ shift, eff }) {
 }
 
 // ── Timeline ────────────────────────────────────────────────────
-function Timeline({ rows, today, date, nowMins, currentShiftId, onAddDay }) {
+function Timeline({ rows, today, date, nowMins, currentShiftId, effById, onAddDay }) {
   if (!rows.length) {
     const isToday = date === today;
     const isTomorrow = date === window.Data.isoOffset(1);
@@ -730,16 +745,18 @@ function Timeline({ rows, today, date, nowMins, currentShiftId, onAddDay }) {
   return (
     <section className="timeline">
       {rows.map((r, i) => r.kind === 'shift'
-        ? <ShiftCard key={r.shift.id} shift={r.shift} nowMins={nowMins} today={today} date={date} currentShiftId={currentShiftId}/>
+        ? <ShiftCard key={r.shift.id} shift={r.shift} eff={effById?.get(r.shift.id)} nowMins={nowMins} today={today} date={date} currentShiftId={currentShiftId}/>
         : <BreakDivider key={`brk-${i}`} br={r}/>
       )}
     </section>
   );
 }
 
-function ShiftCard({ shift, nowMins, today, date, variant, currentShiftId }) {
+function ShiftCard({ shift, eff: effProp, nowMins, today, date, variant, currentShiftId }) {
   const fac = window.Data.getFacility(shift.facilityId);
-  const eff = window.Data.computeEffectiveShift(shift);
+  // eff может прийти готовым из родителя (Timeline/Feed считают карту один
+  // раз на день, чтобы не звать computeEffectiveShift трижды на смену).
+  const eff = effProp || window.Data.computeEffectiveShift(shift);
   const start = window.Data.toMinutes(eff.start);
   const end   = window.Data.toMinutes(eff.end);
   const onToday = date === today;

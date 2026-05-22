@@ -1,0 +1,16 @@
+# Сюда — то, что не нужно деплоить на Vercel (но нужно в репозитории).
+# Vercel по умолчанию раздаёт static из project root, поэтому без этого
+# файла assets-src/icon-source.png (1.8 MB) был бы доступен по URL.
+
+assets-src/
+*.test.js
+api/_parsers/__fixtures__/
+tweaks-panel.jsx
+ios-frame.jsx
+Главный\ экран.html
+Настройки.html
+Проверка\ сайта.html
+Расписание.html
+Редактор\ смен.html
+README.md
+dev-server.js

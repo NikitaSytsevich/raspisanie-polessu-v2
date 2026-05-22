@@ -12,16 +12,17 @@
 //      инвалидируем явно — раз скачали, дальше офлайн).
 //   4. Прочее → network-only.
 
-const VERSION = 'v1-2026-05-22d';
+const VERSION = 'v2-2026-05-23a';
 const SHELL_CACHE = `rpgu-shell-${VERSION}`;
 const API_CACHE   = `rpgu-api-${VERSION}`;
 const FONT_CACHE  = `rpgu-fonts-${VERSION}`;
+const CDN_CACHE   = `rpgu-cdn-${VERSION}`;
 
 const SHELL_ASSETS = [
   '/',
   '/index.html',
   '/app/bundle.js',
-  '/app/styles.css',
+  '/app/styles.min.css',
   '/manifest.webmanifest',
   '/icon-192.png',
   '/icon-512.png',
@@ -29,16 +30,32 @@ const SHELL_ASSETS = [
   '/favicon-32.png',
 ];
 
+// React UMD грузится с unpkg в index.html. Раньше SW его не кешировал —
+// первый офлайн-старт после deploy ронял приложение. Прекеш на install
+// + cache-first в fetch-handler фиксит это.
+const CDN_ASSETS = [
+  'https://unpkg.com/react@18.3.1/umd/react.production.min.js',
+  'https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js',
+];
+
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
-    const cache = await caches.open(SHELL_CACHE);
+    const shell = await caches.open(SHELL_CACHE);
     // addAll прерывается, если хоть один файл не отдался. На dev-сервере
     // часть путей может отсутствовать — используем individual fetch
     // с suppress-errors, чтобы установка не падала из-за одного 404.
     await Promise.all(SHELL_ASSETS.map(async (url) => {
       try {
         const res = await fetch(url, { cache: 'reload' });
-        if (res.ok) await cache.put(url, res);
+        if (res.ok) await shell.put(url, res);
+      } catch {}
+    }));
+    // CDN-ассеты в отдельный кеш с opaque-fallback (cross-origin без CORS).
+    const cdn = await caches.open(CDN_CACHE);
+    await Promise.all(CDN_ASSETS.map(async (url) => {
+      try {
+        const res = await fetch(url, { cache: 'reload', mode: 'no-cors' });
+        await cdn.put(url, res);
       } catch {}
     }));
     self.skipWaiting();
@@ -49,7 +66,7 @@ self.addEventListener('activate', (event) => {
   event.waitUntil((async () => {
     const names = await caches.keys();
     await Promise.all(names.map(n => {
-      if (n !== SHELL_CACHE && n !== API_CACHE && n !== FONT_CACHE) {
+      if (n !== SHELL_CACHE && n !== API_CACHE && n !== FONT_CACHE && n !== CDN_CACHE) {
         return caches.delete(n);
       }
     }));
@@ -74,7 +91,13 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 3. Прочие same-origin GET — cache-first с network fallback
+  // 3. unpkg — React UMD, cache-first (с opaque-ответом тоже работает).
+  if (url.host === 'unpkg.com') {
+    event.respondWith(cacheFirst(req, CDN_CACHE));
+    return;
+  }
+
+  // 4. Прочие same-origin GET — cache-first с network fallback
   if (url.origin === self.location.origin) {
     event.respondWith(cacheFirst(req, SHELL_CACHE));
     return;

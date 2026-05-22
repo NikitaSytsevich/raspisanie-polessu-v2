@@ -247,6 +247,25 @@ function saveJSON(key, value) {
   try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
 }
 
+// In-memory кэш распарсенного /api/schedule snapshot. Раньше каждый вызов
+// getCachedFacility делал JSON.parse полного payload — при 10 сменах на день
+// и minute-tick получалось ~30 JSON.parse в минуту. Теперь парсим один раз,
+// инвалидируем через _invalidateCache при saveJSON(STORAGE.cache).
+let _cacheParsed = null;       // { at, payload, mock }
+let _cacheRawHash = null;      // строка из localStorage, для детектирования multi-tab изменений
+function _readCachedSnapshot() {
+  const raw = localStorage.getItem(STORAGE.cache);
+  if (raw === _cacheRawHash) return _cacheParsed;
+  _cacheRawHash = raw;
+  try { _cacheParsed = raw ? JSON.parse(raw) : null; }
+  catch { _cacheParsed = null; }
+  return _cacheParsed;
+}
+function _invalidateCache() {
+  _cacheParsed = null;
+  _cacheRawHash = null;
+}
+
 const Data = {
   FACILITIES,
   INSTRUCTORS,
@@ -326,6 +345,7 @@ const Data = {
       isMock = true;
     }
     saveJSON(STORAGE.cache, { at: new Date().toISOString(), payload, mock: isMock });
+    _invalidateCache();
     // Сверка с предыдущим снапшотом — на клиенте, без обращения к серверу
     try { Data.recordSiteCheck(prevPayload, payload, { mock: isMock }); } catch {}
     return payload;
@@ -409,16 +429,14 @@ const Data = {
 
   // ── Доступ к закэшированному снапшоту сайта ──
   loadCachedSchedule() {
-    const cached = loadJSON(STORAGE.cache, null);
-    return cached?.payload || null;
+    return _readCachedSnapshot()?.payload || null;
   },
   // ISO-таймстемп последнего успешного fetchSchedule (или null, если ещё не было)
   loadCachedAt() {
-    const cached = loadJSON(STORAGE.cache, null);
-    return cached?.at || null;
+    return _readCachedSnapshot()?.at || null;
   },
   getCachedFacility(facilityId) {
-    const payload = this.loadCachedSchedule();
+    const payload = _readCachedSnapshot()?.payload;
     if (!payload) return null;
     return payload.facilities?.find(f => f.id === facilityId) || null;
   },

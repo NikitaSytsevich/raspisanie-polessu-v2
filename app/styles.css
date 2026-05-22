@@ -1109,6 +1109,9 @@ html.light .add-shift-link:hover .plus { color: #fffaf3; }
 }
 .site-card:hover .arrow { color: var(--accent); transform: translateX(2px); }
 
+.site-card {
+  position: relative;
+}
 .site-card.is-attention {
   background:
     radial-gradient(120% 80% at 0% 0%, var(--accent-soft), transparent 55%),
@@ -1123,13 +1126,23 @@ html.light .add-shift-link:hover .plus { color: #fffaf3; }
 }
 .site-card.is-attention .kicker { color: var(--accent); }
 .site-card.is-attention .kicker .meta { color: var(--accent); opacity: 0.75; }
-/* Когда сайт реально затронул смены — добавляем пульс на левой кромке */
-.site-card.is-important {
+/* Когда сайт реально затронул смены — пульсирующий glow через ::after с
+   opacity-анимацией (раньше анимировали box-shadow → paint на каждый кадр;
+   теперь композитный слой, на слабом железе ровно 60fps). */
+.site-card.is-important::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow: 0 16px 40px -10px var(--accent-glow);
+  opacity: 0;
   animation: site-card-pulse 2.6s ease-in-out infinite;
+  will-change: opacity;
 }
 @keyframes site-card-pulse {
-  0%, 100% { box-shadow: inset 3px 0 0 var(--accent),   0 12px 28px -18px var(--accent-glow); }
-  50%      { box-shadow: inset 3px 0 0 var(--accent),   0 14px 36px -14px var(--accent-glow); }
+  0%, 100% { opacity: 0; }
+  50%      { opacity: 1; }
 }
 
 /* HOME — empty state */
