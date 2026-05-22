@@ -13,13 +13,25 @@ function HomeScreen() {
   const [mode, setMode]       = _hs('day'); // 'day' | 'feed'
   const [aboutOpen, setAboutOpen] = _hs(false);
   const [refreshing, setRefreshing] = _hs(false);
+  const [weekOffset, setWeekOffset] = _hs(0); // 0 — текущая неделя, ±1 — соседние
   const [_, force]            = _hs(0);
   const scrollRef             = _hr(null);
+  const dateInputRef          = _hr(null);
 
-  // Re-render every minute so "now" status stays accurate
+  // Re-render every minute so "now" status stays accurate. Таймер ставим на
+  // паузу когда вкладка/PWA свёрнуты — не сжигаем CPU в фоне.
   _he(() => {
-    const t = setInterval(() => force(x => (x + 1) | 0), 60_000);
-    return () => clearInterval(t);
+    let t = null;
+    const tick = () => force(x => (x + 1) | 0);
+    const start = () => { if (!t) t = setInterval(tick, 60_000); };
+    const stop  = () => { if (t) { clearInterval(t); t = null; } };
+    const onVis = () => {
+      if (document.hidden) stop();
+      else { tick(); start(); }
+    };
+    document.addEventListener('visibilitychange', onVis);
+    if (!document.hidden) start();
+    return () => { stop(); document.removeEventListener('visibilitychange', onVis); };
   }, []);
 
   // Refresh shifts when:
@@ -119,23 +131,50 @@ function HomeScreen() {
     }
   }, [toast, refreshing]);
 
-  // Week strip — today ± few days; selected one highlighted
+  // Week strip — окно из 7 дней. weekOffset=0 центрировано на сегодня,
+  // ±1 сдвигает на неделю. Подпись месяца показываем на первом чипе и
+  // на любом, который начинает новый месяц в пределах окна.
   const weekDays = _hm(() => {
     const arr = [];
-    for (let i = -1; i <= 5; i++) {
+    const baseStart = -1 + weekOffset * 7;
+    const baseEnd   = 5 + weekOffset * 7;
+    let lastMonth = -1;
+    for (let i = baseStart; i <= baseEnd; i++) {
       const date = window.Data.isoOffset(i);
       const d = new Date(date + 'T12:00:00');
+      const month = d.getMonth();
       arr.push({
         date,
         wd: window.Data.RU_WEEKDAYS_SHORT[d.getDay()],
         num: d.getDate(),
+        mo: window.Data.RU_MONTHS[month].slice(0, 3),
+        showMonth: month !== lastMonth,
         isToday: i === 0,
         isSelected: date === selectedDate,
         hasShift: shifts.some(s => s.date === date),
       });
+      lastMonth = month;
     }
     return arr;
-  }, [shifts, selectedDate]);
+  }, [shifts, selectedDate, weekOffset]);
+
+  // Когда меняется selectedDate — синхронизируем weekOffset так, чтобы
+  // выбранный день попадал в текущее окно (если только что вернулись из
+  // editor с другой датой и т.п.).
+  _he(() => {
+    const today = window.Data.TODAY_ISO;
+    const t = new Date(today + 'T12:00:00').getTime();
+    const s = new Date(selectedDate + 'T12:00:00').getTime();
+    const dayDiff = Math.round((s - t) / 86400000);
+    // Текущее окно покрывает [-1+offset*7 ... +5+offset*7]
+    const lo = -1 + weekOffset * 7;
+    const hi =  5 + weekOffset * 7;
+    if (dayDiff < lo || dayDiff > hi) {
+      // ближайший offset, при котором dayDiff попадает в [-1..5]
+      const newOffset = Math.round((dayDiff - 2) / 7);
+      setWeekOffset(newOffset);
+    }
+  }, [selectedDate]);
 
   return (
     <div className="screen home-screen">
@@ -171,18 +210,49 @@ function HomeScreen() {
           {state === 'normal' && (
             <>
               <Hero date={selectedDate} count={dayShifts.length} totalMin={totalMin} unconfirmedMin={unconfirmedMin} facCount={facCount} isToday={isToday}/>
+              {/* Если сайт нашёл изменения, затронувшие наши смены — поднимаем
+                  SiteCard вверх, чтобы пользователь сразу увидел проблему. */}
+              {unreadChange?.affectsMe && (
+                <SiteCard change={unreadChange} onClick={() => router.push('changes')}/>
+              )}
               <ModeTabs mode={mode} onChange={setMode}/>
               {mode === 'day' ? (
                 <>
-                  <WeekStrip days={weekDays} onSelect={setSelectedDate}/>
+                  <WeekStrip
+                    days={weekDays}
+                    selectedDate={selectedDate}
+                    weekOffset={weekOffset}
+                    onSelect={setSelectedDate}
+                    onShift={(arg) => {
+                      if (arg === 'today') {
+                        setWeekOffset(0);
+                        setSelectedDate(today);
+                      } else {
+                        setWeekOffset(o => o + arg);
+                      }
+                    }}
+                    onPick={(date) => date && setSelectedDate(date)}
+                    dateInputRef={dateInputRef}
+                  />
                   {currentNow && <NowStrip shift={currentNow.shift} eff={currentNow.eff}/>}
-                  <Timeline rows={rows} today={today} date={selectedDate} nowMins={nowMins} currentShiftId={currentNow?.shift?.id}/>
-                  <AddShiftInlineLink date={selectedDate} onPush={() => router.push('editor', { date: selectedDate })}/>
+                  <Timeline
+                    rows={rows}
+                    today={today}
+                    date={selectedDate}
+                    nowMins={nowMins}
+                    currentShiftId={currentNow?.shift?.id}
+                    onAddDay={() => router.push('editor', { date: selectedDate })}
+                  />
+                  {rows.length > 0 && (
+                    <AddShiftInlineLink date={selectedDate} onPush={() => router.push('editor', { date: selectedDate })}/>
+                  )}
                 </>
               ) : (
                 <Feed shifts={shifts} today={today} nowMins={nowMins} currentShiftId={currentNow?.shift?.id} onPickDate={(d) => { setSelectedDate(d); setMode('day'); }}/>
               )}
-              <SiteCard change={unreadChange} onClick={() => router.push('changes')}/>
+              {!unreadChange?.affectsMe && (
+                <SiteCard change={unreadChange} onClick={() => router.push('changes')}/>
+              )}
             </>
           )}
 
@@ -292,10 +362,10 @@ function Hero({ date, count, totalMin, unconfirmedMin, facCount, muted, isToday 
   else if (date === window.Data.isoOffset(-1)) kicker = 'Вчера';
   else kicker = kicker[0].toUpperCase() + kicker.slice(1);
   return (
-    <section className={`hero ${muted ? 'is-muted' : ''}`}>
+    <section className={`hero ${muted ? 'is-muted' : ''} ${!muted && count === 0 ? 'is-empty-day' : ''}`}>
       <p className="hero-kicker">{kicker}</p>
       <h1 className="hero-title">{wd}, <em>{day}&nbsp;{mo}</em></h1>
-      {!muted && (
+      {!muted && count > 0 && (
         <div className="hero-stats">
           <span className="stat"><strong>{count}</strong> {pluralizeShifts(count)}</span>
           <span className="sep"/>
@@ -328,6 +398,14 @@ function pluralizeFacilities(n) {
   if (last === 1 && last2 !== 11) return 'объект';
   if (last >= 2 && last <= 4 && (last2 < 12 || last2 > 14)) return 'объекта';
   return 'объектов';
+}
+
+// Правильное согласование «затронут{...} N ваш{...} смен{...}»
+function affectedShiftsPhrase(n) {
+  const last = n % 10, last2 = n % 100;
+  if (last === 1 && last2 !== 11) return { verb: 'Затронута', noun: 'ваша смена' };
+  if (last >= 2 && last <= 4 && (last2 < 12 || last2 > 14)) return { verb: 'Затронуты', noun: 'ваши смены' };
+  return { verb: 'Затронуто', noun: 'ваших смен' };
 }
 
 // ── Mode tabs (День / Лента) ────────────────────────────────────
@@ -424,21 +502,66 @@ function Feed({ shifts, today, nowMins, currentShiftId, onPickDate }) {
 }
 
 // ── Week strip ──────────────────────────────────────────────────
-function WeekStrip({ days, onSelect }) {
+function WeekStrip({ days, selectedDate, weekOffset, onSelect, onShift, onPick, dateInputRef }) {
   return (
-    <div className="week-strip">
-      {days.map(d => (
+    <div className="week-strip-row">
+      <button
+        type="button"
+        className="ws-arrow"
+        title="Предыдущая неделя"
+        aria-label="Предыдущая неделя"
+        onClick={() => onShift?.(-1)}
+      >
+        <span className="material-symbols-outlined">chevron_left</span>
+      </button>
+
+      <div className="week-strip">
+        {days.map(d => (
+          <button
+            key={d.date}
+            type="button"
+            className={`wd ${d.hasShift ? 'has' : 'off'} ${d.isToday ? 'today' : ''} ${d.isSelected ? 'is-selected' : ''}`}
+            onClick={() => onSelect?.(d.date)}
+          >
+            <span className="label">{d.wd}</span>
+            <span className="num">{d.num}</span>
+            {d.showMonth && <span className="mo">{d.mo}</span>}
+            <span className="dot"/>
+          </button>
+        ))}
+      </div>
+
+      <button
+        type="button"
+        className="ws-arrow"
+        title="Следующая неделя"
+        aria-label="Следующая неделя"
+        onClick={() => onShift?.(+1)}
+      >
+        <span className="material-symbols-outlined">chevron_right</span>
+      </button>
+
+      {/* Скрытый native date-input — открывается по тапу на «к сегодня» когда
+          weekOffset ≠ 0, либо его можно расширить отдельной кнопкой. */}
+      <input
+        ref={dateInputRef}
+        type="date"
+        className="ws-date-input"
+        value={selectedDate}
+        onChange={(e) => onPick?.(e.target.value)}
+        tabIndex={-1}
+        aria-hidden="true"
+      />
+
+      {weekOffset !== 0 && (
         <button
-          key={d.date}
           type="button"
-          className={`wd ${d.hasShift ? 'has' : 'off'} ${d.isToday ? 'today' : ''} ${d.isSelected ? 'is-selected' : ''}`}
-          onClick={() => onSelect?.(d.date)}
+          className="ws-today"
+          onClick={() => onShift?.('today')}
         >
-          <span className="label">{d.wd}</span>
-          <span className="num">{d.num}</span>
-          <span className="dot"/>
+          к сегодня
         </button>
-      ))}
+      )}
     </div>
   );
 }
@@ -466,12 +589,22 @@ function NowStrip({ shift, eff }) {
 }
 
 // ── Timeline ────────────────────────────────────────────────────
-function Timeline({ rows, today, date, nowMins, currentShiftId }) {
+function Timeline({ rows, today, date, nowMins, currentShiftId, onAddDay }) {
   if (!rows.length) {
+    const isToday = date === today;
+    const isTomorrow = date === window.Data.isoOffset(1);
+    const dayLabel = isToday ? 'на сегодня' : isTomorrow ? 'на завтра' : 'на этот день';
     return (
       <section className="timeline">
-        <div className="day-empty">
-          <p>На&nbsp;<em>эти сутки</em> смены не&nbsp;добавлены.</p>
+        <div className="day-empty is-cta">
+          <span className="material-symbols-outlined glyph">event_available</span>
+          <p className="text">Смен&nbsp;<em>{dayLabel}</em>&nbsp;ещё нет.</p>
+          {onAddDay && (
+            <button type="button" className="day-empty-btn" onClick={onAddDay}>
+              <span className="material-symbols-outlined">add</span>
+              <span>Добавить смену</span>
+            </button>
+          )}
         </div>
       </section>
     );
@@ -648,11 +781,11 @@ function AddShiftInlineLink({ date, onPush }) {
     : date === window.Data.isoOffset(1) ? 'добавить смену на завтра'
     : 'добавить смену на этот день';
   return (
-    <a className="add-shift-link" onClick={(e) => { e.preventDefault(); onPush(); }} href="#">
+    <button type="button" className="add-shift-link" onClick={onPush}>
       <span className="plus">+</span>
       <span>{label}</span>
       <span className="material-symbols-outlined arrow">arrow_forward</span>
-    </a>
+    </button>
   );
 }
 
@@ -671,7 +804,11 @@ function SiteCard({ change, onClick }) {
           <p className="kicker">Проверка сайта</p>
           <p className="head">
             {hasUnread
-              ? <>Затронуто <em>{change.events?.filter(e => e.affectsShiftId).length || 1}</em> ваших смен</>
+              ? (() => {
+                  const n = change.events?.filter(e => e.affectsShiftId).length || 0;
+                  const p = affectedShiftsPhrase(n);
+                  return <>{p.verb} <em>{n}</em> {p.noun}</>;
+                })()
               : <>Все источники сматчены, изменений&nbsp;<em>не найдено</em></>}
           </p>
         </div>

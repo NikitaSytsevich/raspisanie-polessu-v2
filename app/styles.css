@@ -341,7 +341,8 @@ body::before {
   .seg { padding: 6px 0; grid-template-columns: 56px 1fr; gap: 12px; }
   .seg .card { padding: 0; }
   .timeline { padding: 8px 18px 10px; }
-  .week-strip { margin: 0 14px 10px; padding: 6px 4px; }
+  .week-strip-row { margin: 0 8px 10px; gap: 2px; }
+  .week-strip { padding: 4px 0; }
 }
 .hero-kicker {
   font-family: "Newsreader", Georgia, serif;
@@ -400,16 +401,66 @@ body::before {
 .hero-lede strong { color: var(--text); font-weight: 500; font-style: italic; }
 
 /* ──────────────────────────────────────────────────────────────────
-   HOME — week strip
+   HOME — week strip (с навигацией между неделями)
    ────────────────────────────────────────────────────────────────── */
+.week-strip-row {
+  position: relative;
+  margin: 0 12px 14px;
+  padding: 6px 0 8px;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 4px;
+  border-top: 1px solid var(--hairline);
+  border-bottom: 1px solid var(--hairline);
+}
+.ws-arrow {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--text-subtle);
+  width: 30px;
+  height: 30px;
+  border-radius: 10px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 160ms ease, color 160ms ease, transform 120ms ease;
+}
+.ws-arrow:hover { background: var(--bg-elevated); color: var(--text); }
+.ws-arrow:active { transform: scale(0.92); }
+.ws-arrow .material-symbols-outlined { font-size: 20px; }
+.ws-today {
+  position: absolute;
+  right: 8px;
+  bottom: -10px;
+  appearance: none;
+  border: 1px solid var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 3px 8px;
+  border-radius: 999px;
+  cursor: pointer;
+  z-index: 2;
+}
+.ws-today:hover { background: var(--accent); color: #fffaf3; }
+.ws-date-input {
+  /* Скрытый, но рабочий native picker. Открываем программно — пока не
+     биндим к кнопке, оставляем как фоллбэк для будущей фичи. */
+  position: absolute;
+  width: 0; height: 0;
+  opacity: 0;
+  pointer-events: none;
+}
 .week-strip {
-  margin: 0 16px 14px;
-  padding: 10px 6px 8px;
+  padding: 4px 2px;
   display: grid;
   grid-template-columns: repeat(7, 1fr);
   gap: 2px;
-  border-top: 1px solid var(--hairline);
-  border-bottom: 1px solid var(--hairline);
 }
 .wd {
   display: flex; flex-direction: column; align-items: center;
@@ -441,7 +492,19 @@ body::before {
   box-shadow: inset 0 0 0 1px var(--accent);
 }
 .wd.off .num { color: var(--text-subtle); font-style: italic; }
+.wd .mo {
+  position: absolute;
+  top: 1px;
+  right: 4px;
+  font-size: 8.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent);
+  font-weight: 600;
+  opacity: 0.78;
+}
 
+/* Пустой день — теперь с CTA «Добавить смену» */
 .day-empty {
   padding: 28px 8px 16px;
   text-align: center;
@@ -451,6 +514,44 @@ body::before {
   color: var(--text-subtle);
 }
 .day-empty em { color: var(--accent); font-style: italic; }
+.day-empty.is-cta {
+  margin: 8px 22px 4px;
+  padding: 28px 18px 22px;
+  border-radius: 18px;
+  background: var(--bg-elevated);
+  border: 1px dashed var(--hairline-strong);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+.day-empty.is-cta .glyph {
+  font-size: 28px;
+  color: var(--accent);
+  opacity: 0.8;
+}
+.day-empty.is-cta .text { margin: 0; font-style: italic; }
+.day-empty-btn {
+  appearance: none;
+  margin-top: 4px;
+  padding: 10px 16px;
+  border-radius: 12px;
+  border: 1px solid var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  transition: background 160ms ease, transform 120ms ease;
+}
+.day-empty-btn:hover { background: var(--accent); color: #fffaf3; }
+.day-empty-btn:active { transform: scale(0.97); }
+.day-empty-btn .material-symbols-outlined { font-size: 18px; }
 
 /* HOME — now strip */
 .now-strip {
