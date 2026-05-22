@@ -22,7 +22,10 @@ const _ISO_DAY_FMT = new Intl.DateTimeFormat('en-CA', {
 });
 function isoInMinsk(date) { return _ISO_DAY_FMT.format(date); }
 
-const TODAY_ISO = isoInMinsk(new Date());
+// Текущая дата в зоне Минска — НЕ замораживается на старт сессии. Геттер
+// вычисляется каждый раз, чтобы долго работающий PWA после полуночи не
+// показывал «вчера» как «сегодня».
+function todayIso() { return isoInMinsk(new Date()); }
 
 // ── Facility catalog (mirrors api/schedule.js) ──────────────────
 const FACILITIES = [
@@ -75,37 +78,10 @@ const MOCK_SCHEDULE = {
 // а не на чужие тестовые смены.
 const DEMO_SHIFTS = [];
 
-// ── Demo site-changes feed ──────────────────────────────────────
-const DEMO_CHANGES = [
-  {
-    id: 'c1',
-    checkedAt: new Date(Date.now() - 2 * 60_000).toISOString(),
-    hasChanges: true,
-    hasSourceIssues: false,
-    acknowledgedAt: null,
-    affectsMe: true,
-    events: [
-      { id: 'e1', kind: 'add', facilityId: 'sports_pool', date: TODAY_ISO, start: '19:00', end: '20:30', activity: 'Аквааэробика, 3 дорожки', affectsShiftId: 's4' },
-      { id: 'e2', kind: 'mod', facilityId: 'ice_arena',   date: isoOffset(1), start: '14:00', end: '15:30', activity: 'Массовое катание', wasStart: '13:30', wasEnd: '15:00' },
-      { id: 'e3', kind: 'rem', facilityId: 'ice_arena',   date: isoOffset(2), start: '18:00', end: '19:30', activity: 'Хоккей — секция U-14' },
-    ],
-  },
-  {
-    id: 'c2', checkedAt: new Date(Date.now() - 32 * 60_000).toISOString(),
-    hasChanges: false, hasSourceIssues: false, acknowledgedAt: null, events: [],
-  },
-  {
-    id: 'c3', checkedAt: new Date(Date.now() - 62 * 60_000).toISOString(),
-    hasChanges: true, hasSourceIssues: false, acknowledgedAt: new Date(Date.now() - 60 * 60_000).toISOString(),
-    events: [
-      { id: 'e4', kind: 'mod', facilityId: 'ice_arena', date: TODAY_ISO, start: '07:30', end: '09:00', activity: 'Массовое катание' },
-    ],
-  },
-  {
-    id: 'cb', checkedAt: new Date(Date.now() - 48 * 3600_000).toISOString(),
-    hasChanges: false, hasSourceIssues: false, baseline: true, events: [],
-  },
-];
+// Демо-журнал убран: новый пользователь должен видеть пустой журнал
+// (или baseline, который запишет recordSiteCheck при первом fetchSchedule),
+// а не фейковые события со ссылками на несуществующие смены.
+const DEMO_CHANGES = [];
 
 // ── Helpers ─────────────────────────────────────────────────────
 
@@ -169,7 +145,8 @@ const RU_MONTHS = ['января','февраля','марта','апреля','
 
 function formatDayHeading(iso) {
   const d = new Date(iso + 'T12:00:00');
-  if (iso === TODAY_ISO) return 'сегодня';
+  const today = todayIso();
+  if (iso === today) return 'сегодня';
   if (iso === isoOffset(1)) return 'завтра';
   if (iso === isoOffset(-1)) return 'вчера';
   return `${RU_WEEKDAYS_SHORT[d.getDay()]}, ${d.getDate()} ${RU_MONTHS[d.getMonth()]}`;
@@ -273,7 +250,7 @@ function saveJSON(key, value) {
 const Data = {
   FACILITIES,
   INSTRUCTORS,
-  TODAY_ISO,
+  get TODAY_ISO() { return todayIso(); },
 
   // ── Settings ──
   defaultSettings: () => ({ theme: 'dark' }),
@@ -520,13 +497,24 @@ const Data = {
     }
     const effStart = Math.max(sStart, toMinutes(overlapping[0].start));
     const effEnd = Math.min(sEnd, toMinutes(overlapping[overlapping.length - 1].end));
+    // Если в окно смены попадает несколько сайтовых активностей
+    // («массовое + хоккей»), показываем все уникальные — иначе вторая
+    // и далее просто исчезают с карточки.
+    const uniqueActs = [];
+    const seenAct = new Set();
+    for (const o of overlapping) {
+      const a = (o.activity || '').trim();
+      if (!a || seenAct.has(a)) continue;
+      seenAct.add(a);
+      uniqueActs.push(a);
+    }
     return {
       start: minutesToHHMM(effStart),
       end: minutesToHHMM(effEnd),
       minutes,
       badge: 'confirmed',
       gaps,
-      activity: overlapping[0].activity || null,
+      activity: uniqueActs.join(' · ') || null,
     };
   },
 
@@ -544,8 +532,37 @@ const Data = {
 
   importJSON(text) {
     const obj = JSON.parse(text);
-    if (Array.isArray(obj.shifts))  this.saveShifts(obj.shifts);
-    if (obj.siteChanges?.history)   this.saveSiteChanges(obj.siteChanges.history);
+    // Минимальная валидация: смена должна иметь id/date/facilityId/start/end
+    // в ожидаемом формате. Без этого UI падает в toMinutes при первом же
+    // рендере. Невалидные элементы отфильтровываются молча.
+    const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+    const HHMM = /^\d{2}:\d{2}$/;
+    const facIds = new Set(FACILITIES.map(f => f.id));
+    const isValidShift = (s) => s
+      && typeof s.id === 'string' && s.id
+      && typeof s.date === 'string' && ISO_DATE.test(s.date)
+      && typeof s.facilityId === 'string' && facIds.has(s.facilityId)
+      && typeof s.start === 'string' && HHMM.test(s.start)
+      && typeof s.end === 'string'   && HHMM.test(s.end)
+      && toMinutes(s.end) > toMinutes(s.start);
+    if (Array.isArray(obj.shifts)) {
+      const clean = obj.shifts.filter(isValidShift).map(s => ({
+        id: s.id,
+        date: s.date,
+        facilityId: s.facilityId,
+        start: s.start,
+        end: s.end,
+        activity: typeof s.activity === 'string' ? s.activity : '',
+        source: s.source === 'site' ? 'site' : 'shift',
+        instructors: Array.isArray(s.instructors)
+          ? s.instructors.filter(x => typeof x === 'string')
+          : [],
+      }));
+      this.saveShifts(clean);
+    }
+    if (Array.isArray(obj.siteChanges?.history)) {
+      this.saveSiteChanges(obj.siteChanges.history);
+    }
     return true;
   },
 };

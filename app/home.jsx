@@ -173,7 +173,7 @@ function HomeScreen() {
       const newOffset = Math.round((dayDiff - 2) / 7);
       setWeekOffset(newOffset);
     }
-  }, [selectedDate]);
+  }, [selectedDate, weekOffset]);
 
   return (
     <div className="screen home-screen">
@@ -546,10 +546,8 @@ function WeekStrip({ days, selectedDate, weekOffset, onSelect, onShift, onPick }
       targetIso = todayIso;
     } else {
       const sel = new Date(selectedDate + 'T12:00:00');
-      // Если меняем только месяц/год — пытаемся сохранить день; иначе 1-е число.
-      const day = (sel.getFullYear() === year || sel.getMonth() === monthIdx)
-        ? Math.min(sel.getDate(), daysInMonth(year, monthIdx))
-        : 1;
+      // Сохраняем число — с поправкой на короткие месяцы (31 янв → 28/29 фев).
+      const day = Math.min(sel.getDate(), daysInMonth(year, monthIdx));
       targetIso = `${year}-${String(monthIdx + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
     }
     onPick?.(targetIso);

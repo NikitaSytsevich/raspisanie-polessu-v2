@@ -94,6 +94,15 @@ function PullToRefresh({ onRefresh, children, scrollRef }) {
   const [pulled, setPulled] = _us(0);
   const [refreshing, setRefreshing] = _us(false);
   const startY = _ur(null);
+  // Зеркала state в ref — чтобы touch-обработчики не перевешивались на
+  // каждое движение пальца (раньше deps были [pulled, refreshing], эффект
+  // снимал/ставил listener'ы по 30+ раз в секунду во время свайпа).
+  const pulledRef = _ur(0);
+  const refreshingRef = _ur(false);
+  const onRefreshRef = _ur(onRefresh);
+  onRefreshRef.current = onRefresh;
+  function setPulledBoth(v) { pulledRef.current = v; setPulled(v); }
+  function setRefreshingBoth(v) { refreshingRef.current = v; setRefreshing(v); }
 
   _ue(() => {
     const node = scrollRef?.current;
@@ -108,22 +117,22 @@ function PullToRefresh({ onRefresh, children, scrollRef }) {
       const t = e.touches[0];
       const dy = t.clientY - startY.current;
       if (dy > 0 && node.scrollTop <= 0) {
-        setPulled(Math.min(dy * 0.55, 80));
+        setPulledBoth(Math.min(dy * 0.55, 80));
         if (e.cancelable && dy > 8) e.preventDefault();
       }
     }
     async function onEnd() {
       if (startY.current == null) return;
-      const wasPulled = pulled;
+      const wasPulled = pulledRef.current;
       startY.current = null;
-      if (wasPulled > 50 && !refreshing) {
-        setRefreshing(true);
-        setPulled(46);
-        try { await onRefresh?.(); } catch {}
-        setRefreshing(false);
-        setPulled(0);
+      if (wasPulled > 50 && !refreshingRef.current) {
+        setRefreshingBoth(true);
+        setPulledBoth(46);
+        try { await onRefreshRef.current?.(); } catch {}
+        setRefreshingBoth(false);
+        setPulledBoth(0);
       } else {
-        setPulled(0);
+        setPulledBoth(0);
       }
     }
     node.addEventListener('touchstart', onStart, { passive: true });
@@ -134,7 +143,7 @@ function PullToRefresh({ onRefresh, children, scrollRef }) {
       node.removeEventListener('touchmove',  onMove);
       node.removeEventListener('touchend',   onEnd);
     };
-  }, [scrollRef, pulled, refreshing, onRefresh]);
+  }, [scrollRef]);
 
   const progress = Math.min(1, pulled / 50);
   const ready    = pulled > 50 && !refreshing;
@@ -170,4 +179,33 @@ function PullToRefresh({ onRefresh, children, scrollRef }) {
   );
 }
 
-window.UI = { StatusBar, IconBtn, AppHeader, SecLabel, HomeIndicator, ToastHost, useToast, PullToRefresh };
+// ── Confirm sheet (общий компонент для editor и settings) ──────
+// Раньше жил в editor.jsx, а settings.jsx использовал нативный confirm()
+// и UX рвался — теперь единая шторка с заголовком, иконкой и dangerCTA.
+function ConfirmSheet({ icon = 'help', title, body, confirm = 'Подтвердить', cancel = 'Отмена', danger = false, onConfirm, onCancel }) {
+  _ue(() => {
+    function onKey(e) { if (e.key === 'Escape') onCancel?.(); }
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onCancel]);
+  return (
+    <div className="confirm-root" role="dialog" aria-modal="true" aria-labelledby="cfm-title">
+      <div className="confirm-backdrop" onClick={onCancel}/>
+      <div className="confirm-sheet">
+        <div className={`confirm-icon ${danger ? 'is-danger' : ''}`}>
+          <span className="material-symbols-outlined">{icon}</span>
+        </div>
+        <h2 id="cfm-title" className="confirm-title">{title}</h2>
+        {body && <p className="confirm-body">{body}</p>}
+        <div className="confirm-actions">
+          <button type="button" className="btn secondary" onClick={onCancel}>{cancel}</button>
+          <button type="button" className={`btn ${danger ? 'danger' : ''}`} onClick={onConfirm}>
+            {confirm}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+window.UI = { StatusBar, IconBtn, AppHeader, SecLabel, HomeIndicator, ToastHost, useToast, PullToRefresh, ConfirmSheet };

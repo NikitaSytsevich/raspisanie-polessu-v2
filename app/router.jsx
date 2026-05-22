@@ -118,7 +118,28 @@ function Router({ screens, persistent = [], initial = 'home', initialProps = {} 
           setStack(next);
           return;
         }
-        // targetDepth === cur.length — тот же уровень, ничего не делаем.
+        // targetDepth === cur.length — тот же уровень. Обычно ничего не
+        // делаем, но после router.replace(...) текущий слот истории мог
+        // получить depth=1 поверх старого editor(d=2), и тогда системный
+        // back переходит на home(d=1) — здесь оказываемся с тем же depth,
+        // но другим именем экрана. В этой ветке заменяем top entry.
+        if (cur.length > 0 && cur[cur.length - 1].name !== s.name) {
+          const entry = makeEntry(s.name, s.props || {});
+          let next;
+          if (entry.persistent) {
+            const idx = cur.findIndex(e => e.name === entry.name);
+            if (idx >= 0) {
+              if (idx === cur.length - 1) return;
+              next = [...cur.slice(0, idx), ...cur.slice(idx + 1), cur[idx]];
+            } else {
+              next = [...cur.slice(0, -1), entry];
+            }
+          } else {
+            next = [...cur.slice(0, -1), entry];
+          }
+          stackRef.current = next;
+          setStack(next);
+        }
         return;
       }
       // Нет нашего state — попытка покинуть приложение.

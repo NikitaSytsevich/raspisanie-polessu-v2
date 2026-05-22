@@ -365,8 +365,10 @@ function EditorScreen({ shiftId, date } = {}) {
       </div>
 
       {confirmKind && (
-        <ConfirmSheet
-          kind={confirmKind}
+        <window.UI.ConfirmSheet
+          {...(confirmKind === 'delete'
+            ? { icon: 'delete', title: 'Удалить смену?', body: 'Действие нельзя отменить — смена пропадёт из расписания.', confirm: 'Удалить', danger: true }
+            : { icon: 'edit_off', title: 'Выйти без сохранения?', body: 'У вас есть несохранённые изменения. При выходе они потеряются.', confirm: 'Выйти', danger: true })}
           onCancel={() => { setConfirmKind(null); setPendingExit(null); }}
           onConfirm={() => {
             if (confirmKind === 'delete') {
@@ -380,50 +382,6 @@ function EditorScreen({ shiftId, date } = {}) {
           }}
         />
       )}
-    </div>
-  );
-}
-
-// ── Confirm-sheet (вместо системного window.confirm) ────────────
-function ConfirmSheet({ kind, onCancel, onConfirm }) {
-  _ee(() => {
-    function onKey(e) { if (e.key === 'Escape') onCancel?.(); }
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onCancel]);
-
-  const cfg = kind === 'delete'
-    ? {
-        icon: 'delete',
-        title: 'Удалить смену?',
-        body: 'Действие нельзя отменить — смена пропадёт из расписания.',
-        confirm: 'Удалить',
-        danger: true,
-      }
-    : {
-        icon: 'edit_off',
-        title: 'Выйти без сохранения?',
-        body: 'У вас есть несохранённые изменения. При выходе они потеряются.',
-        confirm: 'Выйти',
-        danger: true,
-      };
-
-  return (
-    <div className="confirm-root" role="dialog" aria-modal="true" aria-labelledby="cfm-title">
-      <div className="confirm-backdrop" onClick={onCancel}/>
-      <div className="confirm-sheet">
-        <div className={`confirm-icon ${cfg.danger ? 'is-danger' : ''}`}>
-          <span className="material-symbols-outlined">{cfg.icon}</span>
-        </div>
-        <h2 id="cfm-title" className="confirm-title">{cfg.title}</h2>
-        <p className="confirm-body">{cfg.body}</p>
-        <div className="confirm-actions">
-          <button type="button" className="btn secondary" onClick={onCancel}>Отмена</button>
-          <button type="button" className={`btn ${cfg.danger ? 'danger' : ''}`} onClick={onConfirm}>
-            {cfg.confirm}
-          </button>
-        </div>
-      </div>
     </div>
   );
 }

@@ -8,6 +8,7 @@ function SettingsScreen({ onThemeChange }) {
   const router = window.useRouter();
   const toast = window.UI.useToast();
   const [settings, setSettings] = _ss(() => window.Data.loadSettings());
+  const [confirmDelete, setConfirmDelete] = _ss(false);
 
   function setTheme(t) {
     const next = window.Data.saveSettings({ theme: t });
@@ -45,9 +46,12 @@ function SettingsScreen({ onThemeChange }) {
   }
 
   function handleDelete() {
-    if (!confirm('Удалить весь график и журнал проверок? Это действие нельзя отменить.')) return;
+    setConfirmDelete(true);
+  }
+  function performDelete() {
     window.Data.clearShifts();
     window.Data.saveSiteChanges([]);
+    setConfirmDelete(false);
     toast.show('История удалена');
   }
 
@@ -152,6 +156,18 @@ function SettingsScreen({ onThemeChange }) {
 
         <window.UI.HomeIndicator/>
       </div>
+
+      {confirmDelete && (
+        <window.UI.ConfirmSheet
+          icon="delete"
+          title="Удалить всю историю?"
+          body="Сотрутся все смены и журнал проверок. Действие нельзя отменить."
+          confirm="Удалить"
+          danger
+          onCancel={() => setConfirmDelete(false)}
+          onConfirm={performDelete}
+        />
+      )}
     </div>
   );
 }
