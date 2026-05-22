@@ -550,38 +550,51 @@ const Data = {
 
   importJSON(text) {
     const obj = JSON.parse(text);
-    // Минимальная валидация: смена должна иметь id/date/facilityId/start/end
-    // в ожидаемом формате. Без этого UI падает в toMinutes при первом же
-    // рендере. Невалидные элементы отфильтровываются молча.
+    // Валидация и нормализация смен. Возвращаем счётчики — UI показывает
+    // сколько реально импортировано, сколько пропущено и сколько записей
+    // в журнале сверок. Без этого тост говорил «загружено» даже когда
+    // 0 смен прошли валидацию, и пользователь думал, что всё ок.
     const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
     const HHMM = /^\d{2}:\d{2}$/;
     const facIds = new Set(FACILITIES.map(f => f.id));
+    // Принимаем и числовые id (старые экспорты) — нормализуем в строку;
+    // отсутствие id — генерируем. Главное, что date/time/facility валидны.
     const isValidShift = (s) => s
-      && typeof s.id === 'string' && s.id
+      && typeof s === 'object'
       && typeof s.date === 'string' && ISO_DATE.test(s.date)
       && typeof s.facilityId === 'string' && facIds.has(s.facilityId)
       && typeof s.start === 'string' && HHMM.test(s.start)
       && typeof s.end === 'string'   && HHMM.test(s.end)
       && toMinutes(s.end) > toMinutes(s.start);
+    let importedShifts = 0;
+    let skippedShifts = 0;
+    let importedChanges = 0;
     if (Array.isArray(obj.shifts)) {
-      const clean = obj.shifts.filter(isValidShift).map(s => ({
-        id: s.id,
-        date: s.date,
-        facilityId: s.facilityId,
-        start: s.start,
-        end: s.end,
-        activity: typeof s.activity === 'string' ? s.activity : '',
-        source: s.source === 'site' ? 'site' : 'shift',
-        instructors: Array.isArray(s.instructors)
-          ? s.instructors.filter(x => typeof x === 'string')
-          : [],
-      }));
+      const clean = [];
+      let autoId = Date.now();
+      for (const s of obj.shifts) {
+        if (!isValidShift(s)) { skippedShifts++; continue; }
+        clean.push({
+          id: (s.id != null && String(s.id)) || `s${autoId++}`,
+          date: s.date,
+          facilityId: s.facilityId,
+          start: s.start,
+          end: s.end,
+          activity: typeof s.activity === 'string' ? s.activity : '',
+          source: s.source === 'site' ? 'site' : 'shift',
+          instructors: Array.isArray(s.instructors)
+            ? s.instructors.filter(x => typeof x === 'string')
+            : [],
+        });
+      }
       this.saveShifts(clean);
+      importedShifts = clean.length;
     }
     if (Array.isArray(obj.siteChanges?.history)) {
       this.saveSiteChanges(obj.siteChanges.history);
+      importedChanges = obj.siteChanges.history.length;
     }
-    return true;
+    return { importedShifts, skippedShifts, importedChanges };
   },
 };
 

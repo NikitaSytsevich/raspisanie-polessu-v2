@@ -17,14 +17,24 @@ function SettingsScreen({ onThemeChange }) {
   }
 
   function handleExport() {
-    const blob = new Blob([window.Data.exportJSON()], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `raspisanie-${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-    toast.show('JSON скачан');
+    try {
+      const blob = new Blob([window.Data.exportJSON()], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `raspisanie-${new Date().toISOString().slice(0, 10)}.json`;
+      // Firefox требует, чтобы anchor был в DOM; iOS Safari может проигнорить
+      // click сразу после revokeObjectURL — поэтому ревок делаем в setTimeout.
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 0);
+      toast.show('JSON скачан');
+    } catch (e) {
+      toast.show('Не удалось сохранить файл');
+    }
   }
 
   function handleImport() {
@@ -36,13 +46,26 @@ function SettingsScreen({ onThemeChange }) {
       if (!f) return;
       try {
         const text = await f.text();
-        window.Data.importJSON(text);
-        toast.show('JSON загружен');
+        const res = window.Data.importJSON(text);
+        const parts = [];
+        if (res.importedShifts) parts.push(`${res.importedShifts} ${pluralizeShifts(res.importedShifts)}`);
+        if (res.skippedShifts)  parts.push(`пропущено ${res.skippedShifts}`);
+        if (!res.importedShifts && !res.skippedShifts && res.importedChanges) parts.push('журнал сверок');
+        toast.show(parts.length ? `Загружено: ${parts.join(', ')}` : 'Файл прочитан, но смен не найдено');
       } catch (e) {
         toast.show('Не удалось прочитать файл');
       }
     };
     input.click();
+  }
+
+  // Local plural — settings не импортирует pluralizeShifts из home, поэтому
+  // дублируем (всего 5 строк, не повод выносить в data).
+  function pluralizeShifts(n) {
+    const last = n % 10, last2 = n % 100;
+    if (last === 1 && last2 !== 11) return 'смена';
+    if (last >= 2 && last <= 4 && (last2 < 12 || last2 > 14)) return 'смены';
+    return 'смен';
   }
 
   function handleDelete() {

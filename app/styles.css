@@ -1577,8 +1577,11 @@ html.light .add-shift-link:hover .plus { color: #fffaf3; }
 .journal { padding: 0 26px 4px; }
 .jr-row {
   display: grid;
-  grid-template-columns: 56px 1fr auto;
-  gap: 12px;
+  /* Первая колонка — auto с min-width=64px: короткое «14:30» выровнено по
+     базовой сетке, а длинное «пн, 22 мая, 14:30» (строки за другой день)
+     не выпирает на колонку с текстом. */
+  grid-template-columns: minmax(64px, auto) 1fr auto;
+  gap: 10px 14px;
   align-items: baseline;
   padding: 11px 0;
   border-bottom: 1px solid var(--hairline);
@@ -1586,15 +1589,18 @@ html.light .add-shift-link:hover .plus { color: #fffaf3; }
 .jr-row:last-child { border-bottom: none; }
 .jr-row .time {
   font-variant-numeric: tabular-nums;
-  font-size: 13px;
+  font-size: 12.5px;
   color: var(--text);
-  font-family: "Newsreader", Georgia, serif;
+  font-family: "Inter", system-ui, sans-serif;
   font-weight: 500;
+  white-space: nowrap;
+  letter-spacing: 0.01em;
 }
 .jr-row .desc {
   font-size: 13px;
   color: var(--text-muted);
   line-height: 1.35;
+  min-width: 0; /* чтобы desc сжимался, а не толкал pill */
 }
 .jr-row .desc .em {
   font-family: "Newsreader", Georgia, serif;

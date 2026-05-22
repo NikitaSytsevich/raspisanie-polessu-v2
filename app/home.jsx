@@ -1108,10 +1108,14 @@ function triggerImport(toast, setShifts, setChanges) {
     if (!f) return;
     try {
       const text = await f.text();
-      window.Data.importJSON(text);
+      const res = window.Data.importJSON(text);
       setShifts(window.Data.loadShifts());
       setChanges(window.Data.loadSiteChanges());
-      toast.show('JSON загружен');
+      const parts = [];
+      if (res.importedShifts) parts.push(`${res.importedShifts} ${pluralizeShifts(res.importedShifts)}`);
+      if (res.skippedShifts)  parts.push(`пропущено ${res.skippedShifts}`);
+      if (!res.importedShifts && !res.skippedShifts && res.importedChanges) parts.push('журнал сверок');
+      toast.show(parts.length ? `Загружено: ${parts.join(', ')}` : 'Файл прочитан, но смен не найдено');
     } catch (e) {
       toast.show('Не удалось прочитать файл');
     }
