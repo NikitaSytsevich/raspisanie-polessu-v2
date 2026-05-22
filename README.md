@@ -72,7 +72,7 @@
 
 - **Бекенд** — одна функция `api/schedule.js`. Параллельно тянет 4 страницы через `undici`, прогоняет через `cheerio`-парсеры, возвращает JSON с `schemaVersion: 3`. Кеш CDN на 5 минут (`s-maxage=300, stale-while-revalidate=600`).
 - **Парсеры** — общий «табличный экстрактор» + детектор закрытия объекта на ремонт + индивидуальный inline-парсер для гребной базы (там расписание не в таблице, а в `<h1>`). Каждый парсер возвращает либо `{ ok: true, sessions }`, либо `{ ok: false, reason: 'closed' }`.
-- **Фронтенд** — React 18 на Babel-standalone, **без сборщика**. Открыть `index.html` напрямую — приложение работает (на mock-данных, если бекенда нет).
+- **Фронтенд** — React 18, JSX собирается в `app/bundle.js` через **esbuild** (см. `scripts/build.js`). React/ReactDOM грузятся как UMD с unpkg, что выносится из бандла. PWA с service worker'ом (`sw.js`): app-shell cache-first, `/api/schedule` stale-while-revalidate, шрифты Google и React CDN — отдельные кеши.
 - **Хранилище** — `localStorage` пользователя. Сервер не знает ни кто вы, ни что вы записали.
 - **Diff** — считается на клиенте: текущий снапшот из API vs предыдущий из `localStorage`. События, пересекающиеся с вашими сменами, помечаются `affectsShiftId`.
 
@@ -82,13 +82,13 @@
 
 | Слой        | Технологии                                      |
 |-------------|-------------------------------------------------|
-| Фронт       | React 18, Babel standalone, vanilla CSS         |
+| Фронт       | React 18 (UMD c CDN), esbuild, vanilla CSS, PWA |
 | Бекенд      | Node.js 20, Vercel serverless, cheerio, undici  |
 | Хостинг     | Vercel Hobby (free)                             |
 | Хранилище   | `localStorage` (клиент), CDN-кеш (Vercel Edge)  |
 | Тесты       | `node --test` (без зависимостей)                |
 
-> Никакого webpack/vite/rollup. JSX компилируется в браузере через Babel-standalone — приложение разворачивается из голого `index.html` за 0 секунд сборки.
+> Сборка — только `esbuild` (~10 мс на ребилд). React и ReactDOM external — грузятся UMD с unpkg, в бандл не попадают. На выходе ~21 KB JS gzip + ~10 KB CSS gzip.
 
 ---
 
@@ -98,8 +98,14 @@
 # Зависимости
 npm i
 
+# Сборка (esbuild → app/bundle.js + app/styles.min.css)
+npm run build
+
 # Локальный сервер (Node, без Vercel CLI)
 node dev-server.js                # http://localhost:3000
+
+# Watch-режим для разработки (пересборка на сохранении)
+node scripts/build.js --watch
 
 # Или через Vercel CLI
 npx vercel dev
@@ -220,6 +226,99 @@ npm test
 - Сервер хранит только CDN-кеш ответа `/api/schedule` (5 минут). Никаких логов, аналитики, куки.
 - Пользовательские данные (смены, журнал проверок, настройки) живут **только в `localStorage` устройства**. Чтобы перенести — скачайте JSON в Настройках и загрузите на другом устройстве.
 - Парсер ходит только на 4 фиксированных URL `polessu.by` — ничего больше.
+
+---
+
+## Формат JSON (импорт / экспорт) — version 4
+
+Резервная копия лежит в одном файле. Скачивается через **Настройки → Скачать JSON**, загружается через **Настройки → Загрузить JSON** (либо в EmptyState при первом запуске).
+
+### Структура верхнего уровня
+
+```json
+{
+  "version": 4,
+  "app": "Расписание",
+  "exportedAt": "2026-05-23T14:30:00.000Z",
+  "timezone": "Europe/Minsk",
+  "shifts": [ /* … */ ],
+  "siteChanges": { "history": [ /* … */ ] }
+}
+```
+
+| Поле | Обязательно | Описание |
+|---|---|---|
+| `version` | да | Версия схемы. Текущая — `4`. |
+| `app` | нет | Идентификатор приложения. Для логов. |
+| `exportedAt` | нет | ISO-таймстемп создания файла. |
+| `timezone` | нет | Зона, в которой считались даты. У нас всегда `Europe/Minsk`. |
+| `shifts` | да | Массив смен пользователя. |
+| `siteChanges.history` | нет | Журнал сверок с сайтом. При импорте сохраняется как есть. |
+
+### Смена (`shifts[]`)
+
+```json
+{
+  "id": "s1",
+  "date": "2026-05-23",
+  "facilityId": "sports_pool",
+  "start": "15:00",
+  "end": "21:00",
+  "activity": "тренировка U-14",
+  "source": "shift",
+  "instructors": ["lapchuk_as"]
+}
+```
+
+| Поле | Обязательно | Тип / формат | Что бывает |
+|---|---|---|---|
+| `id` | нет* | строка | Уникальный id смены. Если отсутствует — сгенерируется автоматически при импорте. |
+| `date` | **да** | `YYYY-MM-DD` | Дата смены в зоне Минска. Валидация: точное соответствие шаблону. |
+| `facilityId` | **да** | enum | `ice_arena` / `sports_pool` / `small_pool` / `rowing_base`. Другие значения отбрасываются. |
+| `start` | **да** | `HH:MM` | Начало смены. |
+| `end` | **да** | `HH:MM` | Конец смены. Должен быть строго позже `start`. |
+| `activity` | нет | строка | Комментарий / название тренировки. Пустая строка по умолчанию. |
+| `source` | нет | `"shift"` / `"site"` | Откуда смена. По умолчанию `"shift"`. |
+| `instructors` | нет | `string[]` | id напарников: `lapchuk_as`, `krylychuk_ps`, `melnikova_ov`, `ivshin_my`, `moiseenko_vv`, `karavaychik_kv`. |
+
+\* `id` формально опционален — отсутствие в файле компенсируется генерацией при импорте. Но в экспорте из приложения он всегда есть.
+
+### Валидация при импорте
+
+`Data.importJSON` фильтрует невалидные смены и возвращает `{ importedShifts, skippedShifts, importedChanges }`. Минимальные требования к смене для прохода:
+
+```js
+typeof s === 'object'
+&& /^\d{4}-\d{2}-\d{2}$/.test(s.date)
+&& ['ice_arena','sports_pool','small_pool','rowing_base'].includes(s.facilityId)
+&& /^\d{2}:\d{2}$/.test(s.start)
+&& /^\d{2}:\d{2}$/.test(s.end)
+&& toMinutes(s.end) > toMinutes(s.start)
+```
+
+Всё, что не прошло, считается в `skippedShifts` — UI покажет в тосте `Загружено: 7 смен, пропущено 2`.
+
+### Минимальный валидный файл
+
+```json
+{
+  "version": 4,
+  "shifts": [
+    {
+      "date": "2026-05-23",
+      "facilityId": "sports_pool",
+      "start": "15:00",
+      "end": "21:00"
+    }
+  ]
+}
+```
+
+Этого достаточно: `id` сгенерируется, остальные поля получат дефолты.
+
+### Совместимость со старыми форматами
+
+Файлы из ранних версий приложения (например `version: 7` со `staffShifts`, `weeklyDayOffWeekday`, полями `note`/`coworkers`) **не импортируются один-в-один**. Их нужно пересохранить в схему v4 (имена полей: `note` → `activity`, `coworkers` → `instructors`, лишние ключи `staffShifts`/`facilityName` отбросить). Эталонная структура — выше.
 
 ---
 
