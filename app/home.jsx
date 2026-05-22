@@ -12,6 +12,7 @@ function HomeScreen() {
   const [selectedDate, setSelectedDate] = _hs(() => window.Data.TODAY_ISO);
   const [mode, setMode]       = _hs('day'); // 'day' | 'feed'
   const [aboutOpen, setAboutOpen] = _hs(false);
+  const [refreshing, setRefreshing] = _hs(false);
   const [_, force]            = _hs(0);
   const scrollRef             = _hr(null);
 
@@ -79,21 +80,44 @@ function HomeScreen() {
   }
   const facCount = new Set(dayShifts.map(s => s.facilityId)).size;
 
-  // Current "now" shift — only when looking at today
+  // Current "now" shift — only when looking at today.
+  // Считаем по «эффективному» окну (после сверки с сайтом), чтобы NowStrip
+  // и подсветка .is-now на карточках были согласованы. При пересечении
+  // смен берём ту, что началась **позже** — пользователь физически на
+  // одном объекте, и в момент старта более поздней смены переходит туда.
+  // Если объект закрыт — пропускаем (стрип не показываем, карточка не
+  // подсвечивается).
   const nowMins = new Date().getHours() * 60 + new Date().getMinutes();
-  const currentShift = isToday ? dayShifts.find(s =>
-    window.Data.toMinutes(s.start) <= nowMins && window.Data.toMinutes(s.end) > nowMins) : null;
+  const currentNow = isToday
+    ? dayShifts
+        .map(s => ({ shift: s, eff: window.Data.computeEffectiveShift(s) }))
+        .sort((a, b) => window.Data.toMinutes(b.eff.start) - window.Data.toMinutes(a.eff.start))
+        .find(({ eff }) => {
+          if (eff.badge === 'closed') return false;
+          const start = window.Data.toMinutes(eff.start);
+          const end   = window.Data.toMinutes(eff.end);
+          return start <= nowMins && end > nowMins;
+        })
+    : null;
 
   // Site-changes summary (latest unread)
   const unreadChange = changes.find(c => !c.acknowledgedAt && (c.hasChanges || c.hasSourceIssues));
 
-  // Pull-to-refresh handler
+  // Pull-to-refresh handler (один и тот же путь и для кнопки в шапке,
+  // и для PTR-жеста). Дополнительно тикает refreshing-флаг для анимации
+  // в кнопке шапки.
   const handleRefresh = _hcb(async () => {
-    await window.Data.fetchSchedule({ force: true });
-    toast.show('Сайт сверён');
-    setShifts(window.Data.loadShifts());
-    setChanges(window.Data.loadSiteChanges());
-  }, [toast]);
+    if (refreshing) return;
+    setRefreshing(true);
+    try {
+      await window.Data.fetchSchedule({ force: true });
+      toast.show('Сайт сверён');
+      setShifts(window.Data.loadShifts());
+      setChanges(window.Data.loadSiteChanges());
+    } finally {
+      setRefreshing(false);
+    }
+  }, [toast, refreshing]);
 
   // Week strip — today ± few days; selected one highlighted
   const weekDays = _hm(() => {
@@ -127,7 +151,15 @@ function HomeScreen() {
         right={
           <>
             <window.UI.IconBtn icon="edit_calendar" title="Редактор смен" onClick={() => router.push('editor')}/>
-            <window.UI.IconBtn icon="refresh" title="Обновить" onClick={handleRefresh}/>
+            <window.UI.IconBtn
+              title={refreshing ? 'Идёт сверка…' : 'Обновить'}
+              onClick={handleRefresh}
+              className={refreshing ? 'is-loading' : ''}
+            >
+              <span className={`material-symbols-outlined ${refreshing ? 'spin' : ''}`}>
+                {refreshing ? 'progress_activity' : 'refresh'}
+              </span>
+            </window.UI.IconBtn>
             <window.UI.IconBtn icon="tune" title="Настройки" onClick={() => router.push('settings')}/>
           </>
         }
@@ -143,12 +175,12 @@ function HomeScreen() {
               {mode === 'day' ? (
                 <>
                   <WeekStrip days={weekDays} onSelect={setSelectedDate}/>
-                  {currentShift && <NowStrip shift={currentShift}/>}
-                  <Timeline rows={rows} today={today} date={selectedDate} nowMins={nowMins}/>
+                  {currentNow && <NowStrip shift={currentNow.shift} eff={currentNow.eff}/>}
+                  <Timeline rows={rows} today={today} date={selectedDate} nowMins={nowMins} currentShiftId={currentNow?.shift?.id}/>
                   <AddShiftInlineLink date={selectedDate} onPush={() => router.push('editor', { date: selectedDate })}/>
                 </>
               ) : (
-                <Feed shifts={shifts} today={today} nowMins={nowMins} onPickDate={(d) => { setSelectedDate(d); setMode('day'); }}/>
+                <Feed shifts={shifts} today={today} nowMins={nowMins} currentShiftId={currentNow?.shift?.id} onPickDate={(d) => { setSelectedDate(d); setMode('day'); }}/>
               )}
               <SiteCard change={unreadChange} onClick={() => router.push('changes')}/>
             </>
@@ -325,7 +357,7 @@ function ModeTabs({ mode, onChange }) {
 }
 
 // ── Feed (все смены, сгруппированные по датам) ──────────────────
-function Feed({ shifts, today, nowMins, onPickDate }) {
+function Feed({ shifts, today, nowMins, currentShiftId, onPickDate }) {
   const groups = _hm(() => {
     const byDate = new Map();
     for (const s of shifts) {
@@ -381,6 +413,7 @@ function Feed({ shifts, today, nowMins, onPickDate }) {
                 today={today}
                 date={g.date}
                 variant="feed"
+                currentShiftId={currentShiftId}
               />
             ))}
           </div>
@@ -411,24 +444,29 @@ function WeekStrip({ days, onSelect }) {
 }
 
 // ── Now strip ───────────────────────────────────────────────────
-function NowStrip({ shift }) {
+function NowStrip({ shift, eff }) {
   const fac = window.Data.getFacility(shift.facilityId);
   const nowMins = new Date().getHours() * 60 + new Date().getMinutes();
-  const left = window.Data.toMinutes(shift.end) - nowMins;
+  const left = window.Data.toMinutes(eff.end) - nowMins;
+  const leftText = left <= 1 ? 'менее минуты' : window.Data.formatDuration(left);
+  // Берём первые два сегмента активности до « · » — обычно это «название · подзаголовок».
+  const parts = (eff.activity || shift.activity || '')
+    .split('·').map(s => s.trim()).filter(Boolean);
+  const label = parts.slice(0, 2).join(' · ') || fac?.name || '';
   return (
     <div className="now-strip">
       <span className="pulse"/>
       <div className="body">
         <span className="label">сейчас · {new Date().toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})}</span>
-        <span className="title">{shift.activity?.split('·')[0]?.trim() || fac?.name} · {fac?.name}</span>
+        <span className="title">{label}{fac?.name && !label.includes(fac.name) ? ` · ${fac.name}` : ''}</span>
       </div>
-      <span className="countdown">осталось&nbsp;<strong>{window.Data.formatDuration(left)}</strong></span>
+      <span className="countdown">осталось&nbsp;<strong>{leftText}</strong></span>
     </div>
   );
 }
 
 // ── Timeline ────────────────────────────────────────────────────
-function Timeline({ rows, today, date, nowMins }) {
+function Timeline({ rows, today, date, nowMins, currentShiftId }) {
   if (!rows.length) {
     return (
       <section className="timeline">
@@ -441,21 +479,26 @@ function Timeline({ rows, today, date, nowMins }) {
   return (
     <section className="timeline">
       {rows.map((r, i) => r.kind === 'shift'
-        ? <ShiftCard key={r.shift.id} shift={r.shift} nowMins={nowMins} today={today} date={date}/>
+        ? <ShiftCard key={r.shift.id} shift={r.shift} nowMins={nowMins} today={today} date={date} currentShiftId={currentShiftId}/>
         : <BreakDivider key={`brk-${i}`} br={r}/>
       )}
     </section>
   );
 }
 
-function ShiftCard({ shift, nowMins, today, date, variant }) {
+function ShiftCard({ shift, nowMins, today, date, variant, currentShiftId }) {
   const fac = window.Data.getFacility(shift.facilityId);
   const eff = window.Data.computeEffectiveShift(shift);
   const start = window.Data.toMinutes(eff.start);
   const end   = window.Data.toMinutes(eff.end);
   const onToday = date === today;
   const hasClosed = eff.badge === 'closed';
-  const isNow  = onToday && !hasClosed && start <= nowMins && end > nowMins;
+  // Подсветка «сейчас» — только для смены, выбранной верхним уровнем
+  // (HomeScreen → currentNow). При пересечении смен это гарантирует, что
+  // подсвечена ровно одна карточка — та же, что в NowStrip.
+  const isNow  = currentShiftId != null
+    ? shift.id === currentShiftId
+    : onToday && !hasClosed && start <= nowMins && end > nowMins;
   const isPast = (date < today) || (onToday && end <= nowMins);
   const isSite = shift.source === 'site';
   const activity = eff.activity || shift.activity;

@@ -8,8 +8,24 @@ function ChangesScreen() {
   const router = window.useRouter();
   const toast = window.UI.useToast();
   const [changes, setChanges] = _cs(() => window.Data.loadSiteChanges());
+  const [shifts, setShifts]   = _cs(() => window.Data.loadShifts());
   const [refreshing, setRefreshing] = _cs(false);
-  const shifts = _cm(() => window.Data.loadShifts(), []);
+
+  // Подписка на изменения хранилища: refresh, возврат с editor, новый
+  // снапшот сайта. Без неё экран замирал на состоянии момента монтирования.
+  _ce(() => {
+    function reloadShifts()  { setShifts(window.Data.loadShifts()); }
+    function reloadChanges() { setChanges(window.Data.loadSiteChanges()); }
+    function onFocus()       { reloadShifts(); reloadChanges(); }
+    window.addEventListener('focus', onFocus);
+    window.addEventListener('rpgu:shifts-changed', reloadShifts);
+    window.addEventListener('rpgu:site-changes-changed', reloadChanges);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('rpgu:shifts-changed', reloadShifts);
+      window.removeEventListener('rpgu:site-changes-changed', reloadChanges);
+    };
+  }, []);
 
   const latest = changes[0];
   const ackPending = !latest?.acknowledgedAt && (latest?.hasChanges || latest?.hasSourceIssues);
@@ -54,10 +70,18 @@ function ChangesScreen() {
   }
 
   async function handleRefresh() {
+    if (refreshing) return;
     setRefreshing(true);
-    await window.Data.fetchSchedule({ force: true });
-    setRefreshing(false);
-    toast.show('Сверка обновлена');
+    try {
+      await window.Data.fetchSchedule({ force: true });
+      // Подписка на 'rpgu:site-changes-changed' тоже обновит, но дёргаем
+      // явно — порядок микротасков с await не даёт гарантии, что listener
+      // уже сработал к моменту следующего рендера.
+      setChanges(window.Data.loadSiteChanges());
+      toast.show('Сверка обновлена');
+    } finally {
+      setRefreshing(false);
+    }
   }
 
   const checkedTime = latest?.checkedAt
@@ -102,7 +126,17 @@ function ChangesScreen() {
         title="Проверка сайта"
         meta={hero.brandMeta}
         metaImportant={state !== 'stable'}
-        right={<window.UI.IconBtn icon="refresh" title="Перепроверить" onClick={handleRefresh}/>}
+        right={
+          <window.UI.IconBtn
+            title={refreshing ? 'Идёт сверка…' : 'Перепроверить'}
+            onClick={handleRefresh}
+            className={refreshing ? 'is-loading' : ''}
+          >
+            <span className={`material-symbols-outlined ${refreshing ? 'spin' : ''}`}>
+              {refreshing ? 'progress_activity' : 'refresh'}
+            </span>
+          </window.UI.IconBtn>
+        }
       />
 
       <div className="screen-scroll">
@@ -112,11 +146,15 @@ function ChangesScreen() {
           <p className="hero-lede">
             {state === 'important' && affectedShifts[0] && <>
               <strong>{window.Data.getFacility(affectedShifts[0].event.facilityId)?.name}</strong>
-              {' '}{affectedShifts[0].event.kind === 'add' ? 'добавил сеанс' : 'изменил сеанс'}{' '}
+              {' '}{affectedShifts[0].event.kind === 'add' ? 'добавил сеанс' : affectedShifts[0].event.kind === 'rem' ? 'снял сеанс' : 'изменил сеанс'}{' '}
               <strong>{affectedShifts[0].event.start}&nbsp;— {affectedShifts[0].event.end}</strong>.
               {' '}Это пересекается с вашей сменой <strong>{affectedShifts[0].shift.start}&nbsp;— {affectedShifts[0].shift.end}</strong>.
+              {latest?.hasSourceIssues && <> Кроме того, не все источники ответили.</>}
             </>}
-            {state === 'changes' && <>Последняя проверка нашла {latest?.events?.length || 0}&nbsp;событий. Ваши смены не затронуты.</>}
+            {state === 'changes' && <>
+              Последняя проверка нашла {latest?.events?.length || 0}&nbsp;событий. Ваши смены не затронуты.
+              {latest?.hasSourceIssues && <> Не все источники ответили — данные могут быть неполными.</>}
+            </>}
             {state === 'stable' && <>Последняя сверка не нашла различий с предыдущим снимком. Все {sourceCount} источников ответили, ваши смены актуальны.</>}
             {state === 'issue' && <>Не все источники ответили. Повторим попытку через несколько минут.</>}
           </p>
@@ -266,12 +304,15 @@ function JournalRow({ entry, isLatest }) {
     );
   }
   const t = new Date(entry.checkedAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+  const dateIso = entry.checkedAt.slice(0, 10);
+  const isOtherDay = dateIso !== window.Data.TODAY_ISO;
+  const dateLabel = isOtherDay ? window.Data.formatDayHeading(dateIso) : null;
   const eventCount = entry.events?.length || 0;
   const isStable = !entry.hasChanges;
   const isAck = Boolean(entry.acknowledgedAt);
   return (
     <div className={`jr-row ${isLatest && !isAck ? 'is-active' : ''} ${isStable ? 'is-stable' : ''}`}>
-      <span className="time">{t}</span>
+      <span className="time">{isOtherDay ? `${dateLabel}, ${t}` : t}</span>
       <span className="desc">
         {isStable ? 'без изменений' : <><span className="em">{eventCount} {pluralizeEvents(eventCount)}</span></>}
       </span>

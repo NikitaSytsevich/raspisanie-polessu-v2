@@ -71,15 +71,9 @@ const MOCK_SCHEDULE = {
 };
 
 // ── Demo shifts for first-run users (used if empty) ──────────────
-const DEMO_SHIFTS = [
-  { id: 's1', date: TODAY_ISO,        facilityId: 'ice_arena',   start: '07:30', end: '09:00', activity: 'Массовое катание · 4 группы', source: 'site' },
-  { id: 's2', date: TODAY_ISO,        facilityId: 'ice_arena',   start: '09:45', end: '11:15', activity: 'Хоккей — детская секция · группа U-12', source: 'site', instructors: ['lapchuk_as', 'krylychuk_ps'] },
-  { id: 's3', date: TODAY_ISO,        facilityId: 'small_pool',  start: '14:30', end: '16:00', activity: 'Индивидуальные занятия · мл. группа', source: 'shift' },
-  { id: 's4', date: TODAY_ISO,        facilityId: 'sports_pool', start: '16:30', end: '18:00', activity: 'Свободное плавание · 5 дорожек', source: 'site' },
-  { id: 's5', date: isoOffset(1),     facilityId: 'sports_pool', start: '16:30', end: '18:00', activity: 'Свободное плавание', source: 'site' },
-  { id: 's6', date: isoOffset(2),     facilityId: 'ice_arena',   start: '09:45', end: '11:15', activity: 'Хоккей', source: 'site' },
-  { id: 's7', date: isoOffset(-1),    facilityId: 'ice_arena',   start: '07:30', end: '09:00', activity: 'Массовое катание', source: 'site' },
-];
+// Пусто: новый пользователь сразу попадает в EmptyState с онбордингом,
+// а не на чужие тестовые смены.
+const DEMO_SHIFTS = [];
 
 // ── Demo site-changes feed ──────────────────────────────────────
 const DEMO_CHANGES = [

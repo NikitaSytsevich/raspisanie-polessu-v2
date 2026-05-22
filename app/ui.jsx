@@ -8,10 +8,10 @@ const { useState: _us, useEffect: _ue, useRef: _ur } = React;
 // Компонент оставлен как no-op, чтобы не править все экраны.
 function StatusBar() { return null; }
 
-function IconBtn({ icon, title, onClick, danger = false, children }) {
+function IconBtn({ icon, title, onClick, danger = false, children, className = '' }) {
   return (
     <button
-      className={`icon-btn ${danger ? 'is-danger' : ''}`}
+      className={`icon-btn ${danger ? 'is-danger' : ''} ${className}`.trim()}
       type="button"
       title={title}
       onClick={onClick}
@@ -136,17 +136,34 @@ function PullToRefresh({ onRefresh, children, scrollRef }) {
     };
   }, [scrollRef, pulled, refreshing, onRefresh]);
 
-  const opacity = Math.min(1, pulled / 50);
-  const rot = pulled * 5;
+  const progress = Math.min(1, pulled / 50);
+  const ready    = pulled > 50 && !refreshing;
+  const rot      = refreshing ? 0 : pulled * 4;
+  const opacity  = Math.min(1, pulled / 28);
+  // Плавный возврат / «оседание» на 46px — только когда палец отпущен или идёт
+  // обновление. Во время активного потягивания транзишн выключен, чтобы
+  // позиция следовала за пальцем 1-в-1.
+  const settled  = pulled === 0 || refreshing;
+  const ptrTransition = settled
+    ? 'transform 360ms cubic-bezier(0.34, 1.56, 0.64, 1), opacity 220ms ease'
+    : 'opacity 160ms ease';
+  const contentTransition = settled
+    ? 'transform 360ms cubic-bezier(0.34, 1.56, 0.64, 1)'
+    : 'none';
   return (
     <>
-      <div className="ptr" style={{
-        transform: `translateX(-50%) translateY(${pulled - 30}px) rotate(${rot}deg)`,
-        opacity,
-      }}>
+      <div
+        className={`ptr ${ready ? 'is-ready' : ''} ${refreshing ? 'is-refreshing' : ''}`}
+        style={{
+          transform: `translateX(-50%) translateY(${pulled - 30}px) rotate(${rot}deg)`,
+          opacity,
+          transition: ptrTransition,
+          ['--ptr-progress']: progress,
+        }}
+      >
         <span className={`material-symbols-outlined ${refreshing ? 'spin' : ''}`}>refresh</span>
       </div>
-      <div style={{ transform: `translateY(${pulled * 0.45}px)`, transition: pulled ? 'none' : 'transform 220ms ease' }}>
+      <div style={{ transform: `translateY(${pulled * 0.45}px)`, transition: contentTransition }}>
         {children}
       </div>
     </>
