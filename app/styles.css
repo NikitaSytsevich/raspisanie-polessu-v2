@@ -465,7 +465,7 @@ body::before {
 .ws-today:hover { background: var(--accent); color: #fffaf3; border-color: var(--accent); }
 .ws-today:active { transform: scale(0.96); }
 .ws-today .material-symbols-outlined { font-size: 13px; }
-/* Month picker popover (раскрывается из .month-label) */
+/* Date picker popover (раскрывается из .month-label) */
 .month-label.is-open {
   background: var(--bg-elevated);
   color: var(--text);
@@ -476,84 +476,178 @@ body::before {
 .month-label .material-symbols-outlined {
   transition: transform 160ms ease;
 }
-.month-popover {
+.date-popover {
   position: absolute;
-  top: calc(100% + 4px);
+  top: calc(100% + 6px);
   left: 4px;
   z-index: 40;
-  min-width: 248px;
-  padding: 10px;
-  border-radius: 14px;
+  width: min(340px, calc(100vw - 24px));
+  padding: 14px 14px 10px;
+  border-radius: 18px;
   background: var(--bg-elevated);
   border: 1px solid var(--border);
-  box-shadow: 0 24px 48px -22px rgba(0, 0, 0, 0.45);
-  animation: month-popover-in 140ms ease;
+  box-shadow: 0 28px 64px -22px rgba(0, 0, 0, 0.55);
+  animation: date-popover-in 160ms cubic-bezier(0.22, 1, 0.36, 1);
+  transform-origin: top left;
 }
-@keyframes month-popover-in {
-  from { opacity: 0; transform: translateY(-4px); }
-  to   { opacity: 1; transform: translateY(0); }
+@keyframes date-popover-in {
+  from { opacity: 0; transform: translateY(-6px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
 }
-.month-popover-head {
+.dp-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 4px;
-  padding: 2px 4px 8px;
+  margin-bottom: 10px;
 }
-.month-popover-year {
-  font-family: "Newsreader", Georgia, serif;
-  font-style: italic;
-  font-size: 16px;
+.dp-title {
+  font-family: "Inter", system-ui, sans-serif;
+  font-weight: 600;
+  font-size: 14px;
   color: var(--text);
-  font-variant-numeric: tabular-nums;
 }
-.month-popover-nav {
+.dp-close {
   appearance: none;
   border: 0;
-  background: transparent;
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
+  background: var(--bg-raised);
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
   color: var(--text-muted);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  transition: background 160ms ease, color 160ms ease;
+  transition: background 140ms ease, color 140ms ease;
 }
-.month-popover-nav:hover { background: var(--bg-raised); color: var(--text); }
-.month-popover-nav .material-symbols-outlined { font-size: 18px; }
-.month-popover-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 4px;
+.dp-close:hover { background: var(--hairline); color: var(--text); }
+.dp-close .material-symbols-outlined { font-size: 16px; }
+
+.dp-quick {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--hairline);
 }
-.month-cell {
+.dp-quick-row {
   appearance: none;
-  border: 1px solid transparent;
+  border: 0;
   background: transparent;
-  padding: 8px 0;
-  border-radius: 9px;
+  padding: 8px 6px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
   font-family: "Inter", system-ui, sans-serif;
-  font-size: 12.5px;
+  font-size: 14px;
   font-weight: 500;
-  color: var(--text-muted);
-  cursor: pointer;
-  text-transform: lowercase;
-  letter-spacing: 0.01em;
-  transition: background 140ms ease, color 140ms ease, border-color 140ms ease;
-}
-.month-cell:hover { background: var(--bg-raised); color: var(--text); }
-.month-cell.is-today {
   color: var(--text);
-  border-color: var(--hairline);
+  cursor: pointer;
+  text-align: left;
+  transition: background 140ms ease;
 }
-.month-cell.is-selected {
-  background: var(--accent-soft);
-  color: var(--accent);
-  border-color: var(--border);
+.dp-quick-row:hover { background: var(--bg-raised); }
+.dp-quick-row.is-selected { background: var(--accent-soft); color: var(--accent); }
+.dp-quick-row .ic {
+  font-size: 20px;
+  width: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.dp-quick-row .ic.is-star { color: #f5c84b; }
+.dp-quick-row .ic.is-tomorrow { color: #7fb3ff; }
+
+.dp-cal {
+  padding: 2px 2px 0;
+}
+.dp-cal-head {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+  margin-bottom: 4px;
+}
+.dp-cal-head span {
+  text-align: center;
+  font-family: "Inter", system-ui, sans-serif;
+  font-size: 10.5px;
   font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text-subtle);
+  text-transform: uppercase;
+  padding: 4px 0 2px;
 }
+.dp-cal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.dp-cal-row {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+.dp-cell {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  aspect-ratio: 1 / 1;
+  border-radius: 10px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  font-family: "Inter", system-ui, sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+  position: relative;
+  transition: background 140ms ease, color 140ms ease, transform 100ms ease;
+}
+.dp-cell:hover { background: var(--bg-raised); }
+.dp-cell:active { transform: scale(0.94); }
+.dp-cell .mo {
+  font-family: "Newsreader", Georgia, serif;
+  font-style: italic;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--accent);
+  line-height: 1;
+  letter-spacing: 0.01em;
+}
+.dp-cell .num {
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.dp-cell .num.is-star {
+  color: #f5c84b;
+  font-size: 18px;
+}
+.dp-cell.is-today {
+  color: var(--text-strong);
+}
+.dp-cell.is-today .num:not(.is-star) {
+  color: var(--accent);
+  font-weight: 700;
+}
+.dp-cell.is-selected {
+  background: var(--accent);
+  color: #fffaf3;
+}
+.dp-cell.is-selected .mo { color: rgba(255,250,243,0.85); }
+.dp-cell.is-selected .num.is-star,
+.dp-cell.is-selected.is-today .num:not(.is-star) { color: #fffaf3; }
+.dp-cell.is-nav {
+  color: var(--text-subtle);
+}
+.dp-cell.is-nav .material-symbols-outlined {
+  font-size: 20px;
+}
+.dp-cell.is-nav:hover { color: var(--accent); }
 .week-strip-row {
   display: grid;
   grid-template-columns: auto 1fr auto;

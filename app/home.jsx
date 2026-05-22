@@ -553,19 +553,8 @@ function WeekStrip({ days, selectedDate, weekOffset, onSelect, onShift, onPick }
     };
   }, [pickerOpen]);
 
-  const handleMonthPick = (year, monthIdx) => {
-    const todayIso = window.Data.TODAY_ISO;
-    const t = new Date(todayIso + 'T12:00:00');
-    let targetIso;
-    if (t.getFullYear() === year && t.getMonth() === monthIdx) {
-      targetIso = todayIso;
-    } else {
-      const sel = new Date(selectedDate + 'T12:00:00');
-      // Сохраняем число — с поправкой на короткие месяцы (31 янв → 28/29 фев).
-      const day = Math.min(sel.getDate(), daysInMonth(year, monthIdx));
-      targetIso = `${year}-${String(monthIdx + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    }
-    onPick?.(targetIso);
+  const handleDatePick = (iso) => {
+    onPick?.(iso);
     setPickerOpen(false);
   };
 
@@ -579,7 +568,7 @@ function WeekStrip({ days, selectedDate, weekOffset, onSelect, onShift, onPick }
           onClick={() => setPickerOpen(o => !o)}
           aria-haspopup="dialog"
           aria-expanded={pickerOpen}
-          title="Выбрать месяц"
+          title="Выбрать дату"
         >
           <span>{monthLabel}</span>
           <span className="material-symbols-outlined">expand_more</span>
@@ -596,10 +585,11 @@ function WeekStrip({ days, selectedDate, weekOffset, onSelect, onShift, onPick }
         )}
 
         {pickerOpen && (
-          <MonthPicker
+          <DatePicker
             popoverRef={popoverRef}
             anchorDate={selectedDate}
-            onSelect={handleMonthPick}
+            onSelect={handleDatePick}
+            onClose={() => setPickerOpen(false)}
           />
         )}
       </div>
@@ -644,56 +634,142 @@ function WeekStrip({ days, selectedDate, weekOffset, onSelect, onShift, onPick }
   );
 }
 
-function daysInMonth(year, monthIdx) {
-  return new Date(year, monthIdx + 1, 0).getDate();
-}
-
-// ── Month picker popover ────────────────────────────────────────
-function MonthPicker({ popoverRef, anchorDate, onSelect }) {
+// ── Date picker popover ─────────────────────────────────────────
+// Things-style: «Сегодня» / «Завтра» quick-actions + календарь 4 недели
+// с inline-ярлыком месяца у 1-го числа. Угловые ячейки сетки — навигация
+// между «страницами» по 4 недели (◂ в первой ячейке, ▸ в последней).
+// Звезда обозначает «сегодня»; выбранный день — accent-заливка.
+function DatePicker({ popoverRef, anchorDate, onSelect, onClose }) {
   const todayIso = window.Data.TODAY_ISO;
   const today = new Date(todayIso + 'T12:00:00');
-  const todayY = today.getFullYear();
-  const todayM = today.getMonth();
   const anchor = new Date(anchorDate + 'T12:00:00');
 
-  const [viewYear, setViewYear] = _hs(anchor.getFullYear());
+  // page = смещение страницы (в неделях, шаг 4). 0 — текущая страница,
+  // начинающаяся с понедельника недели «сегодня».
+  const [page, setPage] = _hs(() => {
+    // Если anchorDate в другой странице — открываем сразу её.
+    const dow = (today.getDay() + 6) % 7; // Пн=0 … Вс=6
+    const todayMonOffset = -dow;
+    const days = Math.round(
+      (new Date(anchorDate + 'T12:00:00').getTime() - today.getTime()) / 86400000
+    );
+    return Math.floor((days - todayMonOffset) / 28);
+  });
+
+  const weeks = _hm(() => {
+    // Понедельник недели «сегодня» в днях от сегодня.
+    const dow = (today.getDay() + 6) % 7;
+    const startOffset = -dow + page * 28;
+    const out = [];
+    let lastMonth = -1;
+    for (let w = 0; w < 4; w++) {
+      const row = [];
+      for (let d = 0; d < 7; d++) {
+        const offset = startOffset + w * 7 + d;
+        const date = window.Data.isoOffset(offset);
+        const dt = new Date(date + 'T12:00:00');
+        const month = dt.getMonth();
+        const showMonth = month !== lastMonth;
+        lastMonth = month;
+        row.push({
+          date,
+          num: dt.getDate(),
+          monthShort: window.Data.RU_MONTHS[month].slice(0, 3),
+          showMonth,
+          isToday: date === todayIso,
+          isSelected: date === anchorDate,
+        });
+      }
+      out.push(row);
+    }
+    return out;
+  }, [page, todayIso, anchorDate]);
 
   return (
-    <div className="month-popover" ref={popoverRef} role="dialog" aria-label="Выбор месяца">
-      <div className="month-popover-head">
-        <button
-          type="button"
-          className="month-popover-nav"
-          onClick={() => setViewYear(y => y - 1)}
-          aria-label="Предыдущий год"
-        >
-          <span className="material-symbols-outlined">chevron_left</span>
+    <div className="date-popover" ref={popoverRef} role="dialog" aria-label="Выбрать дату">
+      <header className="dp-head">
+        <span className="dp-title">Выбрать дату</span>
+        <button type="button" className="dp-close" onClick={onClose} aria-label="Закрыть">
+          <span className="material-symbols-outlined">close</span>
         </button>
-        <span className="month-popover-year">{viewYear}</span>
+      </header>
+
+      <div className="dp-quick">
         <button
           type="button"
-          className="month-popover-nav"
-          onClick={() => setViewYear(y => y + 1)}
-          aria-label="Следующий год"
+          className={`dp-quick-row ${anchorDate === todayIso ? 'is-selected' : ''}`}
+          onClick={() => onSelect(todayIso)}
         >
-          <span className="material-symbols-outlined">chevron_right</span>
+          <span className="material-symbols-outlined ic is-star">star</span>
+          <span>Сегодня</span>
+        </button>
+        <button
+          type="button"
+          className={`dp-quick-row ${anchorDate === window.Data.isoOffset(1) ? 'is-selected' : ''}`}
+          onClick={() => onSelect(window.Data.isoOffset(1))}
+        >
+          <span className="material-symbols-outlined ic is-tomorrow">wb_twilight</span>
+          <span>Завтра</span>
         </button>
       </div>
-      <div className="month-popover-grid">
-        {window.Data.RU_MONTHS.map((name, i) => {
-          const isCurrent = viewYear === todayY && i === todayM;
-          const isSelected = viewYear === anchor.getFullYear() && i === anchor.getMonth();
-          return (
-            <button
-              key={i}
-              type="button"
-              className={`month-cell ${isSelected ? 'is-selected' : ''} ${isCurrent ? 'is-today' : ''}`}
-              onClick={() => onSelect(viewYear, i)}
-            >
-              {name.slice(0, 3)}
-            </button>
-          );
-        })}
+
+      <div className="dp-cal">
+        <div className="dp-cal-head">
+          {['Пн','Вт','Ср','Чт','Пт','Сб','Вс'].map(d => (
+            <span key={d}>{d}</span>
+          ))}
+        </div>
+        <div className="dp-cal-body">
+          {weeks.map((row, ri) => (
+            <div key={ri} className="dp-cal-row">
+              {row.map((d, di) => {
+                // Угловые ячейки — навигация по страницам, чтобы не плодить
+                // отдельные стрелки рядом с календарём.
+                const isPrevSlot = ri === 0 && di === 0;
+                const isNextSlot = ri === weeks.length - 1 && di === 6;
+                if (isPrevSlot) {
+                  return (
+                    <button
+                      key="prev"
+                      type="button"
+                      className="dp-cell is-nav"
+                      onClick={() => setPage(p => p - 1)}
+                      aria-label="Назад"
+                    >
+                      <span className="material-symbols-outlined">chevron_left</span>
+                    </button>
+                  );
+                }
+                if (isNextSlot) {
+                  return (
+                    <button
+                      key="next"
+                      type="button"
+                      className="dp-cell is-nav"
+                      onClick={() => setPage(p => p + 1)}
+                      aria-label="Вперёд"
+                    >
+                      <span className="material-symbols-outlined">chevron_right</span>
+                    </button>
+                  );
+                }
+                return (
+                  <button
+                    key={d.date}
+                    type="button"
+                    className={`dp-cell ${d.isSelected ? 'is-selected' : ''} ${d.isToday ? 'is-today' : ''}`}
+                    onClick={() => onSelect(d.date)}
+                  >
+                    {d.showMonth && <span className="mo">{d.monthShort}</span>}
+                    {d.isToday && !d.isSelected
+                      ? <span className="material-symbols-outlined num is-star">star</span>
+                      : <span className="num">{d.num}</span>}
+                  </button>
+                );
+              })}
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
