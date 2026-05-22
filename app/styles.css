@@ -1387,6 +1387,8 @@ html.light .add-shift-link:hover .plus { color: #fffaf3; }
 .date-chip.is-active .wd  { color: var(--accent); }
 .date-chip.is-active .num { color: var(--accent); }
 .date-chip.is-active .mo  { color: var(--accent); }
+/* Счётчик смен на дату — заменяет старую точку. ::after оставляем как
+   fallback на случай has-shift без явного .count (старый кеш). */
 .date-chip.has-shift::after {
   content: '';
   width: 3px; height: 3px; border-radius: 50%;
@@ -1394,6 +1396,24 @@ html.light .add-shift-link:hover .plus { color: #fffaf3; }
   margin-top: 1px;
 }
 .date-chip.is-active.has-shift::after { background: var(--accent); }
+.date-chip:has(.count)::after { display: none; }
+.date-chip .count {
+  display: inline-block;
+  min-width: 14px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  background: var(--text-subtle);
+  color: var(--bg);
+  line-height: 1.3;
+  margin-top: 3px;
+}
+.date-chip.is-active .count {
+  background: var(--accent);
+  color: #fffaf3;
+}
 
 .facility-row {
   padding: 0 22px;
@@ -1522,6 +1542,34 @@ html.light .add-shift-link:hover .plus { color: #fffaf3; }
   font-variant-numeric: tabular-nums;
 }
 .duration-pill .material-symbols-outlined { font-size: 14px; color: var(--accent); }
+
+/* Невалидный диапазон времени: красная подсветка инпутов + пилюли */
+.time-row.is-invalid .time-input { color: var(--danger); }
+.time-row.is-invalid .time-cell  { border-color: color-mix(in srgb, var(--danger) 40%, var(--hairline)); }
+.duration-pill.is-invalid {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 40%, var(--hairline));
+  background: var(--danger-soft);
+  font-style: normal;
+}
+.duration-pill.is-invalid .material-symbols-outlined { color: var(--danger); }
+
+/* Пересечение со существующими сменами на ту же дату */
+.overlap-warn {
+  margin: 8px 22px 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border: 1px dashed color-mix(in srgb, var(--accent) 40%, var(--hairline));
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.35;
+}
+.overlap-warn .material-symbols-outlined { font-size: 18px; color: var(--accent); flex-shrink: 0; margin-top: 1px; }
+.overlap-warn .body strong { color: var(--text); font-weight: 600; }
 
 .preset-row {
   padding: 8px 16px 0;
@@ -1703,6 +1751,16 @@ html.light .add-shift-link:hover .plus { color: #fffaf3; }
   box-shadow: none;
 }
 .btn.danger:hover { background: var(--danger-soft); }
+.btn:disabled,
+.btn[disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+  box-shadow: none;
+  background: var(--bg-elevated);
+  color: var(--text-subtle);
+  border-color: var(--hairline);
+}
+.btn:disabled:hover { background: var(--bg-elevated); }
 
 .recent { padding: 4px 22px 0; display: flex; flex-direction: column; }
 .recent-row {
@@ -2263,6 +2321,78 @@ html.light .about-sheet {
 @keyframes about-sheet-in {
   from { opacity: 0; transform: translateY(18px) scale(0.96); }
   to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* ──────────────────────────────────────────────────────────────────
+   Confirm-sheet — кастомная замена window.confirm
+   ────────────────────────────────────────────────────────────────── */
+.confirm-root {
+  position: fixed;
+  inset: 0;
+  z-index: 9200;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 16px;
+  animation: about-in 200ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+@media (min-width: 480px) {
+  .confirm-root { align-items: center; }
+}
+.confirm-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+.confirm-sheet {
+  position: relative;
+  width: min(380px, 100%);
+  padding: 22px 22px 18px;
+  border-radius: 18px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  box-shadow: 0 24px 60px -20px rgba(0, 0, 0, 0.55);
+  animation: confirm-sheet-in 260ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+@keyframes confirm-sheet-in {
+  from { opacity: 0; transform: translateY(16px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0)    scale(1);    }
+}
+.confirm-icon {
+  width: 44px; height: 44px;
+  border-radius: 14px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 14px;
+}
+.confirm-icon.is-danger {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.confirm-icon .material-symbols-outlined { font-size: 22px; }
+.confirm-title {
+  margin: 0 0 6px;
+  font-family: "Newsreader", Georgia, serif;
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--text-strong);
+}
+.confirm-body {
+  margin: 0 0 18px;
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+.confirm-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
 }
 
 .about-close {

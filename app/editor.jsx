@@ -28,6 +28,10 @@ function EditorScreen({ shiftId, date } = {}) {
   const isEditing = Boolean(shiftId);
   const [draft, setDraft] = _es(initialShift);
   const [recent, setRecent] = _es(() => window.Data.loadShifts());
+  // Модалка подтверждения: 'exit' (несохранённые изменения) | 'delete' | null
+  const [confirmKind, setConfirmKind] = _es(null);
+  // Что выполнить, если пользователь подтвердит «Выйти без сохранения»
+  const [pendingExit, setPendingExit] = _es(null);
 
   function patch(p) { setDraft(d => ({ ...d, ...p })); }
 
@@ -36,10 +40,42 @@ function EditorScreen({ shiftId, date } = {}) {
     patch({ instructors: cur.includes(id) ? cur.filter(x => x !== id) : [...cur, id] });
   }
 
+  // Сериализуем оба объекта одинаково (instructors отсортированы),
+  // чтобы сравнение по строке было устойчивым к порядку выбора.
+  const isDirty = _em(() => {
+    const norm = s => JSON.stringify({
+      ...s,
+      instructors: [...(s.instructors || [])].sort(),
+    });
+    return norm(draft) !== norm(initialShift);
+  }, [draft, initialShift]);
+
+  const facility = window.Data.getFacility(draft.facilityId);
+  const startMins = window.Data.toMinutes(draft.start);
+  const endMins   = window.Data.toMinutes(draft.end);
+  const hasTime   = Boolean(draft.start && draft.end);
+  const isValid   = hasTime && endMins > startMins;
+  const duration  = isValid ? window.Data.formatDuration(endMins - startMins) : '—';
+
+  // Пересечения с другими смены пользователя в ту же дату
+  const overlaps = _em(() => {
+    if (!isValid) return [];
+    return recent.filter(s =>
+      s.id !== draft.id &&
+      s.date === draft.date &&
+      window.Data.toMinutes(s.start) < endMins &&
+      window.Data.toMinutes(s.end)   > startMins
+    );
+  }, [recent, draft.id, draft.date, startMins, endMins, isValid]);
+
   function handleSubmit(e) {
     e?.preventDefault?.();
-    if (!draft.start || !draft.end) {
+    if (!hasTime) {
       toast.show('Заполните время');
+      return;
+    }
+    if (!isValid) {
+      toast.show('Конец должен быть позже начала');
       return;
     }
     const next = { ...draft, id: draft.id || `s${Date.now()}` };
@@ -48,25 +84,43 @@ function EditorScreen({ shiftId, date } = {}) {
     router.pop();
   }
 
+  // Попытка выйти: если есть несохранённые изменения — показать подтверждение.
+  // Иначе сразу выполнить `exit`.
+  function tryExit(exit) {
+    if (isDirty) {
+      setPendingExit(() => exit);
+      setConfirmKind('exit');
+    } else {
+      exit();
+    }
+  }
+
   function handleDelete() {
     if (!shiftId) return;
-    if (!confirm('Удалить эту смену?')) return;
+    setConfirmKind('delete');
+  }
+  function confirmDelete() {
     window.Data.removeShift(shiftId);
+    setConfirmKind(null);
     toast.show('Смена удалена');
     router.pop();
   }
 
-  const facility = window.Data.getFacility(draft.facilityId);
-  const startMins = window.Data.toMinutes(draft.start);
-  const endMins   = window.Data.toMinutes(draft.end);
-  const duration  = endMins > startMins ? window.Data.formatDuration(endMins - startMins) : '—';
-
-  // Date strip (today ± 3)
+  // Date strip (today−1 … today+5)
   const dateChips = _em(() => {
     const arr = [];
     for (let i = -1; i <= 5; i++) arr.push(window.Data.isoOffset(i));
     return arr;
   }, []);
+  // Сколько смен у пользователя на каждый день — для счётчика на чипе
+  const countsByDate = _em(() => {
+    const m = new Map();
+    for (const s of recent) {
+      if (s.id === draft.id) continue;
+      m.set(s.date, (m.get(s.date) || 0) + 1);
+    }
+    return m;
+  }, [recent, draft.id]);
 
   // Recent (today + future, excluding current draft)
   const recentList = _em(() =>
@@ -77,24 +131,29 @@ function EditorScreen({ shiftId, date } = {}) {
     [recent, draft.id]
   );
 
-  // Same-shift history suggestion
+  // Same-shift history suggestion — мягко: ±15 мин по обеим границам и тот же объект.
+  // Показываем и при редактировании тоже (вдруг полезно увидеть, что было в прошлый раз).
   const samePastSuggest = _em(() => {
-    if (isEditing) return null;
+    if (!isValid) return null;
     return recent
-      .filter(s => s.facilityId === draft.facilityId
-        && s.start === draft.start && s.end === draft.end
-        && s.date < window.Data.TODAY_ISO)
+      .filter(s => s.id !== draft.id
+        && s.facilityId === draft.facilityId
+        && Math.abs(window.Data.toMinutes(s.start) - startMins) <= 15
+        && Math.abs(window.Data.toMinutes(s.end)   - endMins)   <= 15
+        && s.date < window.Data.TODAY_ISO
+        && (s.activity?.trim() || (s.instructors?.length > 0)))
       .sort((a, b) => b.date.localeCompare(a.date))[0] || null;
-  }, [recent, draft.facilityId, draft.start, draft.end, isEditing]);
+  }, [recent, draft.facilityId, draft.id, startMins, endMins, isValid]);
 
   return (
     <div className="screen editor-screen" data-edit={isEditing ? 'true' : 'false'}>
       <window.UI.StatusBar/>
 
       <window.UI.AppHeader
-        left={<window.UI.IconBtn icon="arrow_back" title="Назад" onClick={() => router.pop()}/>}
+        left={<window.UI.IconBtn icon="arrow_back" title="Назад" onClick={() => tryExit(() => router.pop())}/>}
         title={isEditing ? 'Редактировать смену' : 'Новая смена'}
-        meta={isEditing ? 'правка существующей' : 'черновик · не сохранён'}
+        meta={isEditing ? (isDirty ? 'есть изменения' : 'правка существующей') : (isDirty ? 'черновик · не сохранён' : 'новая смена')}
+        metaImportant={isDirty}
         right={isEditing
           ? <window.UI.IconBtn icon="delete" title="Удалить" danger onClick={handleDelete}/>
           : null}
@@ -128,12 +187,13 @@ function EditorScreen({ shiftId, date } = {}) {
               <button
                 key={d}
                 type="button"
-                className={`date-chip ${draft.date === d ? 'is-active' : ''} ${recent.some(s => s.date === d) ? 'has-shift' : ''}`}
+                className={`date-chip ${draft.date === d ? 'is-active' : ''} ${countsByDate.get(d) ? 'has-shift' : ''}`}
                 onClick={() => patch({ date: d })}
               >
                 <span className="wd">{window.Data.RU_WEEKDAYS_SHORT[date.getDay()]}</span>
                 <span className="num">{date.getDate()}</span>
                 <span className="mo">{labelByDay}</span>
+                {countsByDate.get(d) > 0 && <span className="count">{countsByDate.get(d)}</span>}
               </button>
             );
           })}
@@ -158,7 +218,7 @@ function EditorScreen({ shiftId, date } = {}) {
         </div>
 
         <window.UI.SecLabel>Время</window.UI.SecLabel>
-        <div className="time-row">
+        <div className={`time-row ${hasTime && !isValid ? 'is-invalid' : ''}`}>
           <label className="time-cell">
             <span className="label">Начало</span>
             <input
@@ -179,10 +239,25 @@ function EditorScreen({ shiftId, date } = {}) {
           </label>
         </div>
 
-        <div className="duration-pill">
-          <span className="material-symbols-outlined">schedule</span>
-          <span>длительность <strong>{duration}</strong></span>
+        <div className={`duration-pill ${hasTime && !isValid ? 'is-invalid' : ''}`}>
+          <span className="material-symbols-outlined">{isValid ? 'schedule' : 'error'}</span>
+          <span>
+            {isValid
+              ? <>длительность <strong>{duration}</strong></>
+              : <>конец должен быть позже начала</>}
+          </span>
         </div>
+
+        {overlaps.length > 0 && (
+          <div className="overlap-warn">
+            <span className="material-symbols-outlined">warning</span>
+            <div className="body">
+              {overlaps.length === 1
+                ? <>Пересекается с вашей сменой <strong>{window.Data.getFacility(overlaps[0].facilityId)?.name} · {overlaps[0].start}—{overlaps[0].end}</strong></>
+                : <>Пересекается с {overlaps.length}&nbsp;другими сменами на эту дату</>}
+            </div>
+          </div>
+        )}
 
         <div className="preset-row">
           {[
@@ -203,7 +278,7 @@ function EditorScreen({ shiftId, date } = {}) {
           ))}
         </div>
 
-        <window.UI.SecLabel hint={draft.facilityId === 'ice_arena' ? 'только лёд' : 'опционально'}>С кем работаю</window.UI.SecLabel>
+        <window.UI.SecLabel hint="опционально">С кем работаю</window.UI.SecLabel>
         <div className="insts">
           {window.Data.INSTRUCTORS.map(p => {
             const sel = draft.instructors?.includes(p.id);
@@ -245,17 +320,16 @@ function EditorScreen({ shiftId, date } = {}) {
         )}
 
         <div className="actions">
-          <button className="btn" type="button" onClick={handleSubmit}>
+          <button
+            className="btn"
+            type="button"
+            onClick={handleSubmit}
+            disabled={!isValid}
+          >
             <span className="material-symbols-outlined">check</span>
             <span>{isEditing ? 'Сохранить изменения' : 'Добавить смену'}</span>
           </button>
-          <button className="btn secondary" type="button" onClick={() => router.pop()}>Отменить</button>
-          {isEditing && (
-            <button className="btn danger" type="button" onClick={handleDelete}>
-              <span className="material-symbols-outlined">delete_outline</span>
-              <span>Удалить эту смену</span>
-            </button>
-          )}
+          <button className="btn secondary" type="button" onClick={() => tryExit(() => router.pop())}>Отменить</button>
         </div>
 
         {recentList.length > 0 && (
@@ -269,7 +343,7 @@ function EditorScreen({ shiftId, date } = {}) {
                   <div
                     key={s.id}
                     className={`recent-row ${s.source === 'site' ? 'is-site' : ''}`}
-                    onClick={() => router.replace('editor', { shiftId: s.id })}
+                    onClick={() => tryExit(() => router.replace('editor', { shiftId: s.id }))}
                   >
                     <div className="when">
                       <span className="num">{d.getDate()}</span>
@@ -288,6 +362,67 @@ function EditorScreen({ shiftId, date } = {}) {
         )}
 
         <window.UI.HomeIndicator/>
+      </div>
+
+      {confirmKind && (
+        <ConfirmSheet
+          kind={confirmKind}
+          onCancel={() => { setConfirmKind(null); setPendingExit(null); }}
+          onConfirm={() => {
+            if (confirmKind === 'delete') {
+              confirmDelete();
+            } else if (confirmKind === 'exit') {
+              const exit = pendingExit;
+              setConfirmKind(null);
+              setPendingExit(null);
+              exit?.();
+            }
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── Confirm-sheet (вместо системного window.confirm) ────────────
+function ConfirmSheet({ kind, onCancel, onConfirm }) {
+  _ee(() => {
+    function onKey(e) { if (e.key === 'Escape') onCancel?.(); }
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onCancel]);
+
+  const cfg = kind === 'delete'
+    ? {
+        icon: 'delete',
+        title: 'Удалить смену?',
+        body: 'Действие нельзя отменить — смена пропадёт из расписания.',
+        confirm: 'Удалить',
+        danger: true,
+      }
+    : {
+        icon: 'edit_off',
+        title: 'Выйти без сохранения?',
+        body: 'У вас есть несохранённые изменения. При выходе они потеряются.',
+        confirm: 'Выйти',
+        danger: true,
+      };
+
+  return (
+    <div className="confirm-root" role="dialog" aria-modal="true" aria-labelledby="cfm-title">
+      <div className="confirm-backdrop" onClick={onCancel}/>
+      <div className="confirm-sheet">
+        <div className={`confirm-icon ${cfg.danger ? 'is-danger' : ''}`}>
+          <span className="material-symbols-outlined">{cfg.icon}</span>
+        </div>
+        <h2 id="cfm-title" className="confirm-title">{cfg.title}</h2>
+        <p className="confirm-body">{cfg.body}</p>
+        <div className="confirm-actions">
+          <button type="button" className="btn secondary" onClick={onCancel}>Отмена</button>
+          <button type="button" className={`btn ${cfg.danger ? 'danger' : ''}`} onClick={onConfirm}>
+            {cfg.confirm}
+          </button>
+        </div>
       </div>
     </div>
   );
