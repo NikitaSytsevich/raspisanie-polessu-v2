@@ -174,20 +174,30 @@ function HomeScreen() {
   // Когда меняется selectedDate — синхронизируем weekOffset так, чтобы
   // выбранный день попадал в текущее окно (если только что вернулись из
   // editor с другой датой и т.п.).
+  //
+  // ВАЖНО: deps содержат только selectedDate. weekOffset читается через
+  // замыкание — это намеренно. Если добавить weekOffset в deps, эффект
+  // будет срабатывать на каждое нажатие стрелок ◂/▸ в WeekStrip и сразу
+  // же откатывать сдвиг назад, т.к. selectedDate остаётся в старом окне.
+  // weekOffset на момент запуска эффекта всегда актуальный (React коммитит
+  // state до запуска effects), staleness не страшен.
+  const weekOffsetRef = _hr(weekOffset);
+  weekOffsetRef.current = weekOffset;
   _he(() => {
     const today = window.Data.TODAY_ISO;
     const t = new Date(today + 'T12:00:00').getTime();
     const s = new Date(selectedDate + 'T12:00:00').getTime();
     const dayDiff = Math.round((s - t) / 86400000);
+    const offset = weekOffsetRef.current;
     // Текущее окно покрывает [-1+offset*7 ... +5+offset*7]
-    const lo = -1 + weekOffset * 7;
-    const hi =  5 + weekOffset * 7;
+    const lo = -1 + offset * 7;
+    const hi =  5 + offset * 7;
     if (dayDiff < lo || dayDiff > hi) {
       // ближайший offset, при котором dayDiff попадает в [-1..5]
       const newOffset = Math.round((dayDiff - 2) / 7);
       setWeekOffset(newOffset);
     }
-  }, [selectedDate, weekOffset]);
+  }, [selectedDate]);
 
   return (
     <div className="screen home-screen">
