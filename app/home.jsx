@@ -503,46 +503,81 @@ function Feed({ shifts, today, nowMins, currentShiftId, onPickDate }) {
 
 // ── Week strip ──────────────────────────────────────────────────
 function WeekStrip({ days, selectedDate, weekOffset, onSelect, onShift, onPick, dateInputRef }) {
-  return (
-    <div className="week-strip-row">
-      <button
-        type="button"
-        className="ws-arrow"
-        title="Предыдущая неделя"
-        aria-label="Предыдущая неделя"
-        onClick={() => onShift?.(-1)}
-      >
-        <span className="material-symbols-outlined">chevron_left</span>
-      </button>
+  // Заголовок: «май» или «май — июнь» если окно покрывает два месяца.
+  const monthsInView = [];
+  const seenMonth = new Set();
+  for (const d of days) {
+    const m = new Date(d.date + 'T12:00:00').getMonth();
+    if (!seenMonth.has(m)) {
+      seenMonth.add(m);
+      monthsInView.push(window.Data.RU_MONTHS[m]);
+    }
+  }
+  const monthLabel = monthsInView.length === 1
+    ? monthsInView[0]
+    : monthsInView.join(' — ');
 
-      <div className="week-strip">
-        {days.map(d => (
+  return (
+    <div className="week-nav">
+      <div className="week-head">
+        <button
+          type="button"
+          className="month-label"
+          onClick={() => dateInputRef?.current?.showPicker?.() || dateInputRef?.current?.click?.()}
+          title="Выбрать дату"
+        >
+          <span>{monthLabel}</span>
+          <span className="material-symbols-outlined">expand_more</span>
+        </button>
+        {weekOffset !== 0 && (
           <button
-            key={d.date}
             type="button"
-            className={`wd ${d.hasShift ? 'has' : 'off'} ${d.isToday ? 'today' : ''} ${d.isSelected ? 'is-selected' : ''}`}
-            onClick={() => onSelect?.(d.date)}
+            className="ws-today"
+            onClick={() => onShift?.('today')}
           >
-            <span className="label">{d.wd}</span>
-            <span className="num">{d.num}</span>
-            {d.showMonth && <span className="mo">{d.mo}</span>}
-            <span className="dot"/>
+            <span className="material-symbols-outlined">undo</span>
+            к&nbsp;сегодня
           </button>
-        ))}
+        )}
       </div>
 
-      <button
-        type="button"
-        className="ws-arrow"
-        title="Следующая неделя"
-        aria-label="Следующая неделя"
-        onClick={() => onShift?.(+1)}
-      >
-        <span className="material-symbols-outlined">chevron_right</span>
-      </button>
+      <div className="week-strip-row">
+        <button
+          type="button"
+          className="ws-arrow"
+          title="Предыдущая неделя"
+          aria-label="Предыдущая неделя"
+          onClick={() => onShift?.(-1)}
+        >
+          <span className="material-symbols-outlined">chevron_left</span>
+        </button>
 
-      {/* Скрытый native date-input — открывается по тапу на «к сегодня» когда
-          weekOffset ≠ 0, либо его можно расширить отдельной кнопкой. */}
+        <div className="week-strip">
+          {days.map(d => (
+            <button
+              key={d.date}
+              type="button"
+              className={`wd ${d.hasShift ? 'has' : 'off'} ${d.isToday ? 'today' : ''} ${d.isSelected ? 'is-selected' : ''}`}
+              onClick={() => onSelect?.(d.date)}
+            >
+              <span className="label">{d.wd}</span>
+              <span className="num">{d.num}</span>
+              <span className="dot"/>
+            </button>
+          ))}
+        </div>
+
+        <button
+          type="button"
+          className="ws-arrow"
+          title="Следующая неделя"
+          aria-label="Следующая неделя"
+          onClick={() => onShift?.(+1)}
+        >
+          <span className="material-symbols-outlined">chevron_right</span>
+        </button>
+      </div>
+
       <input
         ref={dateInputRef}
         type="date"
@@ -552,16 +587,6 @@ function WeekStrip({ days, selectedDate, weekOffset, onSelect, onShift, onPick, 
         tabIndex={-1}
         aria-hidden="true"
       />
-
-      {weekOffset !== 0 && (
-        <button
-          type="button"
-          className="ws-today"
-          onClick={() => onShift?.('today')}
-        >
-          к сегодня
-        </button>
-      )}
     </div>
   );
 }
@@ -793,36 +818,44 @@ function AddShiftInlineLink({ date, onPush }) {
 function SiteCard({ change, onClick }) {
   const hasUnread = Boolean(change);
   const checkedAt = change?.checkedAt || window.Data.loadCachedAt();
-  const facCount = window.Data.FACILITIES.length;
+  const affectedCount = change?.events?.filter(e => e.affectsShiftId).length || 0;
+  const affectsMe = affectedCount > 0;
+  let head;
+  if (!hasUnread) {
+    head = <>Все источники сматчены, изменений <em>не найдено</em></>;
+  } else if (affectsMe) {
+    const p = affectedShiftsPhrase(affectedCount);
+    head = <>{p.verb} <em>{affectedCount}</em> {p.noun}</>;
+  } else {
+    const total = change.events?.length || 0;
+    head = <>Есть события — <em>{total}</em> {pluralizeEvents(total)}, ваши смены не тронуты</>;
+  }
+  const checkedText = checkedAt
+    ? `проверено ${window.Data.formatRelativeMinutes(checkedAt)}`
+    : 'ещё не проверено';
+  const icon = affectsMe ? 'event_busy' : hasUnread ? 'compare_arrows' : 'sync';
   return (
-    <button className={`site-card ${hasUnread ? 'is-attention' : ''}`} onClick={onClick}>
-      <div className="row">
-        <div className="icon-cell">
-          <span className="material-symbols-outlined">{hasUnread ? 'event_busy' : 'sync'}</span>
-        </div>
-        <div className="body">
-          <p className="kicker">Проверка сайта</p>
-          <p className="head">
-            {hasUnread
-              ? (() => {
-                  const n = change.events?.filter(e => e.affectsShiftId).length || 0;
-                  const p = affectedShiftsPhrase(n);
-                  return <>{p.verb} <em>{n}</em> {p.noun}</>;
-                })()
-              : <>Все источники сматчены, изменений&nbsp;<em>не найдено</em></>}
-          </p>
-        </div>
-        <span className="material-symbols-outlined arrow">chevron_right</span>
+    <button
+      className={`site-card ${hasUnread ? 'is-attention' : ''} ${affectsMe ? 'is-important' : ''}`}
+      onClick={onClick}
+    >
+      <div className="icon-cell">
+        <span className="material-symbols-outlined">{icon}</span>
       </div>
-      <div className="footer">
-        <span className="meta">
-          <span className="material-symbols-outlined" style={{ fontSize: 14 }}>schedule</span>
-          {' '}{checkedAt ? `проверено ${window.Data.formatRelativeMinutes(checkedAt)}` : 'ещё не проверено'} · {facCount} {pluralizeFacilities(facCount)}
-        </span>
-        <span className="open-link">{hasUnread ? 'разобрать →' : 'журнал →'}</span>
+      <div className="body">
+        <p className="kicker">Проверка сайта · <span className="meta">{checkedText}</span></p>
+        <p className="head">{head}</p>
       </div>
+      <span className="material-symbols-outlined arrow">chevron_right</span>
     </button>
   );
+}
+
+function pluralizeEvents(n) {
+  const last = n % 10, last2 = n % 100;
+  if (last === 1 && last2 !== 11) return 'событие';
+  if (last >= 2 && last <= 4 && (last2 < 12 || last2 > 14)) return 'события';
+  return 'событий';
 }
 
 // ── Empty / caught-up states ────────────────────────────────────

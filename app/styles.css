@@ -341,8 +341,9 @@ body::before {
   .seg { padding: 6px 0; grid-template-columns: 56px 1fr; gap: 12px; }
   .seg .card { padding: 0; }
   .timeline { padding: 8px 18px 10px; }
-  .week-strip-row { margin: 0 8px 10px; gap: 2px; }
-  .week-strip { padding: 4px 0; }
+  .week-nav { margin: 0 8px 10px; }
+  .week-head { padding: 6px 4px 0; }
+  .week-strip-row { gap: 1px; }
 }
 .hero-kicker {
   font-family: "Newsreader", Georgia, serif;
@@ -401,26 +402,90 @@ body::before {
 .hero-lede strong { color: var(--text); font-weight: 500; font-style: italic; }
 
 /* ──────────────────────────────────────────────────────────────────
-   HOME — week strip (с навигацией между неделями)
+   HOME — week navigation
+   Двухэтажный блок: заголовок (месяц + «к сегодня») + полоса с чипами.
    ────────────────────────────────────────────────────────────────── */
-.week-strip-row {
+.week-nav {
   position: relative;
   margin: 0 12px 14px;
-  padding: 6px 0 8px;
+  padding: 4px 0 4px;
+  border-top: 1px solid var(--hairline);
+  border-bottom: 1px solid var(--hairline);
+}
+.week-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 6px 2px;
+  min-height: 28px;
+}
+.month-label {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 2px 6px 2px 4px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-family: "Newsreader", Georgia, serif;
+  font-style: italic;
+  font-size: 14px;
+  letter-spacing: -0.005em;
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  transition: background 160ms ease, color 160ms ease;
+}
+.month-label::first-letter { text-transform: uppercase; }
+.month-label:hover { background: var(--bg-elevated); color: var(--text); }
+.month-label .material-symbols-outlined {
+  font-size: 16px;
+  color: var(--text-subtle);
+  margin-left: -2px;
+}
+.ws-today {
+  appearance: none;
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--hairline));
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 3px 9px 3px 7px;
+  border-radius: 999px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: background 160ms ease, color 160ms ease, transform 120ms ease;
+}
+.ws-today:hover { background: var(--accent); color: #fffaf3; border-color: var(--accent); }
+.ws-today:active { transform: scale(0.96); }
+.ws-today .material-symbols-outlined { font-size: 13px; }
+.ws-date-input {
+  position: absolute;
+  left: 12px; top: 8px;
+  width: 80px; height: 24px;
+  opacity: 0;
+  pointer-events: none;
+  border: 0;
+}
+.week-strip-row {
   display: grid;
   grid-template-columns: auto 1fr auto;
   align-items: center;
-  gap: 4px;
-  border-top: 1px solid var(--hairline);
-  border-bottom: 1px solid var(--hairline);
+  gap: 2px;
+  padding: 0 2px 4px;
 }
 .ws-arrow {
   appearance: none;
   border: 0;
   background: transparent;
   color: var(--text-subtle);
-  width: 30px;
-  height: 30px;
+  width: 28px;
+  height: 32px;
   border-radius: 10px;
   cursor: pointer;
   display: inline-flex;
@@ -429,35 +494,9 @@ body::before {
   transition: background 160ms ease, color 160ms ease, transform 120ms ease;
 }
 .ws-arrow:hover { background: var(--bg-elevated); color: var(--text); }
-.ws-arrow:active { transform: scale(0.92); }
-.ws-arrow .material-symbols-outlined { font-size: 20px; }
-.ws-today {
-  position: absolute;
-  right: 8px;
-  bottom: -10px;
-  appearance: none;
-  border: 1px solid var(--accent);
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  padding: 3px 8px;
-  border-radius: 999px;
-  cursor: pointer;
-  z-index: 2;
-}
-.ws-today:hover { background: var(--accent); color: #fffaf3; }
-.ws-date-input {
-  /* Скрытый, но рабочий native picker. Открываем программно — пока не
-     биндим к кнопке, оставляем как фоллбэк для будущей фичи. */
-  position: absolute;
-  width: 0; height: 0;
-  opacity: 0;
-  pointer-events: none;
-}
+.ws-arrow:active { transform: scale(0.9); }
+.ws-arrow .material-symbols-outlined { font-size: 18px; }
 .week-strip {
-  padding: 4px 2px;
   display: grid;
   grid-template-columns: repeat(7, 1fr);
   gap: 2px;
@@ -492,17 +531,6 @@ body::before {
   box-shadow: inset 0 0 0 1px var(--accent);
 }
 .wd.off .num { color: var(--text-subtle); font-style: italic; }
-.wd .mo {
-  position: absolute;
-  top: 1px;
-  right: 4px;
-  font-size: 8.5px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--accent);
-  font-weight: 600;
-  opacity: 0.78;
-}
 
 /* Пустой день — теперь с CTA «Добавить смену» */
 .day-empty {
@@ -862,8 +890,17 @@ body::before {
 .brk.is-ice .brk-line .label strong { color: #8ab4d4; }
 .brk.is-cross .brk-line .label strong { color: var(--warning); }
 
-/* HOME — inline add link */
+/* HOME — inline add link (теперь <button>, поэтому нужно сбросить
+   user-agent стили: убираем дефолтный фон/рамку/шрифт, оставляем только
+   нашу dashed-границу сверху.) */
 .add-shift-link {
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  border: 0;
+  border-top: 1px dashed var(--border);
+  border-radius: 0;
+  width: calc(100% - 44px);
   margin: 8px 22px 0;
   padding: 14px 14px 14px 0;
   display: flex;
@@ -873,9 +910,14 @@ body::before {
   font-style: italic;
   font-size: 15px;
   color: var(--accent);
+  text-align: left;
   text-decoration: none;
   cursor: pointer;
-  border-top: 1px dashed var(--border);
+}
+.add-shift-link:focus { outline: none; }
+.add-shift-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 .add-shift-link .plus {
   width: 28px; height: 28px; border-radius: 999px;
@@ -914,52 +956,63 @@ html.light .add-shift-link:hover .plus { color: #fffaf3; }
   transform: translateX(2px);
 }
 
-/* HOME — bottom site card */
+/* HOME — bottom site card (компактная одно-рядная версия) */
 .site-card {
-  margin: 4px 22px 0;
-  padding: 16px 16px 14px;
-  border-radius: 18px;
+  appearance: none;
+  width: calc(100% - 44px);
+  margin: 6px 22px 0;
+  padding: 11px 12px 11px 12px;
+  border-radius: 14px;
   background: var(--bg-elevated);
   border: 1px solid var(--hairline);
   cursor: pointer;
   text-align: left;
-  width: calc(100% - 44px);
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: 32px 1fr auto;
+  align-items: center;
   gap: 10px;
-  transition: all 200ms ease;
+  font-family: inherit;
+  color: inherit;
+  transition: background 200ms ease, border-color 200ms ease, transform 120ms ease;
 }
 .site-card:hover {
   border-color: var(--border);
   background: var(--bg-raised);
 }
-.site-card .row { display: flex; align-items: center; gap: 10px; }
+.site-card:active { transform: scale(0.99); }
 .site-card .icon-cell {
-  width: 36px; height: 36px;
-  border-radius: 12px;
+  width: 32px; height: 32px;
+  border-radius: 10px;
   background: var(--bg-raised);
   border: 1px solid var(--hairline);
   display: flex; align-items: center; justify-content: center;
-  flex-shrink: 0;
   color: var(--text-muted);
 }
-.site-card .icon-cell .material-symbols-outlined { font-size: 20px; }
-.site-card .body { flex: 1; min-width: 0; }
+.site-card .icon-cell .material-symbols-outlined { font-size: 17px; }
+.site-card .body { min-width: 0; line-height: 1.25; }
 .site-card .kicker {
   font-size: 10px;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-subtle);
-  font-weight: 700;
-  margin: 0 0 3px;
+  font-weight: 600;
+  margin: 0 0 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.site-card .kicker .meta {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 500;
+  color: var(--text-subtle);
 }
 .site-card .head {
   font-family: "Newsreader", Georgia, serif;
   font-weight: 500;
-  font-size: 16px;
-  letter-spacing: -0.01em;
+  font-size: 14.5px;
+  letter-spacing: -0.005em;
   color: var(--text);
-  line-height: 1.25;
   margin: 0;
 }
 .site-card .head em {
@@ -967,22 +1020,12 @@ html.light .add-shift-link:hover .plus { color: #fffaf3; }
   color: var(--accent);
   font-weight: 500;
 }
-.site-card .arrow { color: var(--text-subtle); }
-.site-card .footer {
-  display: flex; align-items: center; justify-content: space-between;
-  padding-top: 10px;
-  border-top: 1px solid var(--hairline);
-  font-size: 11px;
+.site-card .arrow {
   color: var(--text-subtle);
+  font-size: 20px;
+  transition: transform 160ms ease, color 160ms ease;
 }
-.site-card .footer .meta { display: inline-flex; align-items: center; gap: 6px; }
-.site-card .footer .open-link {
-  color: var(--accent); font-weight: 600;
-  font-family: "Newsreader", Georgia, serif;
-  font-style: italic;
-  font-size: 13px;
-  display: inline-flex; align-items: center; gap: 4px;
-}
+.site-card:hover .arrow { color: var(--accent); transform: translateX(2px); }
 
 .site-card.is-attention {
   background:
@@ -997,6 +1040,15 @@ html.light .add-shift-link:hover .plus { color: #fffaf3; }
   border-color: var(--border);
 }
 .site-card.is-attention .kicker { color: var(--accent); }
+.site-card.is-attention .kicker .meta { color: var(--accent); opacity: 0.75; }
+/* Когда сайт реально затронул смены — добавляем пульс на левой кромке */
+.site-card.is-important {
+  animation: site-card-pulse 2.6s ease-in-out infinite;
+}
+@keyframes site-card-pulse {
+  0%, 100% { box-shadow: inset 3px 0 0 var(--accent),   0 12px 28px -18px var(--accent-glow); }
+  50%      { box-shadow: inset 3px 0 0 var(--accent),   0 14px 36px -14px var(--accent-glow); }
+}
 
 /* HOME — empty state */
 .empty-state {
