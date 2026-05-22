@@ -60,15 +60,32 @@ html, body { background: var(--bg); color: var(--text); }
 /* Отключаем браузерный жест «свайп назад» — у нас своя навигация */
 html, body { overscroll-behavior-x: none; }
 
+html { height: 100%; }
+
 body {
   font-family: "Inter", system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
   min-height: 100dvh;
+  /* На iOS-PWA 100dvh иногда не включает зону под home-indicator —
+     -webkit-fill-available гарантирует, что body растягивается на весь
+     экран, включая safe-area-inset-bottom. */
+  min-height: -webkit-fill-available;
   overflow: hidden;
   background: var(--bg);
   display: flex;
   align-items: stretch;
   justify-content: center;
+}
+/* Фиксированный фон viewport-в-viewport: страхует от любых iOS-багов
+   с дотяжкой body/html до низа экрана. z-index: -1 держит его за всем
+   контентом. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background: var(--bg);
+  pointer-events: none;
 }
 
 #app-root {
