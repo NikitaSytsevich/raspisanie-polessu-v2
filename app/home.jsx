@@ -922,12 +922,6 @@ function ShiftCard({ shift, eff: effProp, nowMins, today, date, variant, current
               <span className="from">{eff.start}</span>
               <span className="to">{'— ' + eff.end}</span>
             </div>
-            {(eff.start !== shift.start || eff.end !== shift.end) && !hasClosed && (
-              <span className="schedule-hint" title="Время по вашему графику">
-                <span className="material-symbols-outlined">edit_note</span>
-                {shift.start + '–' + shift.end}
-              </span>
-            )}
           </div>
           {fac && fac.sourceUrl && (
             <a className="cover-site-btn"
@@ -961,6 +955,11 @@ function ShiftCard({ shift, eff: effProp, nowMins, today, date, variant, current
             <span className="material-symbols-outlined">{pill.icon}</span>
             {pill.text}
           </span>
+          {(eff.start !== shift.start || eff.end !== shift.end) && !hasClosed && (
+            <span className="schedule-hint" title="Время по вашему графику">
+              {'гр. ' + shift.start + '–' + shift.end}
+            </span>
+          )}
           <span className="duration">
             {hasClosed ? '— не отработано' : dur}
           </span>
