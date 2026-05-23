@@ -807,37 +807,53 @@ body::before {
   transition: border-color 200ms ease, box-shadow 200ms ease;
 }
 
-/* Cover — верхняя полоса с временем и кнопкой сайта */
+/* Cover — название объекта + окно смены */
 .card-cover {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  align-items: center;
-  column-gap: 12px;
-  row-gap: 8px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
   padding: 11px 14px 10px;
   background: var(--bg-sunken);
   border-bottom: 1px solid var(--hairline);
 }
+.card-cover .cover-main {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.card-cover .cover-place {
+  font-family: "Newsreader", Georgia, serif;
+  font-weight: 500;
+  font-size: 17px;
+  letter-spacing: -0.01em;
+  color: var(--text-strong);
+  line-height: 1.2;
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .card-cover .time {
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
 }
 .card-cover .time .from {
-  font-family: "Newsreader", Georgia, serif;
+  font-family: "Inter", system-ui, sans-serif;
   font-weight: 500;
-  font-size: 22px;
-  letter-spacing: -0.02em;
-  color: var(--text-strong);
+  font-size: 14px;
+  letter-spacing: -0.01em;
+  color: var(--text-muted);
   line-height: 1;
   font-variant-numeric: tabular-nums;
 }
 .card-cover .time .to {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--text-subtle);
   font-variant-numeric: tabular-nums;
-  display: inline-block;
 }
 
 .cover-site-btn {
@@ -862,17 +878,9 @@ body::before {
 .cover-site-btn:active { transform: scale(0.94); }
 .cover-site-btn .material-symbols-outlined { font-size: 16px; }
 
-/* Body — место, активность, опциональный compare-блок */
+/* Body — сеансы или активность */
 .card-body { padding: 11px 14px 10px; }
-.card-body .place {
-  font-family: "Newsreader", Georgia, serif;
-  font-weight: 500;
-  font-size: 17px;
-  letter-spacing: -0.01em;
-  color: var(--text-strong);
-  line-height: 1.2;
-  margin: 0 0 4px;
-}
+.card-body.has-sessions { padding: 0; }
 .card-body .activity {
   font-size: 13px;
   color: var(--text-muted);
@@ -913,7 +921,7 @@ body::before {
 
 /* Closed body */
 .is-closed-body .closed-note {
-  margin: 4px 0 0;
+  margin: 0;
   font-family: "Newsreader", Georgia, serif;
   font-style: italic;
   font-size: 13px;
@@ -929,6 +937,7 @@ body::before {
   background: linear-gradient(120deg, var(--accent-soft), transparent 75%);
   border-bottom-color: var(--border);
 }
+.seg.is-site .card-cover .cover-place { color: var(--accent-ink); }
 .seg.is-site .card-cover .time .from { color: var(--accent); }
 .seg.is-site .cover-site-btn {
   background: var(--bg-elevated);
@@ -982,20 +991,9 @@ body::before {
 .seg.is-past .card { filter: saturate(0.35); }
 .seg.is-past .card-cover .time .from { color: var(--text-muted); }
 
-/* Зазор между смежными сайтовыми слотами — мелкая italic-подпись в cover */
-.card-cover .time .gaps-note {
-  font-family: "Newsreader", Georgia, serif;
-  font-style: italic;
-  font-size: 11px;
-  color: var(--text-subtle);
-  margin-left: 4px;
-  font-variant-numeric: tabular-nums;
-}
-
 /* Плашка «в графике HH:MM–HH:MM» — когда сайт сократил/сместил окно */
 .card-cover .schedule-hint {
-  grid-column: 1 / -1;
-  justify-self: start;
+  align-self: flex-start;
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -1011,10 +1009,75 @@ body::before {
   font-variant-numeric: tabular-nums;
   line-height: 1;
   cursor: help;
+  margin-top: 4px;
 }
 .card-cover .schedule-hint .material-symbols-outlined {
   font-size: 12px;
   color: var(--text-subtle);
+}
+
+/* HOME — сеансы внутри карточки */
+.session-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 14px;
+}
+.session-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+  transition: background 200ms ease, box-shadow 200ms ease;
+}
+.session-time {
+  font-family: "Inter", system-ui, sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-strong);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.session-act {
+  font-size: 12px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+.session-row.is-now .session-dot { background: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+.session-row.is-now .session-time { color: var(--accent); }
+.session-row.is-past .session-dot { background: var(--text-subtle); }
+.session-row.is-past .session-time { color: var(--text-muted); }
+.session-row.is-past .session-act { color: var(--text-subtle); }
+
+.inner-break {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 14px;
+  background: var(--bg-sunken);
+  border-top: 1px solid var(--hairline);
+  border-bottom: 1px solid var(--hairline);
+}
+.inner-break-line {
+  flex: 1;
+  height: 1px;
+  background-image: linear-gradient(to right, var(--hairline-strong) 50%, transparent 50%);
+  background-size: 6px 1px;
+  background-repeat: repeat-x;
+}
+.inner-break-label {
+  font-family: "Inter", system-ui, sans-serif;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-subtle);
+  white-space: nowrap;
 }
 
 /* HOME — break dividers */

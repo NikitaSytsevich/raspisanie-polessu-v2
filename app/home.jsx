@@ -838,6 +838,38 @@ function Timeline({ rows, today, date, nowMins, currentShiftId, effById, onAddDa
   );
 }
 
+function buildSessionItems(sessions, nowMins, isNow, onToday) {
+  const items = [];
+  for (let i = 0; i < sessions.length; i++) {
+    const ss = sessions[i];
+    if (i > 0) {
+      const gap = window.Data.toMinutes(ss.start) - window.Data.toMinutes(sessions[i - 1].end);
+      if (gap > 0) {
+        items.push(
+          <div key={'brk-' + i} className="inner-break">
+            <span className="inner-break-line"/>
+            <span className="inner-break-label">{window.Data.formatDuration(gap) + ' перерыв'}</span>
+            <span className="inner-break-line"/>
+          </div>
+        );
+      }
+    }
+    const ssStart  = window.Data.toMinutes(ss.start);
+    const ssEnd    = window.Data.toMinutes(ss.end);
+    const ssIsNow  = isNow && onToday && ssStart <= nowMins && ssEnd > nowMins;
+    const ssIsPast = onToday && ssEnd <= nowMins;
+    const rowCls   = 'session-row' + (ssIsNow ? ' is-now' : '') + (ssIsPast ? ' is-past' : '');
+    items.push(
+      <div key={ss.start + '-' + ss.end + '-' + i} className={rowCls}>
+        <span className="session-dot"/>
+        <span className="session-time">{ss.start + ' — ' + ss.end}</span>
+        {ss.activity && <span className="session-act">{ss.activity}</span>}
+      </div>
+    );
+  }
+  return items;
+}
+
 function ShiftCard({ shift, eff: effProp, nowMins, today, date, variant, currentShiftId }) {
   const fac = window.Data.getFacility(shift.facilityId);
   // eff может прийти готовым из родителя (Timeline/Feed считают карту один
@@ -855,13 +887,10 @@ function ShiftCard({ shift, eff: effProp, nowMins, today, date, variant, current
     : onToday && !hasClosed && start <= nowMins && end > nowMins;
   const isPast = (date < today) || (onToday && end <= nowMins);
   const isSite = shift.source === 'site';
-  const activity = eff.activity || shift.activity;
-  const dur = window.Data.formatDuration(eff.minutes);
-
-  // Сопоставление пользовательской смены с реальным расписанием сайта
-  const gapsNote = eff.gaps?.length
-    ? `· с перерыв${eff.gaps.length > 1 ? 'ами' : 'ом'} ${eff.gaps.map(g => window.Data.formatDuration(g.minutes)).join(' + ')}`
-    : null;
+  const activity    = eff.activity || shift.activity;
+  const dur         = window.Data.formatDuration(eff.minutes);
+  const sessions    = eff.sessions || [];
+  const hasSessions = sessions.length > 0 && !hasClosed;
 
   const cls = [
     'seg',
@@ -879,8 +908,6 @@ function ShiftCard({ shift, eff: effProp, nowMins, today, date, variant, current
     pill = { icon: 'help_outline', text: 'нет на сайте', mod: '' };
   } else if (eff.badge === 'confirmed') {
     pill = { icon: 'verified', text: 'по сайту', mod: 'is-ok' };
-  } else if (false) {
-    pill = { icon: 'verified', text: 'по сайту', mod: '' };
   } else {
     pill = { icon: 'edit_note', text: 'по графику', mod: '' };
   }
@@ -889,44 +916,48 @@ function ShiftCard({ shift, eff: effProp, nowMins, today, date, variant, current
     <article className={cls}>
       <div className="card">
         <header className="card-cover">
-          <div className="time">
-            <span className="from">{eff.start}</span>
-            <span className="to">— {eff.end}</span>
-            {gapsNote && <span className="gaps-note">{gapsNote}</span>}
+          <div className="cover-main">
+            <p className="cover-place">{fac ? fac.name : ''}</p>
+            <div className="time">
+              <span className="from">{eff.start}</span>
+              <span className="to">{'— ' + eff.end}</span>
+            </div>
+            {(eff.start !== shift.start || eff.end !== shift.end) && !hasClosed && (
+              <span className="schedule-hint" title="Время по вашему графику">
+                <span className="material-symbols-outlined">edit_note</span>
+                {shift.start + '–' + shift.end}
+              </span>
+            )}
           </div>
-          {fac?.sourceUrl && (
+          {fac && fac.sourceUrl && (
             <a className="cover-site-btn"
                href={fac.sourceUrl}
                target="_blank"
                rel="noopener noreferrer"
                onClick={(e) => e.stopPropagation()}
-               title={`Открыть страницу «${fac.name}» на сайте ПолесГУ`}
-               aria-label={`Открыть «${fac.name}» на сайте ПолесГУ`}>
+               title={'Открыть «' + fac.name + '» на сайте ПолесГУ'}
+               aria-label={'Открыть «' + fac.name + '» на сайте ПолесГУ'}>
               <span className="material-symbols-outlined">open_in_new</span>
             </a>
-          )}
-          {(eff.start !== shift.start || eff.end !== shift.end) && !hasClosed && (
-            <span className="schedule-hint" title="Время по вашему графику">
-              <span className="material-symbols-outlined">edit_note</span>
-              {shift.start}&ndash;{shift.end}
-            </span>
           )}
         </header>
 
         {hasClosed ? (
           <div className="card-body is-closed-body">
-            <p className="place">{fac?.name}</p>
             <p className="closed-note">{eff.notice || 'на сайте объявление о приостановке работы.'}</p>
+          </div>
+        ) : hasSessions ? (
+          <div className="card-body has-sessions">
+            {buildSessionItems(sessions, nowMins, isNow, onToday)}
           </div>
         ) : (
           <div className="card-body">
-            <p className="place">{fac?.name}</p>
             {activity && <p className="activity">{activity}</p>}
           </div>
         )}
 
         <footer className="card-footer">
-          <span className={`status ${pill.mod}`}>
+          <span className={'status ' + pill.mod}>
             <span className="material-symbols-outlined">{pill.icon}</span>
             {pill.text}
           </span>

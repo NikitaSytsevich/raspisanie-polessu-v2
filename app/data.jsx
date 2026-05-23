@@ -545,6 +545,7 @@ const Data = {
       badge: 'confirmed',
       gaps,
       activity: uniqueActs.join(' · ') || null,
+      sessions: overlapping,
     };
   },
 
