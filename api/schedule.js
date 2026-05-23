@@ -54,6 +54,10 @@ async function loadFacility(f, ctx) {
       sourceCheckedAt: startedAt,
       notice: null,
       sessions: parsed.sessions,
+      // Расписание есть, но одновременно объект частично закрыт (ремонт,
+      // отключение воды и т.п.). Каждый range = { from, to, notice } в
+      // ISO-формате. Фронт пометит смены, попадающие в окно, как closed.
+      closureRanges: Array.isArray(parsed.closureRanges) ? parsed.closureRanges : [],
     };
   }
   if (parsed.reason === 'closed') {
@@ -95,7 +99,11 @@ module.exports = async (req, res) => {
     .map(r => r._issue || { id: r.id, reason: 'unknown' });
 
   const payload = {
-    schemaVersion: 3,
+    // v4: facility.closureRanges?: [{from, to, notice}] для частичного
+    // закрытия (когда расписание есть, но в часть дат объект закрыт).
+    // v3 поля (dataQuality, sessions, notice, closureRange при closed)
+    // сохранены без изменений — старые клиенты продолжат работать.
+    schemaVersion: 4,
     generatedAt,
     sourceCheckedAt: generatedAt,
     timezone: TZ,

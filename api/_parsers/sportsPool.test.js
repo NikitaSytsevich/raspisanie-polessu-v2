@@ -11,7 +11,7 @@ function loadFixture(name) {
 
 const TODAY = '2026-05-20'; // среда
 
-test('sportsPool: фиксирует закрытие на ремонт', () => {
+test('sportsPool: полное закрытие — нет таблицы, есть только объявление', () => {
   const out = parse(loadFixture('sports_pool_closed.html'), { todayIso: TODAY });
   assert.equal(out.ok, false);
   assert.equal(out.reason, 'closed');
@@ -31,4 +31,29 @@ test('sportsPool: парсит синтетическую таблицу', () =>
   const satEmpty = out.sessions.find(s =>
     s.start === '07:30' && new Date(s.date + 'T12:00Z').getUTCDay() === 6);
   assert.equal(satEmpty, undefined, 'пустая ячейка субботы не должна стать сессией');
+});
+
+test('sportsPool: частичное закрытие + inline-расписание (закрытие → closureRanges, сессии после открытия)', () => {
+  const out = parse(loadFixture('sports_pool_partial_closure.html'), { todayIso: TODAY });
+  // Сессии есть (после открытия 26.05)
+  assert.equal(out.ok, true, 'ok должно быть true — нашли расписание после ремонта');
+  assert.ok(out.sessions.length >= 40, 'должно быть много сессий, было: ' + out.sessions.length);
+  // closure упакован в closureRanges, а не в reason: 'closed'
+  assert.ok(Array.isArray(out.closureRanges), 'closureRanges должно быть массивом');
+  assert.equal(out.closureRanges.length, 1);
+  assert.equal(out.closureRanges[0].from, '2026-05-18');
+  assert.equal(out.closureRanges[0].to,   '2026-05-25');
+  assert.match(out.closureRanges[0].notice, /не работает/);
+  // notice не должен быть склеен без пробелов
+  assert.doesNotMatch(out.closureRanges[0].notice, /годаплавательный/);
+  // Конкретная сессия 26 мая 09:15 должна быть, с «Свободное плавание»
+  const s = out.sessions.find(x => x.date === '2026-05-26' && x.start === '09:15');
+  assert.ok(s, 'нет сессии 26.05 09:15');
+  assert.match(s.activity, /Свободное плавание/);
+  // Сессии с описанием «6 дорожек» должны иметь это в activity
+  const sLanes = out.sessions.find(x => x.date === '2026-05-26' && x.start === '10:30');
+  assert.match(sLanes.activity, /6 дорожек/);
+  // Сессий ВНУТРИ диапазона закрытия (18-25.05) быть не должно
+  const inRange = out.sessions.find(x => x.date >= '2026-05-18' && x.date <= '2026-05-25');
+  assert.equal(inRange, undefined, 'не должно быть сессий внутри окна закрытия');
 });

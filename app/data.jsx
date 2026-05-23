@@ -60,7 +60,7 @@ const isoOffset = (days) => {
 };
 
 const MOCK_SCHEDULE = {
-  schemaVersion: 3,
+  schemaVersion: 4,
   generatedAt: new Date().toISOString(),
   sourceCheckedAt: new Date().toISOString(),
   timezone: TZ,
@@ -69,6 +69,7 @@ const MOCK_SCHEDULE = {
     dataQuality: f.id === 'rowing_base' ? 'template' : 'ok',
     sourceCheckedAt: new Date(Date.now() - i * 60_000).toISOString(),
     sessions: [],
+    closureRanges: [],
   })),
   meta: { cached: false, sourceCount: 4, sourceIssueCount: 0, sourceIssues: [] },
 };
@@ -493,6 +494,17 @@ const Data = {
     }
     if (fac.dataQuality !== 'ok') {
       return { start: shift.start, end: shift.end, minutes: schedMin, badge: 'no_data', gaps: [] };
+    }
+    // Частичное закрытие: dataQuality === 'ok', но в часть дат объект
+    // закрыт (например, отключение горячей воды до 25.05). Сравнение ISO-
+    // строк работает лексикографически — равносильно сравнению по дате.
+    if (Array.isArray(fac.closureRanges) && fac.closureRanges.length) {
+      const inRange = fac.closureRanges.find(r =>
+        shift.date >= r.from && shift.date <= r.to
+      );
+      if (inRange) {
+        return { start: shift.start, end: shift.end, minutes: 0, badge: 'closed', gaps: [], notice: inRange.notice };
+      }
     }
     const sStart = toMinutes(shift.start);
     const sEnd = toMinutes(shift.end);

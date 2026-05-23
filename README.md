@@ -11,7 +11,7 @@
 ![Node](https://img.shields.io/badge/node-%E2%89%A520-339933?logo=node.js&logoColor=white)
 ![Vercel](https://img.shields.io/badge/Vercel-Hobby-000?logo=vercel&logoColor=white)
 ![License: MIT](https://img.shields.io/badge/license-MIT-blue)
-![Tests](https://img.shields.io/badge/tests-13%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-14%20passing-brightgreen)
 
 </div>
 
@@ -70,8 +70,8 @@
                                   (HTML Drupal-нод)
 ```
 
-- **Бекенд** — одна функция `api/schedule.js`. Параллельно тянет 4 страницы через `undici`, прогоняет через `cheerio`-парсеры, возвращает JSON с `schemaVersion: 3`. Кеш CDN на 5 минут (`s-maxage=300, stale-while-revalidate=600`).
-- **Парсеры** — общий «табличный экстрактор» + детектор закрытия объекта на ремонт + индивидуальный inline-парсер для гребной базы (там расписание не в таблице, а в `<h1>`). Каждый парсер возвращает либо `{ ok: true, sessions }`, либо `{ ok: false, reason: 'closed' }`.
+- **Бекенд** — одна функция `api/schedule.js`. Параллельно тянет 4 страницы через `undici`, прогоняет через `cheerio`-парсеры, возвращает JSON с `schemaVersion: 4` (v4 добавил `facility.closureRanges: [{from, to, notice}]` для частичного закрытия — когда расписание есть, но в часть дат объект закрыт). Кеш CDN на 5 минут (`s-maxage=300, stale-while-revalidate=600`).
+- **Парсеры** — общий «табличный экстрактор» + детектор закрытия объекта на ремонт + индивидуальные inline-парсеры для гребной базы (расписание в `<h1>` через `<br>`) и большого бассейна (после закрытия публикуют список «Вторник 26.05.2026 / HH.MM – HH.MM (…)» с конкретными датами). Парсер возвращает `{ ok: true, sessions, closureRanges? }` либо `{ ok: false, reason: 'closed', notice, range }`.
 - **Фронтенд** — React 18, JSX собирается в `app/bundle.js` через **esbuild** (см. `scripts/build.js`). React/ReactDOM грузятся как UMD с unpkg, что выносится из бандла. PWA с service worker'ом (`sw.js`): app-shell cache-first, `/api/schedule` stale-while-revalidate, шрифты Google и React CDN — отдельные кеши.
 - **Хранилище** — `localStorage` пользователя. Сервер не знает ни кто вы, ни что вы записали.
 - **Diff** — считается на клиенте: текущий снапшот из API vs предыдущий из `localStorage`. События, пересекающиеся с вашими сменами, помечаются `affectsShiftId`.
@@ -144,25 +144,25 @@ npx vercel --prod
 npm test
 ```
 
-13 тестов покрывают:
+14 тестов покрывают:
 
 - Детектор «объект закрыт на ремонт» на сохранённых HTML-фикстурах текущего состояния `polessu.by`.
-- Извлечение сессий из синтетической таблицы расписания.
-- Inline-парсер гребной базы (Пн-Пт × 18:30 + 19:30).
-- Исключение дат-выходных вида «1.05.2026 Выходной день».
+- Извлечение сессий из синтетической таблицы расписания (большой бассейн).
+- Inline-парсер гребной базы (Пн-Пт × 18:30 + 19:30) с исключениями вида «1.05.2026 Выходной день».
+- Inline-парсер большого бассейна на реальной странице с частичным закрытием — сессии 26.05–31.05 + `closureRanges: [{from: '2026-05-18', to: '2026-05-25'}]`.
 - Утилиты: `parseTime`, `parseTimeRange`, `weekdayIndex`, `parseDateRange`, `nextDateForWeekday`.
 
 ```
-✔ closure detector: ice arena (закрыта на ремонт)
 ✔ closure detector: большой бассейн (отключение горячей воды)
 ✔ closure detector: малый бассейн
 ✔ closure detector: не срабатывает на странице с расписанием
 ✔ rowingBase: исключает дату-выходной из расписания
 ✔ rowingBase: парсит инлайн-формат "Пн-Пт 18.30-19.30"
-✔ sportsPool: фиксирует закрытие на ремонт
+✔ sportsPool: полное закрытие — нет таблицы, есть только объявление
 ✔ sportsPool: парсит синтетическую таблицу
+✔ sportsPool: частичное закрытие + inline-расписание
 ✔ parseTime, parseTimeRange, weekdayIndex, parseDateRange, nextDateForWeekday
-ℹ tests 13  pass 13  fail 0
+ℹ tests 14  pass 14  fail 0
 ```
 
 ---
