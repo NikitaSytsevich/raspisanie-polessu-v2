@@ -446,7 +446,12 @@
     function computeScale() {
       const vw = window.innerWidth;
       const vh = window.innerHeight;
-      return Math.min(vw / W, vh / H);
+      // «cover»: масштабируем так, чтобы заставка покрывала весь viewport.
+      // Если айфон чуть шире/уже расчётных 9:19.5 — стейдж переполнится
+      // в большем измерении, лишнее обрежется overflow:hidden у overlay.
+      // Контент (карточки, wordmark) спозиционирован относительно центра
+      // стейджа → остаётся видимым в любом viewport.
+      return Math.max(vw / W, vh / H);
     }
 
     // RAF-таймер сцены
