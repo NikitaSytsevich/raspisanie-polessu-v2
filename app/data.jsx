@@ -128,28 +128,59 @@ function inferSessionIndicator(facilityId, activity) {
     return { type: 'lanes-free' };
   }
 
-  // Большой бассейн: визуальные дорожки. Базовая ёмкость — 10 (из дизайна v2,
-  // подгоняется вверх если в activity встретилось большее число).
-  if (facilityId === 'sports_pool' || /дорожк/.test(a)) {
-    const baseTotal = 10;
-    // «3/10», «3 из 10»
+  // Большой бассейн: визуальные дорожки. Модель — какие дорожки СВОБОДНЫ
+  // (доступны посетителю) vs ЗАНЯТЫ (тренировкой/группой/закрыты).
+  //
+  // Семантика: «N дорожек» в полесГУ-расписании = N дорожек выделено под
+  // свободное плавание (т.е. ИХ можно занять). «Кроме крайних» / «кроме
+  // крайней» = крайние закрыты (одна или обе), остальные свободны.
+  //
+  // Возврат: { type:'lanes', occupied: int[], free: int, total: 10 }
+  //   occupied — индексы занятых дорожек (для позиционного рендера)
+  //   free     — кол-во свободных (для подписи)
+  //
+  // Морфология: корень /дорож/ (не /дорожк/) — иначе «дорожек» (после 5+
+  // с вставочным «е») не матчит.
+  if (facilityId === 'sports_pool' || /дорож/.test(a)) {
+    const total = 10;
+
+    // Маркер «крайние закрыты»: крайних (мн.) → обе, крайней (ед.) → одна
+    const hasExceptEdges = /кроме\s+крайн/.test(a);
+    if (hasExceptEdges) {
+      const both = /крайн(?:их|ие|ими|их)/.test(a); // мн.: «крайних/крайние/крайними»
+      const occupied = both ? [0, total - 1] : [0];
+      return { type: 'lanes', occupied, free: total - occupied.length, total };
+    }
+
+    // «N/M» или «N из M»
     const mFraction = a.match(/(\d+)\s*(?:\/|из)\s*(\d+)/);
     if (mFraction) {
-      const count = Number(mFraction[1]);
-      const total = Number(mFraction[2]);
-      if (count > 0 && total > 0 && count <= total) {
-        return { type: 'lanes', count, total };
+      const free = Number(mFraction[1]);
+      const tot = Number(mFraction[2]);
+      if (free > 0 && tot > 0 && free <= tot) {
+        // Занятые — последние (tot-free) индексов
+        const occupied = [];
+        for (let i = free; i < tot; i++) occupied.push(i);
+        return { type: 'lanes', occupied, free, total: tot };
       }
     }
-    // «6 дорожек» — count без total
-    const mCount = a.match(/(\d+)\s*дорожк/);
+
+    // «N дорожек» / «N дорожки» / «N дорожка»
+    const mCount = a.match(/(\d+)\s*дорож/);
     if (mCount) {
-      const count = Number(mCount[1]);
-      if (count > 0) {
-        return { type: 'lanes', count, total: Math.max(count, baseTotal) };
+      const free = Number(mCount[1]);
+      if (free > 0) {
+        const tot = Math.max(free, total);
+        const occupied = [];
+        for (let i = free; i < tot; i++) occupied.push(i);
+        return { type: 'lanes', occupied, free, total: tot };
       }
     }
-    if (/дорожк/.test(a)) return { type: 'lanes', total: baseTotal };
+
+    // Просто «дорож» без числа — считаем что весь бассейн свободен
+    if (/дорож/.test(a)) {
+      return { type: 'lanes', occupied: [], free: total, total };
+    }
   }
 
   // Гребная база: тренажёрный / штанга / силовая.

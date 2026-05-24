@@ -753,18 +753,14 @@ function FacilityCard({ facilityId, shifts, today, date, nowMins, idx, onPushEdi
   const myEnd   = Math.max(...shifts.map(s => window.Data.toMinutes(s.end)));
   const winStart = myStart;
   const winEnd   = myEnd;
-  const winSpan = Math.max(winEnd - winStart, 1);
-  const pctOf = (m) => Math.max(0, Math.min(100, ((m - winStart) / winSpan) * 100));
 
-  // Только пересекающиеся с моим окном сессии. Не пересекающиеся уходят
-  // в общий day-overview сверху, но в карточке они не нужны.
+  // Только пересекающиеся с моим окном сессии.
   const overlapSessions = siteSessions.filter(ss =>
     window.Data.toMinutes(ss.start) < winEnd &&
     window.Data.toMinutes(ss.end)   > winStart
   );
 
   const onToday = date === today;
-  const showNowMark = onToday && nowMins >= winStart && nowMins <= winEnd && !closed;
 
   // Строки sess-list: сессия → inner-break → сессия → ...
   // (только между смежными отображаемыми сессиями)
@@ -816,8 +812,6 @@ function FacilityCard({ facilityId, shifts, today, date, nowMins, idx, onPushEdi
     }
   }
 
-  const ticks = _hm(() => buildHourTicks(winStart, winEnd), [winStart, winEnd]);
-
   const openEditor = () => onPushEditor(shifts[0]);
   const openSite = (e) => {
     e.stopPropagation();
@@ -857,38 +851,6 @@ function FacilityCard({ facilityId, shifts, today, date, nowMins, idx, onPushEdi
             <span className="big">{window.Data.minutesToHHMM(winStart)}</span>
             <span className="arr">→</span>
             <span className="big">{window.Data.minutesToHHMM(winEnd)}</span>
-          </div>
-
-          <div className="fc-occ-bar">
-            <div className="track">
-              {overlapSessions.map((ss, i) => {
-                // Клипуем сегмент к окну смены (сессия может торчать наружу)
-                const a = Math.max(window.Data.toMinutes(ss.start), winStart);
-                const b = Math.min(window.Data.toMinutes(ss.end),   winEnd);
-                return (
-                  <span key={i} className="seg"
-                    style={{ left: pctOf(a) + '%',
-                             width: Math.max(pctOf(b) - pctOf(a), 1.5) + '%' }}/>
-                );
-              })}
-            </div>
-            {showNowMark && (
-              <span className="now-mark" style={{ left: pctOf(nowMins) + '%' }}/>
-            )}
-          </div>
-
-          <div className="fc-occ-ticks">
-            {ticks.map((t, i) => {
-              const isFirst = i === 0;
-              const isLast = i === ticks.length - 1;
-              return (
-                <span key={t.min + '-' + i}
-                  className={isFirst ? 'is-first' : isLast ? 'is-last' : ''}
-                  style={isFirst || isLast ? undefined : { left: pctOf(t.min) + '%' }}>
-                  {t.label}
-                </span>
-              );
-            })}
           </div>
 
           {overlapSessions.length ? (
@@ -979,19 +941,20 @@ function SessionIndicator({ ind }) {
   if (!ind) return null;
   if (ind.type === 'lanes') {
     const total = ind.total || 10;
-    const count = ind.count;
-    const isFull = count != null && count >= total;
+    const occupied = new Set(ind.occupied || []);
+    const free = ind.free != null ? ind.free : (total - occupied.size);
+    const allFree = occupied.size === 0;
+    // Bright (facility-color) = свободная дорожка для посетителя.
+    // Muted = занятая (тренировкой/закрытая).
     const bars = [];
     for (let i = 0; i < total; i++) {
-      bars.push(<span key={i} className={'l' + (count != null && i < count ? ' on' : '')}/>);
+      bars.push(<span key={i} className={'l' + (occupied.has(i) ? ' occ' : '')}/>);
     }
     return (
-      <span className={'fc-lanes' + (isFull ? ' is-full' : '')}
-            title={count != null ? `${count} из ${total} дорожек` : 'дорожки'}>
+      <span className={'fc-lanes' + (allFree ? ' is-full' : '')}
+            title={`${free} свободно из ${total}`}>
         {bars}
-        {count != null
-          ? <span className="count">{count}/{total}</span>
-          : <span className="count">дорожки</span>}
+        <span className="count">{free}/{total}</span>
       </span>
     );
   }
@@ -1020,33 +983,6 @@ function SessionIndicator({ ind }) {
     );
   }
   return null;
-}
-
-// Тики occ-bar — на круглых часах/получасах. winStart и winEnd всегда
-// сохраняем как первый/последний тик; внутренние — на кратных «красивого»
-// шага позициях (зависит от длины окна).
-function buildHourTicks(winStart, winEnd) {
-  const toLabel = window.Data.minutesToHHMM;
-  const span = Math.max(winEnd - winStart, 1);
-
-  let step;
-  if (span <=  90) step = 30;
-  else if (span <= 180) step = 60;
-  else if (span <= 300) step = 60;
-  else if (span <= 540) step = 120;
-  else if (span <= 900) step = 180;
-  else                  step = 240;
-
-  const out = [{ min: winStart, label: toLabel(winStart) }];
-  let m = Math.ceil((winStart + 1) / step) * step;
-  while (m < winEnd) {
-    if (m - winStart >= 15 && winEnd - m >= 15) {
-      out.push({ min: m, label: toLabel(m) });
-    }
-    m += step;
-  }
-  out.push({ min: winEnd, label: toLabel(winEnd) });
-  return out;
 }
 
 function AddShiftInlineLink({ date, onPush }) {

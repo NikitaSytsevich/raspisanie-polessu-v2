@@ -3042,7 +3042,7 @@ html.light .about-sheet {
 /* ──────────────────────────────────────────────────────────────────
    FACILITY CARDS (главный экран — карточка-на-объект из дизайна v2)
      .fc-card      — карточка одного объекта
-     .fc-occ-bar   — occupancy bar с тиками часов и now-mark
+     .fc-range     — заголовок «HH:MM → HH:MM» (окно моей смены)
      .fc-sess-*    — список сессий с inner-breaks
      .fc-*-chip / .fc-lanes — end-indicators у сессии (эвристика)
    ────────────────────────────────────────────────────────────────── */
@@ -3153,69 +3153,6 @@ html.light .about-sheet {
   color: var(--text-strong);
 }
 .fc-card .fc-range .arr { color: var(--text-subtle); }
-
-/* Occupancy bar */
-.fc-card .fc-occ-bar {
-  position: relative;
-  height: 8px;
-  margin: 4px 0 12px;
-  background: rgba(245, 241, 235, 0.04);
-  border-radius: 999px;
-  overflow: visible;
-}
-html.light .fc-card .fc-occ-bar { background: rgba(24, 21, 19, 0.05); }
-.fc-card .fc-occ-bar .track {
-  position: absolute; inset: 0;
-  border-radius: 999px;
-  overflow: hidden;
-}
-.fc-card .fc-occ-bar .seg {
-  position: absolute;
-  top: 0; bottom: 0;
-  background: var(--fac-color);
-  border-radius: 999px;
-  opacity: 0.78;
-}
-.fc-card .fc-occ-bar .now-mark {
-  position: absolute;
-  top: 50%;
-  width: 2px; height: 16px;
-  background: var(--accent);
-  border-radius: 1px;
-  transform: translate(-50%, -50%);
-  box-shadow: 0 0 0 3px var(--accent-soft), 0 0 12px var(--accent-glow);
-  z-index: 2;
-}
-.fc-card .fc-occ-bar .now-mark::before {
-  content: 'сейчас';
-  position: absolute;
-  bottom: calc(100% + 4px);
-  left: 50%;
-  transform: translateX(-50%);
-  font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
-  font-size: 8px;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--accent);
-  font-weight: 700;
-  white-space: nowrap;
-}
-.fc-card .fc-occ-ticks {
-  position: relative;
-  height: 14px;
-  margin: -6px 0 8px;
-  font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
-  font-size: 9px;
-  color: var(--text-subtle);
-  letter-spacing: 0.04em;
-}
-.fc-card .fc-occ-ticks span {
-  position: absolute;
-  top: 4px;
-  transform: translateX(-50%);
-}
-.fc-card .fc-occ-ticks span.is-first { left: 0; transform: none; text-align: left; }
-.fc-card .fc-occ-ticks span.is-last  { right: 0; left: auto !important; transform: none; text-align: right; }
 
 /* Sessions list */
 .fc-card .fc-sess-list {
@@ -3485,8 +3422,10 @@ html.light .fc-card .fc-occ-bar { background: rgba(24, 21, 19, 0.05); }
 }
 .fc-zone-chip .material-symbols-outlined { font-size: 12px; color: var(--fac-color); }
 
-/* Визуальные дорожки: N filled + (total-N) empty вертикальных полос +
-   подпись count/total. Из дизайна v2. */
+/* Визуальные дорожки. Семантика: bright facility-color = СВОБОДНАЯ
+   дорожка (можно занять для свободного плавания), muted = ЗАНЯТАЯ
+   (тренировкой/закрытая). Позиционно: для «кроме крайних» крайние
+   muted, средние bright. */
 .fc-lanes {
   display: inline-flex;
   align-items: center;
@@ -3499,11 +3438,13 @@ html.light .fc-card .fc-occ-bar { background: rgba(24, 21, 19, 0.05); }
 .fc-lanes .l {
   width: 3px; height: 12px;
   border-radius: 1px;
-  background: rgba(245, 241, 235, 0.10);
+  background: var(--fac-color);
   flex-shrink: 0;
 }
-html.light .fc-lanes .l { background: rgba(24, 21, 19, 0.10); }
-.fc-lanes .l.on { background: var(--fac-color); }
+.fc-lanes .l.occ {
+  background: rgba(245, 241, 235, 0.10);
+}
+html.light .fc-lanes .l.occ { background: rgba(24, 21, 19, 0.10); }
 .fc-lanes .count {
   font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
   font-size: 9.5px;
