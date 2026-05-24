@@ -27,6 +27,23 @@ html.dark {
   --warning-soft: rgba(201, 169, 110, 0.16);
   --danger: #c97064;
   --danger-soft: rgba(201, 112, 100, 0.16);
+
+  /* Per-facility tints (для facility-карточек на главном экране) */
+  --ice:        #8ab4d4;
+  --ice-soft:   rgba(138, 180, 212, 0.10);
+  --ice-ink:    rgba(138, 180, 212, 0.22);
+
+  --pool:       #7dbbb0;
+  --pool-soft:  rgba(125, 187, 176, 0.10);
+  --pool-ink:   rgba(125, 187, 176, 0.22);
+
+  --small:      #c8a5d4;
+  --small-soft: rgba(200, 165, 212, 0.10);
+  --small-ink:  rgba(200, 165, 212, 0.22);
+
+  --rowing:     #d4a76e;
+  --rowing-soft:rgba(212, 167, 110, 0.10);
+  --rowing-ink: rgba(212, 167, 110, 0.22);
 }
 
 html.light {
@@ -52,6 +69,23 @@ html.light {
   --warning-soft: rgba(147, 115, 46, 0.14);
   --danger: #a8453b;
   --danger-soft: rgba(168, 69, 59, 0.12);
+
+  /* Per-facility tints — приглушены под светлый фон */
+  --ice:        #4a7da3;
+  --ice-soft:   rgba(74, 125, 163, 0.08);
+  --ice-ink:    rgba(74, 125, 163, 0.20);
+
+  --pool:       #3f8276;
+  --pool-soft:  rgba(63, 130, 118, 0.08);
+  --pool-ink:   rgba(63, 130, 118, 0.20);
+
+  --small:      #8c6699;
+  --small-soft: rgba(140, 102, 153, 0.08);
+  --small-ink:  rgba(140, 102, 153, 0.20);
+
+  --rowing:     #a87a3a;
+  --rowing-soft:rgba(168, 122, 58, 0.08);
+  --rowing-ink: rgba(168, 122, 58, 0.20);
 }
 
 * { box-sizing: border-box; }
@@ -2964,3 +2998,634 @@ html.light .about-sheet {
   font-style: italic;
   color: var(--accent);
 }
+
+/* ──────────────────────────────────────────────────────────────────
+   FACILITY CARDS (главный экран, режим «День»)
+   карточка-на-объект из дизайна v2:
+     .day-overview — mini-Gantt по всем объектам с моими сменами
+     .fc-card      — карточка одного объекта
+     .fc-occ-bar   — occupancy bar с тиками часов и now-mark
+     .fc-sess-*    — список сессий с inner-breaks
+     .fc-*-chip / .fc-lanes — end-indicators у сессии (эвристика)
+   ────────────────────────────────────────────────────────────────── */
+
+/* ─── DayOverview ─────────────────────────────────────────────── */
+.day-overview {
+  margin: 12px 18px 6px;
+  padding: 14px 16px 12px;
+  border-radius: 18px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--hairline);
+  position: relative;
+  overflow: hidden;
+}
+.day-overview::before {
+  content: '';
+  position: absolute; inset: 0;
+  background: radial-gradient(120% 80% at 18% 0%, var(--accent-soft), transparent 55%);
+  opacity: 0.5;
+  pointer-events: none;
+}
+.day-overview .do-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  position: relative; z-index: 1;
+}
+.day-overview .do-title {
+  font-family: "Newsreader", Georgia, serif;
+  font-weight: 500;
+  font-size: 15px;
+  letter-spacing: -0.015em;
+  color: var(--text-strong);
+}
+.day-overview .do-title em {
+  font-style: italic;
+  color: var(--accent);
+  font-weight: 500;
+}
+.day-overview .do-meta {
+  font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  font-size: 10px;
+  color: var(--text-subtle);
+  letter-spacing: 0.04em;
+}
+.day-overview .do-grid {
+  display: grid;
+  grid-template-columns: 68px 1fr;
+  gap: 8px 10px;
+  align-items: stretch;
+  position: relative; z-index: 1;
+}
+.day-overview .do-labels,
+.day-overview .do-tracks {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  justify-content: space-around;
+}
+.day-overview .do-tracks { position: relative; }
+
+.day-overview .do-fac {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 12px;
+  font-family: "Inter", sans-serif;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--fac-color, var(--text-muted));
+  letter-spacing: 0.005em;
+  cursor: pointer;
+  transition: opacity 200ms ease;
+  justify-content: flex-start;
+  text-align: left;
+}
+.day-overview .do-fac .material-symbols-outlined { font-size: 14px; }
+.day-overview .do-fac:hover { opacity: 0.75; }
+
+.day-overview .do-track {
+  position: relative;
+  height: 12px;
+  border-radius: 999px;
+  background: rgba(245, 241, 235, 0.04);
+  overflow: visible;
+}
+html.light .day-overview .do-track {
+  background: rgba(24, 21, 19, 0.05);
+}
+.day-overview .do-track .seg {
+  position: absolute;
+  top: 1px; bottom: 1px;
+  background: var(--fac-color, var(--accent));
+  border-radius: 999px;
+  opacity: 0.72;
+  transition: opacity 200ms ease, transform 200ms ease;
+  cursor: pointer;
+}
+.day-overview .do-track .seg:hover {
+  opacity: 0.95;
+  transform: scaleY(1.15);
+}
+.day-overview .do-track .seg.is-now {
+  opacity: 1;
+  box-shadow: 0 0 10px var(--accent-glow);
+}
+.day-overview .do-track .seg.is-past { opacity: 0.34; }
+
+.day-overview .do-now-line {
+  position: absolute;
+  top: -4px; bottom: -4px;
+  left: var(--pos, 0%);
+  width: 1px;
+  background: var(--accent);
+  transform: translateX(-50%);
+  pointer-events: none;
+  z-index: 3;
+  box-shadow: 0 0 6px var(--accent-glow);
+}
+.day-overview .do-now-line::before {
+  content: '';
+  position: absolute;
+  top: -3px; left: 0;
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+  transform: translateX(-50%);
+}
+
+.day-overview .do-ticks {
+  grid-column: 2;
+  position: relative;
+  height: 14px;
+  margin: 4px 0 0;
+  font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  font-size: 9px;
+  color: var(--text-subtle);
+  letter-spacing: 0.04em;
+}
+.day-overview .do-ticks .tick {
+  position: absolute;
+  top: 2px;
+  transform: translateX(-50%);
+}
+.day-overview .do-ticks .tick.is-first { left: 0; transform: none; text-align: left; }
+.day-overview .do-ticks .tick.is-last  { right: 0; left: auto; transform: none; text-align: right; }
+
+/* ─── FacilityCard ────────────────────────────────────────────── */
+.fc-list { padding: 4px 0 0; }
+
+.fc-card {
+  margin: 12px 18px 0;
+  padding: 14px 14px 0;
+  border-radius: 20px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--hairline);
+  position: relative;
+  overflow: hidden;
+  opacity: 0;
+  transform: translateY(8px);
+  animation: fcRise 520ms cubic-bezier(0.34, 1.2, 0.64, 1) forwards;
+}
+.fc-card.idx-0 { animation-delay: 40ms; }
+.fc-card.idx-1 { animation-delay: 120ms; }
+.fc-card.idx-2 { animation-delay: 200ms; }
+.fc-card.idx-3 { animation-delay: 280ms; }
+@keyframes fcRise { to { opacity: 1; transform: translateY(0); } }
+
+/* Per-facility scoping */
+.fc-card.is-fac-ice_arena   { --fac-color: var(--ice);    --fac-soft: var(--ice-soft);    --fac-ink: var(--ice-ink); }
+.fc-card.is-fac-sports_pool { --fac-color: var(--pool);   --fac-soft: var(--pool-soft);   --fac-ink: var(--pool-ink); }
+.fc-card.is-fac-small_pool  { --fac-color: var(--small);  --fac-soft: var(--small-soft);  --fac-ink: var(--small-ink); }
+.fc-card.is-fac-rowing_base { --fac-color: var(--rowing); --fac-soft: var(--rowing-soft); --fac-ink: var(--rowing-ink); }
+
+/* Watermark — большой полупрозрачный значок в углу */
+.fc-card .fc-watermark {
+  position: absolute;
+  pointer-events: none;
+  opacity: 0.045;
+  top: -10px;
+  right: -28px;
+  color: var(--fac-color);
+  transform: rotate(-8deg);
+}
+.fc-card .fc-watermark .material-symbols-outlined {
+  font-size: 140px;
+  font-variation-settings: 'FILL' 0, 'wght' 200, 'GRAD' 0, 'opsz' 48;
+}
+.fc-card.is-fac-ice_arena .fc-watermark .material-symbols-outlined { font-size: 160px; }
+
+/* Header */
+.fc-card .fc-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0;
+  margin-bottom: 4px;
+  position: relative; z-index: 1;
+}
+.fc-card .fc-titles { flex: 1; min-width: 0; padding-top: 1px; }
+.fc-card .fc-place {
+  font-family: "Newsreader", Georgia, serif;
+  font-weight: 500;
+  font-size: 18px;
+  letter-spacing: -0.015em;
+  color: var(--text-strong);
+  margin: 0;
+  line-height: 1.1;
+}
+.fc-card .fc-hint {
+  margin: 3px 0 0;
+  font-family: "Newsreader", Georgia, serif;
+  font-style: italic;
+  font-size: 11.5px;
+  color: var(--fac-color);
+  letter-spacing: 0.005em;
+  opacity: 0.85;
+}
+.fc-card .fc-ext {
+  width: 30px; height: 30px;
+  border-radius: 10px;
+  background: var(--bg-raised);
+  border: 1px solid var(--hairline);
+  color: var(--text-muted);
+  display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0; cursor: pointer;
+  transition: all 200ms ease;
+}
+.fc-card .fc-ext:hover {
+  background: var(--fac-soft);
+  color: var(--fac-color);
+  border-color: var(--fac-ink);
+}
+.fc-card .fc-ext .material-symbols-outlined { font-size: 15px; }
+
+/* Range — большой заголовок «07:30 → 13:30» */
+.fc-card .fc-range {
+  margin: 8px 0 6px;
+  display: flex; align-items: baseline; gap: 8px;
+  font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  font-size: 12px;
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+  position: relative; z-index: 1;
+}
+.fc-card .fc-range .big {
+  font-family: "Newsreader", Georgia, serif;
+  font-style: normal;
+  font-weight: 500;
+  font-size: 20px;
+  letter-spacing: -0.02em;
+  color: var(--text-strong);
+}
+.fc-card .fc-range .arr { color: var(--text-subtle); }
+
+/* Occupancy bar */
+.fc-card .fc-occ-bar {
+  position: relative;
+  height: 8px;
+  margin: 4px 0 12px;
+  background: rgba(245, 241, 235, 0.04);
+  border-radius: 999px;
+  overflow: visible;
+}
+html.light .fc-card .fc-occ-bar { background: rgba(24, 21, 19, 0.05); }
+.fc-card .fc-occ-bar .track {
+  position: absolute; inset: 0;
+  border-radius: 999px;
+  overflow: hidden;
+}
+.fc-card .fc-occ-bar .seg {
+  position: absolute;
+  top: 0; bottom: 0;
+  background: var(--fac-color);
+  border-radius: 999px;
+  opacity: 0.78;
+}
+.fc-card .fc-occ-bar .now-mark {
+  position: absolute;
+  top: 50%;
+  width: 2px; height: 16px;
+  background: var(--accent);
+  border-radius: 1px;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 0 3px var(--accent-soft), 0 0 12px var(--accent-glow);
+  z-index: 2;
+}
+.fc-card .fc-occ-bar .now-mark::before {
+  content: 'сейчас';
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  font-size: 8px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--accent);
+  font-weight: 700;
+  white-space: nowrap;
+}
+.fc-card .fc-occ-ticks {
+  position: relative;
+  height: 14px;
+  margin: -6px 0 8px;
+  font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  font-size: 9px;
+  color: var(--text-subtle);
+  letter-spacing: 0.04em;
+}
+.fc-card .fc-occ-ticks span {
+  position: absolute;
+  top: 4px;
+  transform: translateX(-50%);
+}
+.fc-card .fc-occ-ticks span.is-first { left: 0; transform: none; text-align: left; }
+.fc-card .fc-occ-ticks span.is-last  { right: 0; left: auto !important; transform: none; text-align: right; }
+
+/* Sessions list */
+.fc-card .fc-sess-list {
+  display: flex;
+  flex-direction: column;
+  position: relative; z-index: 1;
+}
+.fc-card .fc-sess {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 9px 0;
+  font-size: 13px;
+}
+.fc-card .fc-sess + .fc-sess { border-top: 1px solid var(--hairline); }
+.fc-card .fc-sess + .fc-sess-brk { border-top: 1px solid var(--hairline); }
+
+.fc-card .fc-sess .fc-sess-main {
+  display: flex; align-items: center; gap: 10px;
+  min-width: 0;
+}
+.fc-card .fc-sess .fc-tm {
+  font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  font-size: 12.5px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  color: var(--text-strong);
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+}
+.fc-card .fc-sess .fc-tm::before {
+  content: '';
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: var(--fac-color);
+  flex-shrink: 0;
+}
+.fc-card .fc-sess .fc-act {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  line-height: 1.25;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fc-card .fc-sess .fc-act strong {
+  color: var(--text);
+  font-weight: 500;
+}
+.fc-card .fc-sess .fc-ind {
+  flex-shrink: 0;
+  display: inline-flex; align-items: center;
+}
+
+/* Inner break (заливка льда / пауза / перерыв) */
+.fc-card .fc-sess-brk {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 0 5px 18px;
+  font-family: "Newsreader", Georgia, serif;
+  font-style: italic;
+  font-size: 11px;
+  color: var(--text-subtle);
+}
+.fc-card .fc-sess-brk + .fc-sess { border-top: 1px solid var(--hairline); }
+.fc-card .fc-sess-brk .glyph {
+  width: 16px; height: 16px;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--text-subtle);
+}
+.fc-card .fc-sess-brk .glyph .material-symbols-outlined { font-size: 12px; }
+.fc-card .fc-sess-brk .label {
+  display: inline-flex; align-items: baseline; gap: 6px;
+}
+.fc-card .fc-sess-brk .label strong {
+  font-style: normal;
+  font-family: "Inter", sans-serif;
+  font-weight: 600;
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.fc-card .fc-sess-brk .rule {
+  flex: 1; height: 1px;
+  background: repeating-linear-gradient(to right, var(--hairline-strong) 0 4px, transparent 4px 8px);
+}
+/* «заливка льда» — особый акцент на ледовой арене */
+.fc-card.is-fac-ice_arena .fc-sess-brk.is-resurface .glyph,
+.fc-card.is-fac-ice_arena .fc-sess-brk.is-resurface .label strong {
+  color: var(--ice);
+}
+
+/* Active session — подсвечена общим accent */
+.fc-card .fc-sess.is-now {
+  background: linear-gradient(90deg, var(--accent-soft) 0%, transparent 60%);
+  border-radius: 10px;
+  margin: 2px -6px;
+  padding: 9px 6px;
+  position: relative;
+}
+.fc-card .fc-sess.is-now + .fc-sess,
+.fc-card .fc-sess.is-now + .fc-sess-brk { border-top: 1px solid transparent; }
+.fc-card .fc-sess.is-now .fc-tm::before {
+  background: var(--accent);
+  animation: fcPulse 1.8s ease-in-out infinite;
+}
+.fc-card .fc-sess.is-now .fc-tm { color: var(--accent); }
+@keyframes fcPulse {
+  0%,100% { box-shadow: 0 0 0 3px var(--accent-soft); }
+  50%     { box-shadow: 0 0 0 6px transparent; }
+}
+.fc-card .fc-sess.is-past { opacity: 0.45; }
+.fc-card .fc-sess.is-past .fc-tm::before { background: var(--text-subtle); }
+
+/* Closed state — карточка целиком про объявление о приостановке */
+.fc-card.is-closed .fc-closed-note {
+  margin: 4px 0 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--warning-soft);
+  border: 1px solid var(--hairline);
+  font-family: "Newsreader", Georgia, serif;
+  font-style: italic;
+  font-size: 13px;
+  color: var(--text);
+  line-height: 1.4;
+}
+.fc-card.is-closed .fc-closed-note::before {
+  content: 'объект закрыт';
+  display: block;
+  font-family: "Inter", sans-serif;
+  font-style: normal;
+  font-weight: 700;
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--warning);
+  margin-bottom: 4px;
+}
+
+/* Empty (для объекта смена есть, но сайт молчит) */
+.fc-card .fc-empty {
+  padding: 12px 0 4px;
+  font-family: "Newsreader", Georgia, serif;
+  font-style: italic;
+  font-size: 12.5px;
+  color: var(--text-subtle);
+  text-align: center;
+}
+
+/* Footer */
+.fc-card .fc-foot {
+  margin: 6px -14px 0;
+  padding: 11px 14px 12px;
+  border-top: 1px solid var(--hairline);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--text-subtle);
+  position: relative; z-index: 1;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.fc-card .fc-foot .left {
+  display: inline-flex; align-items: center; gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.fc-card .fc-src-pill {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 700;
+  background: var(--accent-soft);
+  color: var(--accent);
+  border: 1px solid var(--border);
+}
+.fc-card .fc-src-pill .material-symbols-outlined { font-size: 12px; }
+.fc-card .fc-src-pill.is-mute {
+  background: var(--bg-raised);
+  color: var(--text-subtle);
+  border-color: var(--hairline);
+}
+.fc-card .fc-src-pill.is-warn {
+  background: var(--warning-soft);
+  color: var(--warning);
+  border-color: var(--hairline);
+}
+.fc-card .fc-sched-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px 3px 7px;
+  border-radius: 999px;
+  background: var(--bg-raised);
+  border: 1px solid var(--hairline);
+  color: var(--text-muted);
+  font-size: 10.5px;
+  font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: all 180ms ease;
+}
+.fc-card .fc-sched-hint:hover {
+  background: var(--accent-soft);
+  border-color: var(--border);
+  color: var(--accent);
+}
+.fc-card .fc-sched-hint .material-symbols-outlined {
+  font-size: 12px;
+  color: var(--text-subtle);
+  margin-right: 1px;
+}
+.fc-card .fc-sched-hint em {
+  font-family: "Newsreader", Georgia, serif;
+  font-style: italic;
+  font-weight: 500;
+  color: var(--text-subtle);
+  font-size: 11.5px;
+  letter-spacing: 0;
+}
+.fc-card .fc-total {
+  font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  font-size: 11.5px;
+  color: var(--text);
+  font-weight: 500;
+}
+
+/* ─── End-indicators (эвристика по activity) ──────────────────── */
+.fc-lanes-free {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px 3px 7px;
+  border-radius: 6px;
+  background: var(--fac-soft);
+  border: 1px solid var(--fac-ink);
+  color: var(--fac-color);
+  font-family: "Newsreader", Georgia, serif;
+  font-style: italic;
+  font-weight: 500;
+  font-size: 11.5px;
+  letter-spacing: 0.005em;
+}
+.fc-lanes-free .material-symbols-outlined { font-size: 13px; font-style: normal; }
+
+.fc-group-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--fac-soft);
+  border: 1px solid var(--fac-ink);
+  color: var(--fac-color);
+  font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
+}
+.fc-group-chip .material-symbols-outlined { font-size: 12px; }
+
+.fc-zone-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: var(--bg-sunken);
+  border: 1px solid var(--hairline);
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+.fc-zone-chip .material-symbols-outlined { font-size: 12px; color: var(--fac-color); }
+
+.fc-lanes {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: var(--bg-sunken);
+  border: 1px solid var(--hairline);
+  color: var(--text-muted);
+  font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+}
+.fc-lanes .material-symbols-outlined { font-size: 12px; color: var(--fac-color); }
+.fc-lanes .count { color: var(--text); font-weight: 600; }

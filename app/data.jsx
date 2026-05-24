@@ -107,6 +107,65 @@ function classifyBreak(minutes, facilityId) {
   return 'перерыв';
 }
 
+// ── Эвристика для end-indicator у сессии ────────────────────────
+// Парсер отдаёт только activity-строку; макет хочет «дорожки / группа /
+// зона / бескрайний». Цифры (3/10, 4 группы) парсером НЕ извлекаются —
+// если activity их содержит, достаём; иначе рендерим индикатор без числа.
+//
+// Возвращает: { type: 'lanes'|'lanes-free'|'group'|'zone'|null, ... }
+//   lanes      → { type:'lanes', count?: int, total?: int }   — большой бассейн
+//   lanes-free → { type:'lanes-free' }                         — «бескрайний»
+//   group      → { type:'group', label }                       — лёд/малый
+//   zone       → { type:'zone', label, icon }                  — гребная база
+//   null       → нет индикатора (fallback: пустая ячейка)
+function inferSessionIndicator(facilityId, activity) {
+  const a = String(activity || '').toLowerCase();
+  if (!a.trim() && !facilityId) return null;
+
+  // «бескрайний» / «без разделения» — приоритет, потому что «дорожки»
+  // ниже подхватили бы общий случай.
+  if (/бескрайн|без\s+раздел|свободн\w*\s+вод/.test(a)) {
+    return { type: 'lanes-free' };
+  }
+
+  // Большой бассейн: ищем «N/M дорожек» или просто «дорожк».
+  if (facilityId === 'sports_pool' || /дорожк/.test(a)) {
+    // «3/10», «3 из 10», «3 из 10 дорожек»
+    const m = a.match(/(\d+)\s*(?:\/|из)\s*(\d+)/);
+    if (m) {
+      const count = Number(m[1]);
+      const total = Number(m[2]);
+      if (count > 0 && total > 0 && count <= total) {
+        return { type: 'lanes', count, total };
+      }
+    }
+    if (/дорожк/.test(a)) return { type: 'lanes' };
+  }
+
+  // Гребная база: тренажёрный / штанга / силовая.
+  if (facilityId === 'rowing_base' || /тренажёр|тренажер|штанг|силов/.test(a)) {
+    if (/штанг|силов/.test(a)) return { type: 'zone', label: 'штанга', icon: 'exercise' };
+    if (/тренажёр|тренажер/.test(a)) return { type: 'zone', label: 'тренажёрный', icon: 'fitness_center' };
+    if (facilityId === 'rowing_base') return { type: 'zone', label: 'зал', icon: 'fitness_center' };
+  }
+
+  // Лёд / малый бассейн: массовое / группы / дети / индивидуальное.
+  if (/индивидуальн/.test(a)) {
+    return { type: 'group', label: 'индивидуально', icon: 'person' };
+  }
+  if (/дет(и|ск)/.test(a)) {
+    return { type: 'group', label: 'дети', icon: 'child_care' };
+  }
+  if (/массов|катан/.test(a)) {
+    return { type: 'group', label: 'массовое', icon: 'groups' };
+  }
+  if (/групп/.test(a) || facilityId === 'ice_arena' || facilityId === 'small_pool') {
+    return { type: 'group', label: 'группа', icon: 'groups' };
+  }
+
+  return null;
+}
+
 function toMinutes(time) {
   const [h, m] = String(time).split(':').map(Number);
   return (h || 0) * 60 + (m || 0);
@@ -416,7 +475,9 @@ const Data = {
   // ── Derived ──
   buildTimelineForDate,
   classifyBreak,
+  inferSessionIndicator,
   toMinutes,
+  minutesToHHMM,
   formatDuration,
   formatRelativeMinutes,
   formatDayHeading,

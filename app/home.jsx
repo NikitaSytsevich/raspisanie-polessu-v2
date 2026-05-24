@@ -256,17 +256,25 @@ function HomeScreen() {
                     }}
                     onPick={(date) => date && setSelectedDate(date)}
                   />
-                  {currentNow && <NowStrip shift={currentNow.shift} eff={currentNow.eff}/>}
-                  <Timeline
-                    rows={rows}
+                  <DayOverview
+                    shifts={dayShifts}
+                    date={selectedDate}
+                    today={today}
+                    nowMins={nowMins}
+                    onFacClick={(facId) => {
+                      // Скролл к карточке объекта внутри списка.
+                      const el = scrollRef.current?.querySelector(`.fc-card.is-fac-${facId}`);
+                      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }}
+                  />
+                  <FacilityList
+                    shifts={dayShifts}
                     today={today}
                     date={selectedDate}
                     nowMins={nowMins}
-                    currentShiftId={currentNow?.shift?.id}
-                    effById={effById}
-                    onAddDay={() => router.push('editor', { date: selectedDate })}
+                    onPushEditor={(shift) => router.push('editor', shift ? { shiftId: shift.id } : { date: selectedDate })}
                   />
-                  {rows.length > 0 && (
+                  {dayShifts.length > 0 && (
                     <AddShiftInlineLink date={selectedDate} onPush={() => router.push('editor', { date: selectedDate })}/>
                   )}
                 </>
@@ -1024,6 +1032,508 @@ function BreakDivider({ br }) {
       </div>
     </div>
   );
+}
+
+// ──────────────────────────────────────────────────────────────────
+// FacilityCard — карточка-на-объект (новый дизайн v2)
+// Заменяет shift-centric Timeline в режиме «День». Одна карточка на
+// объект, в неё кладутся ВСЕ сайтовые сессии этого объекта на дату;
+// смены пользователя сворачиваются в footer-хинт «график 07:30–13:30».
+// ──────────────────────────────────────────────────────────────────
+
+function FacilityList({ shifts, today, date, nowMins, onPushEditor }) {
+  // Группируем смены по объекту. Порядок карточек — по первому старту смены
+  // на каждом объекте (стабильно и совпадает с восприятием «утро → вечер»).
+  const groups = _hm(() => {
+    const map = new Map();
+    for (const s of shifts) {
+      if (!map.has(s.facilityId)) map.set(s.facilityId, []);
+      map.get(s.facilityId).push(s);
+    }
+    const entries = [];
+    for (const [facilityId, shs] of map.entries()) {
+      const sorted = shs.slice().sort(
+        (a, b) => window.Data.toMinutes(a.start) - window.Data.toMinutes(b.start)
+      );
+      entries.push({
+        facilityId,
+        shifts: sorted,
+        firstStart: window.Data.toMinutes(sorted[0].start),
+      });
+    }
+    entries.sort((a, b) => a.firstStart - b.firstStart);
+    return entries;
+  }, [shifts]);
+
+  if (!groups.length) {
+    const isToday = date === today;
+    const isTomorrow = date === window.Data.isoOffset(1);
+    const dayLabel = isToday ? 'на сегодня' : isTomorrow ? 'на завтра' : 'на этот день';
+    return (
+      <section className="timeline">
+        <div className="day-empty is-cta">
+          <span className="material-symbols-outlined glyph">event_available</span>
+          <p className="text">Смен&nbsp;<em>{dayLabel}</em>&nbsp;ещё нет.</p>
+          <button type="button" className="day-empty-btn" onClick={() => onPushEditor()}>
+            <span className="material-symbols-outlined">add</span>
+            <span>Добавить смену</span>
+          </button>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="fc-list">
+      {groups.map((g, i) => (
+        <FacilityCard
+          key={g.facilityId}
+          facilityId={g.facilityId}
+          shifts={g.shifts}
+          today={today}
+          date={date}
+          nowMins={nowMins}
+          idx={i}
+          onPushEditor={onPushEditor}
+        />
+      ))}
+    </section>
+  );
+}
+
+function FacilityCard({ facilityId, shifts, today, date, nowMins, idx, onPushEditor }) {
+  const fac = window.Data.getFacility(facilityId);
+  const cached = window.Data.getCachedFacility(facilityId);
+  const siteSessions = _hm(
+    () => window.Data.getSiteSessionsForDay(facilityId, date),
+    [facilityId, date]
+  );
+
+  // Состояние объекта на эту дату
+  let closed = false;
+  if (cached) {
+    if (cached.dataQuality === 'closed') {
+      closed = { notice: cached.notice };
+    } else if (Array.isArray(cached.closureRanges)) {
+      const hit = cached.closureRanges.find(r => date >= r.from && date <= r.to);
+      if (hit) closed = { notice: hit.notice };
+    }
+  }
+  const noData = cached && (cached.dataQuality === 'template' || cached.dataQuality === 'parse_error');
+  const facOk = !closed && !noData && cached?.dataQuality === 'ok';
+
+  // Окно для range/occ-bar: union(мои смены, сайтовые сессии)
+  const myStart = Math.min(...shifts.map(s => window.Data.toMinutes(s.start)));
+  const myEnd   = Math.max(...shifts.map(s => window.Data.toMinutes(s.end)));
+  const winStart = siteSessions.length
+    ? Math.min(myStart, window.Data.toMinutes(siteSessions[0].start))
+    : myStart;
+  const winEnd = siteSessions.length
+    ? Math.max(myEnd, window.Data.toMinutes(siteSessions[siteSessions.length - 1].end))
+    : myEnd;
+  const winSpan = Math.max(winEnd - winStart, 1);
+  const pctOf = (m) => ((m - winStart) / winSpan) * 100;
+
+  const onToday = date === today;
+  const showNowMark = onToday && nowMins >= winStart && nowMins <= winEnd && !closed;
+
+  // Строки sess-list: сессия → inner-break → сессия → ...
+  const rows = [];
+  for (let i = 0; i < siteSessions.length; i++) {
+    if (i > 0) {
+      const gap = window.Data.toMinutes(siteSessions[i].start)
+                - window.Data.toMinutes(siteSessions[i - 1].end);
+      if (gap > 0) {
+        rows.push({
+          kind: 'brk',
+          minutes: gap,
+          label: window.Data.classifyBreak(gap, facilityId),
+        });
+      }
+    }
+    rows.push({ kind: 'sess', s: siteSessions[i] });
+  }
+
+  // Хинт «график 07:30–13:30» — объединённый диапазон моих смен
+  let schedHint;
+  if (shifts.length === 1) {
+    schedHint = `${shifts[0].start}–${shifts[0].end}`;
+  } else {
+    schedHint = `${window.Data.minutesToHHMM(myStart)}–${window.Data.minutesToHHMM(myEnd)}`;
+  }
+
+  // Pill: рассчитываем по наличию данных на ЭТУ ДАТУ, а не на общий dataQuality
+  // объекта. Если facility.dataQuality='ok', но на дату нет сессий — это «нет на
+  // сайте» (объект в этот день не работает), а не «по сайту».
+  const haveSiteForDate = facOk && siteSessions.length > 0;
+
+  // Итого — сумма пересечений моих смен с сайтовыми сессиями.
+  // Если сайта нет — schedMin.
+  let totalMin = 0;
+  if (closed) {
+    totalMin = 0;
+  } else if (!haveSiteForDate) {
+    totalMin = shifts.reduce((s, sh) =>
+      s + (window.Data.toMinutes(sh.end) - window.Data.toMinutes(sh.start)), 0);
+  } else {
+    for (const sh of shifts) {
+      const a = window.Data.toMinutes(sh.start);
+      const b = window.Data.toMinutes(sh.end);
+      for (const ss of siteSessions) {
+        const u = Math.max(a, window.Data.toMinutes(ss.start));
+        const v = Math.min(b, window.Data.toMinutes(ss.end));
+        if (v > u) totalMin += (v - u);
+      }
+    }
+  }
+
+  const ticks = _hm(() => buildHourTicks(winStart, winEnd), [winStart, winEnd]);
+
+  const openEditor = () => onPushEditor(shifts[0]);
+  const openSite = (e) => {
+    e.stopPropagation();
+    if (fac?.sourceUrl) window.open(fac.sourceUrl, '_blank', 'noopener');
+  };
+
+  const cls = ['fc-card', `is-fac-${facilityId}`, `idx-${idx}`,
+               closed ? 'is-closed' : ''].filter(Boolean).join(' ');
+
+  return (
+    <article className={cls}>
+      <div className="fc-watermark" aria-hidden="true">
+        <span className="material-symbols-outlined">{fac?.icon || 'place'}</span>
+      </div>
+
+      <header className="fc-head">
+        <div className="fc-titles">
+          <p className="fc-place">{fac?.name}</p>
+          {fac?.hint && <p className="fc-hint">{fac.hint}</p>}
+        </div>
+        {fac?.sourceUrl && (
+          <button type="button" className="fc-ext" onClick={openSite}
+                  title={`Открыть «${fac.name}» на сайте ПолесГУ`}
+                  aria-label={`Открыть «${fac.name}» на сайте ПолесГУ`}>
+            <span className="material-symbols-outlined">open_in_new</span>
+          </button>
+        )}
+      </header>
+
+      {closed ? (
+        <div className="fc-closed-note">
+          {closed.notice || 'на сайте объявление о приостановке работы.'}
+        </div>
+      ) : (
+        <>
+          <div className="fc-range">
+            <span className="big">{window.Data.minutesToHHMM(winStart)}</span>
+            <span className="arr">→</span>
+            <span className="big">{window.Data.minutesToHHMM(winEnd)}</span>
+          </div>
+
+          <div className="fc-occ-bar">
+            <div className="track">
+              {siteSessions.map((ss, i) => {
+                const a = window.Data.toMinutes(ss.start);
+                const b = window.Data.toMinutes(ss.end);
+                return (
+                  <span key={i} className="seg"
+                    style={{ left: pctOf(a) + '%',
+                             width: Math.max(pctOf(b) - pctOf(a), 1.5) + '%' }}/>
+                );
+              })}
+            </div>
+            {showNowMark && (
+              <span className="now-mark" style={{ left: pctOf(nowMins) + '%' }}/>
+            )}
+          </div>
+
+          <div className="fc-occ-ticks">
+            {ticks.map((t, i) => {
+              const isFirst = i === 0;
+              const isLast = i === ticks.length - 1;
+              return (
+                <span key={t.min + '-' + i}
+                  className={isFirst ? 'is-first' : isLast ? 'is-last' : ''}
+                  style={isFirst || isLast ? undefined : { left: pctOf(t.min) + '%' }}>
+                  {t.label}
+                </span>
+              );
+            })}
+          </div>
+
+          {siteSessions.length ? (
+            <div className="fc-sess-list">
+              {rows.map((r, i) => r.kind === 'sess'
+                ? <SessionRow key={'s' + i} session={r.s} facilityId={facilityId}
+                              nowMins={nowMins} onToday={onToday}/>
+                : <SessionBreak key={'b' + i} minutes={r.minutes} label={r.label}
+                                facilityId={facilityId}/>
+              )}
+            </div>
+          ) : (
+            <p className="fc-empty">
+              {noData
+                ? 'сайт ещё не сматчен — показываем ваш график'
+                : 'на сайте на эту дату ничего'}
+            </p>
+          )}
+        </>
+      )}
+
+      <footer className="fc-foot">
+        <span className="left">
+          <span className={'fc-src-pill ' + (closed ? 'is-warn' : haveSiteForDate ? '' : 'is-mute')}>
+            <span className="material-symbols-outlined">
+              {closed ? 'event_busy' : haveSiteForDate ? 'verified' : facOk ? 'help_outline' : 'edit_note'}
+            </span>
+            {closed ? 'закрыт'
+              : haveSiteForDate ? 'по сайту'
+              : facOk ? 'нет на сайте'
+              : 'по графику'}
+          </span>
+          <button type="button" className="fc-sched-hint" onClick={openEditor}
+                  title="Редактировать смену">
+            <span className="material-symbols-outlined">edit_calendar</span>
+            <em>график</em>
+            {schedHint}
+          </button>
+        </span>
+        <span className="fc-total">
+          {closed ? '— не отработано' : window.Data.formatDuration(totalMin)}
+        </span>
+      </footer>
+    </article>
+  );
+}
+
+function SessionRow({ session, facilityId, nowMins, onToday }) {
+  const start = window.Data.toMinutes(session.start);
+  const end = window.Data.toMinutes(session.end);
+  const isNow = onToday && start <= nowMins && end > nowMins;
+  const isPast = onToday && end <= nowMins;
+  const ind = window.Data.inferSessionIndicator(facilityId, session.activity);
+  return (
+    <div className={'fc-sess' + (isNow ? ' is-now' : '') + (isPast ? ' is-past' : '')}>
+      <div className="fc-sess-main">
+        <span className="fc-tm">{session.start} — {session.end}</span>
+        {session.activity && <span className="fc-act">{session.activity}</span>}
+      </div>
+      {ind && (
+        <span className="fc-ind">
+          <SessionIndicator ind={ind}/>
+        </span>
+      )}
+    </div>
+  );
+}
+
+function SessionBreak({ minutes, label, facilityId }) {
+  const isResurface = label === 'заливка льда';
+  const cls = 'fc-sess-brk' + (isResurface ? ' is-resurface' : '');
+  const glyph = isResurface ? 'water_drop' : 'more_horiz';
+  return (
+    <div className={cls}>
+      <span className="glyph"><span className="material-symbols-outlined">{glyph}</span></span>
+      <span className="label">
+        <strong>{label}</strong>
+        {window.Data.formatDuration(minutes)}
+      </span>
+      <span className="rule"/>
+    </div>
+  );
+}
+
+function SessionIndicator({ ind }) {
+  if (!ind) return null;
+  if (ind.type === 'lanes') {
+    return (
+      <span className="fc-lanes" title="дорожки">
+        <span className="material-symbols-outlined">pool</span>
+        {ind.count != null && ind.total != null
+          ? <><span className="count">{ind.count}</span>/{ind.total}</>
+          : 'дорожки'}
+      </span>
+    );
+  }
+  if (ind.type === 'lanes-free') {
+    return (
+      <span className="fc-lanes-free">
+        <span className="material-symbols-outlined">waves</span>
+        бескрайний
+      </span>
+    );
+  }
+  if (ind.type === 'group') {
+    return (
+      <span className="fc-group-chip" title={ind.label}>
+        <span className="material-symbols-outlined">{ind.icon || 'groups'}</span>
+        {ind.label}
+      </span>
+    );
+  }
+  if (ind.type === 'zone') {
+    return (
+      <span className="fc-zone-chip" title={ind.label}>
+        <span className="material-symbols-outlined">{ind.icon || 'fitness_center'}</span>
+        {ind.label}
+      </span>
+    );
+  }
+  return null;
+}
+
+// ── DayOverview (mini-Gantt по объектам с моими сменами) ───────
+function DayOverview({ shifts, date, today, nowMins, onFacClick }) {
+  const tracks = _hm(() => {
+    // Группируем смены по объекту, сохраняя порядок «утро → вечер».
+    const order = [];
+    const map = new Map();
+    for (const s of shifts) {
+      if (!map.has(s.facilityId)) {
+        map.set(s.facilityId, { facilityId: s.facilityId, shifts: [] });
+        order.push(s.facilityId);
+      }
+      map.get(s.facilityId).shifts.push(s);
+    }
+    const out = order.map(facilityId => {
+      const item = map.get(facilityId);
+      return {
+        facilityId,
+        shifts: item.shifts,
+        sessions: window.Data.getSiteSessionsForDay(facilityId, date),
+      };
+    });
+    out.sort((a, b) => {
+      const aMin = Math.min(...a.shifts.map(s => window.Data.toMinutes(s.start)));
+      const bMin = Math.min(...b.shifts.map(s => window.Data.toMinutes(s.start)));
+      return aMin - bMin;
+    });
+    return out;
+  }, [shifts, date]);
+
+  if (tracks.length < 2) return null; // Один объект — нет смысла в общем обзоре
+
+  const allMins = [];
+  for (const t of tracks) {
+    for (const s of t.sessions) {
+      allMins.push(window.Data.toMinutes(s.start), window.Data.toMinutes(s.end));
+    }
+    for (const sh of t.shifts) {
+      allMins.push(window.Data.toMinutes(sh.start), window.Data.toMinutes(sh.end));
+    }
+  }
+  if (!allMins.length) return null;
+  const winStart = Math.min(...allMins);
+  const winEnd   = Math.max(...allMins);
+  const winSpan  = Math.max(winEnd - winStart, 1);
+  const pctOf = (m) => ((m - winStart) / winSpan) * 100;
+
+  const onToday = date === today;
+  const totalSessions = tracks.reduce((n, t) => n + t.sessions.length, 0);
+  const ticks = buildHourTicks(winStart, winEnd);
+
+  return (
+    <div className="day-overview">
+      <div className="do-head">
+        <span className="do-title">день <em>полностью</em></span>
+        <span className="do-meta">{totalSessions} {pluralizeSessions(totalSessions)}</span>
+      </div>
+
+      <div className="do-grid">
+        <div className="do-labels">
+          {tracks.map(t => {
+            const fac = window.Data.getFacility(t.facilityId);
+            return (
+              <button key={t.facilityId} type="button" className="do-fac"
+                      style={{ '--fac-color': `var(--${facShortKey(t.facilityId)})` }}
+                      onClick={() => onFacClick?.(t.facilityId)}
+                      title={fac?.name}>
+                <span className="material-symbols-outlined">{fac?.icon}</span>
+                {shortFacilityName(t.facilityId)}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="do-tracks">
+          {tracks.map(t => (
+            <div key={t.facilityId} className="do-track"
+                 style={{ '--fac-color': `var(--${facShortKey(t.facilityId)})` }}>
+              {t.sessions.map((s, i) => {
+                const a = window.Data.toMinutes(s.start);
+                const b = window.Data.toMinutes(s.end);
+                const isNow = onToday && a <= nowMins && b > nowMins;
+                const isPast = onToday && b <= nowMins;
+                return (
+                  <span key={i}
+                    className={'seg' + (isNow ? ' is-now' : '') + (isPast ? ' is-past' : '')}
+                    style={{ left: pctOf(a) + '%',
+                             width: Math.max(pctOf(b) - pctOf(a), 1.5) + '%' }}
+                    onClick={() => onFacClick?.(t.facilityId)}
+                    title={`${s.start}–${s.end}${s.activity ? ' · ' + s.activity : ''}`}/>
+                );
+              })}
+            </div>
+          ))}
+          {onToday && nowMins >= winStart && nowMins <= winEnd && (
+            <span className="do-now-line"
+                  style={{ '--pos': pctOf(nowMins) + '%' }}
+                  aria-hidden="true"/>
+          )}
+        </div>
+
+        <span></span>
+        <div className="do-ticks">
+          {ticks.map((t, i) => {
+            const isFirst = i === 0;
+            const isLast = i === ticks.length - 1;
+            return (
+              <span key={t.min + '-' + i}
+                className={'tick' + (isFirst ? ' is-first' : isLast ? ' is-last' : '')}
+                style={isFirst || isLast ? undefined : { left: pctOf(t.min) + '%' }}>
+                {t.label}
+              </span>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Хелперы для DayOverview / FacilityCard
+function buildHourTicks(winStart, winEnd) {
+  const out = [{ min: winStart, label: window.Data.minutesToHHMM(winStart) }];
+  const span = Math.max(winEnd - winStart, 1);
+  for (const f of [0.25, 0.5, 0.75]) {
+    const m = Math.round((winStart + span * f) / 15) * 15;
+    out.push({ min: m, label: window.Data.minutesToHHMM(m) });
+  }
+  out.push({ min: winEnd, label: window.Data.minutesToHHMM(winEnd) });
+  return out;
+}
+
+function shortFacilityName(facilityId) {
+  if (facilityId === 'ice_arena')   return 'Лёд';
+  if (facilityId === 'sports_pool') return 'Большой';
+  if (facilityId === 'small_pool')  return 'Малый';
+  if (facilityId === 'rowing_base') return 'Гребная';
+  return facilityId;
+}
+
+function facShortKey(facilityId) {
+  if (facilityId === 'ice_arena')   return 'ice';
+  if (facilityId === 'sports_pool') return 'pool';
+  if (facilityId === 'small_pool')  return 'small';
+  if (facilityId === 'rowing_base') return 'rowing';
+  return 'accent';
+}
+
+function pluralizeSessions(n) {
+  const last = n % 10, last2 = n % 100;
+  if (last === 1 && last2 !== 11) return 'сессия';
+  if (last >= 2 && last <= 4 && (last2 < 12 || last2 > 14)) return 'сессии';
+  return 'сессий';
 }
 
 // ── Inline add link ─────────────────────────────────────────────
