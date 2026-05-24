@@ -4,8 +4,20 @@
 
 const { useState: _ms, useEffect: _me } = React;
 
+// Заставку показываем один раз за сессию вкладки. При reload (cold start)
+// — да; при возврате со стартовой страницы внутри сессии — нет.
+const INTRO_KEY = 'rpgu_intro_shown_session';
+
 function App() {
   const [settings, setSettings] = _ms(() => window.Data.loadSettings());
+  const [introDone, setIntroDone] = _ms(() => {
+    try { return sessionStorage.getItem(INTRO_KEY) === '1'; } catch { return false; }
+  });
+
+  function handleIntroDone() {
+    try { sessionStorage.setItem(INTRO_KEY, '1'); } catch {}
+    setIntroDone(true);
+  }
 
   // Resolve "system" theme to dark/light
   _me(() => {
@@ -45,6 +57,7 @@ function App() {
   return (
     <window.UI.ToastHost>
       <window.Router screens={screens} initial="home" persistent={persistent}/>
+      {!introDone && <window.IntroOverlay onComplete={handleIntroDone}/>}
     </window.UI.ToastHost>
   );
 }

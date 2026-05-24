@@ -3000,6 +3000,46 @@ html.light .about-sheet {
 }
 
 /* ──────────────────────────────────────────────────────────────────
+   INTRO OVERLAY (cold-start splash из дизайна v2/intro.jsx)
+   Сцена нарисована в внутренних координатах 540×1170; на экран
+   масштабируется через CSS transform с сохранением aspect ratio.
+   Перекрывает весь viewport с fixed-позиционированием,
+   автоматически снимается через ~3.8 с + 280 мс fade.
+   ────────────────────────────────────────────────────────────────── */
+.intro-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: #181513;
+  overflow: hidden;
+  cursor: pointer;
+  /* Игнорируем светлую тему — заставка задумана тёмной */
+  color-scheme: dark;
+  opacity: 1;
+  transition: opacity 280ms ease-out;
+  /* Предотвращаем нежелательные жесты пока заставка на экране */
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.intro-overlay.is-leaving {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Внутренний холст 540×1170. transform: scale(...) задаётся inline из JS
+   (IntroOverlay), потому что CSS-выражение min(calc(100vw/540), …)
+   возвращает length, а scale() требует unitless значение. */
+.intro-overlay .intro-stage {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 540px;
+  height: 1170px;
+  transform-origin: center;
+  will-change: transform;
+}
+
+/* ──────────────────────────────────────────────────────────────────
    FACILITY CARDS (главный экран — карточка-на-объект из дизайна v2)
      .fc-card      — карточка одного объекта
      .fc-occ-bar   — occupancy bar с тиками часов и now-mark
