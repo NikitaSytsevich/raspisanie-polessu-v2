@@ -10,7 +10,6 @@ function HomeScreen() {
   const [shifts, setShifts]   = _hs(() => window.Data.loadShifts());
   const [changes, setChanges] = _hs(() => window.Data.loadSiteChanges());
   const [selectedDate, setSelectedDate] = _hs(() => window.Data.TODAY_ISO);
-  const [mode, setMode]       = _hs('day'); // 'day' | 'feed'
   const [aboutOpen, setAboutOpen] = _hs(false);
   const [refreshing, setRefreshing] = _hs(false);
   const [weekOffset, setWeekOffset] = _hs(0); // 0 — текущая неделя, ±1 — соседние
@@ -78,52 +77,24 @@ function HomeScreen() {
   if (!shifts.length) state = 'empty';
   else if (!shifts.some(s => s.date >= today)) state = 'caught_up';
 
-  const rows = _hm(() => window.Data.buildTimelineForDate(shifts, selectedDate), [shifts, selectedDate]);
-
-  // Один проход через computeEffectiveShift на день: { shift, eff } для всех
-  // смен. Раньше функцию звали отдельно в Hero (totalMin), в currentNow и
-  // потом в каждом ShiftCard — три раза на одну смену. Теперь карты строим
-  // здесь и прокидываем готовые eff внутрь.
-  const dayEffShifts = _hm(
-    () => dayShifts.map(s => ({ shift: s, eff: window.Data.computeEffectiveShift(s) })),
-    [dayShifts]
-  );
-  const effById = _hm(() => {
-    const m = new Map();
-    for (const e of dayEffShifts) m.set(e.shift.id, e.eff);
-    return m;
-  }, [dayEffShifts]);
-
-  // Hero stats — суммируем «фактическое» время по сайту.
+  // Hero stats — суммируем «фактическое» время по сайту через
+  // computeEffectiveShift на каждую смену.
   // Подтверждённые смены идут в totalMin; неподтверждённые (нет данных или
   // объект работает, но в это окно ничего) — в unconfirmedMin как контекст.
   const { totalMin, unconfirmedMin, facCount } = _hm(() => {
     let t = 0, u = 0;
     const facs = new Set();
-    for (const { shift: s, eff: e } of dayEffShifts) {
+    for (const s of dayShifts) {
+      const e = window.Data.computeEffectiveShift(s);
       facs.add(s.facilityId);
       if (e.badge === 'closed') continue;
       if (e.badge === 'confirmed') t += e.minutes;
       else u += e.minutes;
     }
     return { totalMin: t, unconfirmedMin: u, facCount: facs.size };
-  }, [dayEffShifts]);
+  }, [dayShifts]);
 
-  // Current "now" shift — only when looking at today.
-  // При пересечении смен берём ту, что началась **позже** — пользователь
-  // физически на одном объекте, и в момент старта более поздней смены
-  // переходит туда. Если объект закрыт — пропускаем.
   const nowMins = new Date().getHours() * 60 + new Date().getMinutes();
-  const currentNow = isToday
-    ? [...dayEffShifts]
-        .sort((a, b) => window.Data.toMinutes(b.eff.start) - window.Data.toMinutes(a.eff.start))
-        .find(({ eff }) => {
-          if (eff.badge === 'closed') return false;
-          const start = window.Data.toMinutes(eff.start);
-          const end   = window.Data.toMinutes(eff.end);
-          return start <= nowMins && end > nowMins;
-        })
-    : null;
 
   // Site-changes summary (latest unread)
   const unreadChange = changes.find(c => !c.acknowledgedAt && (c.hasChanges || c.hasSourceIssues));
@@ -238,48 +209,41 @@ function HomeScreen() {
               {unreadChange?.affectsMe && (
                 <SiteCard change={unreadChange} onClick={() => router.push('changes')}/>
               )}
-              <ModeTabs mode={mode} onChange={setMode}/>
-              {mode === 'day' ? (
-                <>
-                  <WeekStrip
-                    days={weekDays}
-                    selectedDate={selectedDate}
-                    weekOffset={weekOffset}
-                    onSelect={setSelectedDate}
-                    onShift={(arg) => {
-                      if (arg === 'today') {
-                        setWeekOffset(0);
-                        setSelectedDate(today);
-                      } else {
-                        setWeekOffset(o => o + arg);
-                      }
-                    }}
-                    onPick={(date) => date && setSelectedDate(date)}
-                  />
-                  <DayOverview
-                    shifts={dayShifts}
-                    date={selectedDate}
-                    today={today}
-                    nowMins={nowMins}
-                    onFacClick={(facId) => {
-                      // Скролл к карточке объекта внутри списка.
-                      const el = scrollRef.current?.querySelector(`.fc-card.is-fac-${facId}`);
-                      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                    }}
-                  />
-                  <FacilityList
-                    shifts={dayShifts}
-                    today={today}
-                    date={selectedDate}
-                    nowMins={nowMins}
-                    onPushEditor={(shift) => router.push('editor', shift ? { shiftId: shift.id } : { date: selectedDate })}
-                  />
-                  {dayShifts.length > 0 && (
-                    <AddShiftInlineLink date={selectedDate} onPush={() => router.push('editor', { date: selectedDate })}/>
-                  )}
-                </>
-              ) : (
-                <Feed shifts={shifts} today={today} nowMins={nowMins} currentShiftId={currentNow?.shift?.id} onPickDate={(d) => { setSelectedDate(d); setMode('day'); }}/>
+              <WeekStrip
+                days={weekDays}
+                selectedDate={selectedDate}
+                weekOffset={weekOffset}
+                onSelect={setSelectedDate}
+                onShift={(arg) => {
+                  if (arg === 'today') {
+                    setWeekOffset(0);
+                    setSelectedDate(today);
+                  } else {
+                    setWeekOffset(o => o + arg);
+                  }
+                }}
+                onPick={(date) => date && setSelectedDate(date)}
+              />
+              <DayOverview
+                shifts={dayShifts}
+                date={selectedDate}
+                today={today}
+                nowMins={nowMins}
+                onFacClick={(facId) => {
+                  // Скролл к карточке объекта внутри списка.
+                  const el = scrollRef.current?.querySelector(`.fc-card.is-fac-${facId}`);
+                  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }}
+              />
+              <FacilityList
+                shifts={dayShifts}
+                today={today}
+                date={selectedDate}
+                nowMins={nowMins}
+                onPushEditor={(shift) => router.push('editor', shift ? { shiftId: shift.id } : { date: selectedDate })}
+              />
+              {dayShifts.length > 0 && (
+                <AddShiftInlineLink date={selectedDate} onPush={() => router.push('editor', { date: selectedDate })}/>
               )}
               {!unreadChange?.affectsMe && (
                 <SiteCard change={unreadChange} onClick={() => router.push('changes')}/>
@@ -440,98 +404,6 @@ function affectedShiftsPhrase(n) {
 }
 
 // ── Mode tabs (День / Лента) ────────────────────────────────────
-function ModeTabs({ mode, onChange }) {
-  return (
-    <div className="mode-tabs" role="tablist">
-      <button
-        type="button"
-        role="tab"
-        aria-selected={mode === 'day'}
-        className={`mode-tab ${mode === 'day' ? 'is-active' : ''}`}
-        onClick={() => onChange('day')}
-      >
-        День
-      </button>
-      <button
-        type="button"
-        role="tab"
-        aria-selected={mode === 'feed'}
-        className={`mode-tab ${mode === 'feed' ? 'is-active' : ''}`}
-        onClick={() => onChange('feed')}
-      >
-        Лента
-      </button>
-    </div>
-  );
-}
-
-// ── Feed (все смены, сгруппированные по датам) ──────────────────
-function Feed({ shifts, today, nowMins, currentShiftId, onPickDate }) {
-  const groups = _hm(() => {
-    const byDate = new Map();
-    for (const s of shifts) {
-      if (!byDate.has(s.date)) byDate.set(s.date, []);
-      byDate.get(s.date).push(s);
-    }
-    const dates = Array.from(byDate.keys()).sort();
-    const future = dates.filter(d => d >= today);
-    const past   = dates.filter(d => d <  today).reverse();
-    return [...future, ...past].map(date => {
-      const dayShifts = byDate.get(date).sort((a, b) =>
-        window.Data.toMinutes(a.start) - window.Data.toMinutes(b.start));
-      return {
-        date,
-        shifts: dayShifts,
-        siteMin: dayShifts.reduce((sum, s) => {
-          const e = window.Data.computeEffectiveShift(s);
-          return e.badge === 'confirmed' ? sum + e.minutes : sum;
-        }, 0),
-      };
-    });
-  }, [shifts, today]);
-
-  if (!groups.length) {
-    return <div className="feed-empty">Смен пока нет.</div>;
-  }
-  return (
-    <section className="feed">
-      {groups.map(g => {
-        const d = new Date(g.date + 'T12:00:00');
-        const wd = window.Data.RU_WEEKDAYS_SHORT[d.getDay()];
-        const dayNum = d.getDate();
-        const mo = window.Data.RU_MONTHS[d.getMonth()];
-        let kicker = null;
-        if (g.date === today) kicker = 'сегодня';
-        else if (g.date === window.Data.isoOffset(1))  kicker = 'завтра';
-        else if (g.date === window.Data.isoOffset(-1)) kicker = 'вчера';
-        return (
-          <div key={g.date} className={`feed-day ${g.date < today ? 'is-past' : ''}`}>
-            <button type="button" className="feed-day-head" onClick={() => onPickDate?.(g.date)}>
-              {kicker && <span className="kicker">{kicker}</span>}
-              <span className="date">{wd}, {dayNum}&nbsp;{mo}</span>
-              <span className="meta">
-                {g.shifts.length}&nbsp;{pluralizeShifts(g.shifts.length)}
-                {g.siteMin > 0 && <> · {window.Data.formatDuration(g.siteMin)}</>}
-              </span>
-            </button>
-            {g.shifts.map(s => (
-              <ShiftCard
-                key={s.id}
-                shift={s}
-                nowMins={nowMins}
-                today={today}
-                date={g.date}
-                variant="feed"
-                currentShiftId={currentShiftId}
-              />
-            ))}
-          </div>
-        );
-      })}
-    </section>
-  );
-}
-
 // ── Week strip ──────────────────────────────────────────────────
 function WeekStrip({ days, selectedDate, weekOffset, onSelect, onShift, onPick }) {
   const [pickerOpen, setPickerOpen] = _hs(false);
@@ -793,246 +665,9 @@ function DatePicker({ popoverRef, anchorDate, onSelect, onClose }) {
   );
 }
 
-// ── Now strip ───────────────────────────────────────────────────
-function NowStrip({ shift, eff }) {
-  const fac = window.Data.getFacility(shift.facilityId);
-  const nowMins = new Date().getHours() * 60 + new Date().getMinutes();
-  const left = window.Data.toMinutes(eff.end) - nowMins;
-  const leftText = left <= 1 ? 'менее минуты' : window.Data.formatDuration(left);
-  // Берём первые два сегмента активности до « · » — обычно это «название · подзаголовок».
-  const parts = (eff.activity || shift.activity || '')
-    .split('·').map(s => s.trim()).filter(Boolean);
-  const label = parts.slice(0, 2).join(' · ') || fac?.name || '';
-  return (
-    <div className="now-strip">
-      <span className="pulse"/>
-      <div className="body">
-        <span className="label">сейчас · {new Date().toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})}</span>
-        <span className="title">{label}{fac?.name && !label.includes(fac.name) ? ` · ${fac.name}` : ''}</span>
-      </div>
-      <span className="countdown">осталось&nbsp;<strong>{leftText}</strong></span>
-    </div>
-  );
-}
-
-// ── Timeline ────────────────────────────────────────────────────
-function Timeline({ rows, today, date, nowMins, currentShiftId, effById, onAddDay }) {
-  if (!rows.length) {
-    const isToday = date === today;
-    const isTomorrow = date === window.Data.isoOffset(1);
-    const dayLabel = isToday ? 'на сегодня' : isTomorrow ? 'на завтра' : 'на этот день';
-    return (
-      <section className="timeline">
-        <div className="day-empty is-cta">
-          <span className="material-symbols-outlined glyph">event_available</span>
-          <p className="text">Смен&nbsp;<em>{dayLabel}</em>&nbsp;ещё нет.</p>
-          {onAddDay && (
-            <button type="button" className="day-empty-btn" onClick={onAddDay}>
-              <span className="material-symbols-outlined">add</span>
-              <span>Добавить смену</span>
-            </button>
-          )}
-        </div>
-      </section>
-    );
-  }
-  return (
-    <section className="timeline">
-      {rows.map((r, i) => r.kind === 'shift'
-        ? <ShiftCard key={r.shift.id} shift={r.shift} eff={effById?.get(r.shift.id)} nowMins={nowMins} today={today} date={date} currentShiftId={currentShiftId}/>
-        : <BreakDivider key={`brk-${i}`} br={r}/>
-      )}
-    </section>
-  );
-}
-
-function buildSessionItems(sessions, nowMins, isNow, onToday) {
-  const items = [];
-  for (let i = 0; i < sessions.length; i++) {
-    const ss = sessions[i];
-    if (i > 0) {
-      const gap = window.Data.toMinutes(ss.start) - window.Data.toMinutes(sessions[i - 1].end);
-      if (gap > 0) {
-        items.push(
-          <div key={'brk-' + i} className="inner-break">
-            <span className="inner-break-line"/>
-            <span className="inner-break-label">{window.Data.formatDuration(gap) + ' перерыв'}</span>
-            <span className="inner-break-line"/>
-          </div>
-        );
-      }
-    }
-    const ssStart  = window.Data.toMinutes(ss.start);
-    const ssEnd    = window.Data.toMinutes(ss.end);
-    const ssIsNow  = isNow && onToday && ssStart <= nowMins && ssEnd > nowMins;
-    const ssIsPast = onToday && ssEnd <= nowMins;
-    const rowCls   = 'session-row' + (ssIsNow ? ' is-now' : '') + (ssIsPast ? ' is-past' : '');
-    items.push(
-      <div key={ss.start + '-' + ss.end + '-' + i} className={rowCls}>
-        <span className="session-dot"/>
-        <span className="session-time">{ss.start + ' — ' + ss.end}</span>
-        {ss.activity && <span className="session-act">{ss.activity}</span>}
-      </div>
-    );
-  }
-  return items;
-}
-
-function ShiftCard({ shift, eff: effProp, nowMins, today, date, variant, currentShiftId }) {
-  const fac = window.Data.getFacility(shift.facilityId);
-  // eff может прийти готовым из родителя (Timeline/Feed считают карту один
-  // раз на день, чтобы не звать computeEffectiveShift трижды на смену).
-  const eff = effProp || window.Data.computeEffectiveShift(shift);
-  const start = window.Data.toMinutes(eff.start);
-  const end   = window.Data.toMinutes(eff.end);
-  const onToday = date === today;
-  const hasClosed = eff.badge === 'closed';
-  // Подсветка «сейчас» — только для смены, выбранной верхним уровнем
-  // (HomeScreen → currentNow). При пересечении смен это гарантирует, что
-  // подсвечена ровно одна карточка — та же, что в NowStrip.
-  const isNow  = currentShiftId != null
-    ? shift.id === currentShiftId
-    : onToday && !hasClosed && start <= nowMins && end > nowMins;
-  const isPast = (date < today) || (onToday && end <= nowMins);
-  const isSite = shift.source === 'site';
-  const activity    = eff.activity || shift.activity;
-  const dur         = window.Data.formatDuration(eff.minutes);
-  const sessions    = eff.sessions || [];
-  const hasSessions = sessions.length > 0 && !hasClosed;
-
-  const cls = [
-    'seg',
-    variant === 'feed' ? 'seg--feed' : '',
-    isSite ? 'is-site' : 'is-personal',
-    isNow ? 'is-now' : '',
-    isPast ? 'is-past' : '',
-    hasClosed ? 'has-closed' : '',
-  ].filter(Boolean).join(' ');
-
-  let pill;
-  if (hasClosed) {
-    pill = { icon: 'event_busy', text: 'объект закрыт', mod: 'is-warn' };
-  } else if (eff.badge === 'not_in_site') {
-    pill = { icon: 'help_outline', text: 'нет на сайте', mod: '' };
-  } else if (eff.badge === 'confirmed') {
-    pill = { icon: 'verified', text: 'по сайту', mod: 'is-ok' };
-  } else {
-    pill = { icon: 'edit_note', text: 'по графику', mod: '' };
-  }
-
-  return (
-    <article className={cls}>
-      <div className="card">
-        <header className="card-cover">
-          <div className="cover-main">
-            <p className="cover-place">{fac ? fac.name : ''}</p>
-            <div className="time">
-              <span className="from">{eff.start}</span>
-              <span className="to">{'— ' + eff.end}</span>
-            </div>
-          </div>
-          {fac && fac.sourceUrl && (
-            <a className="cover-site-btn"
-               href={fac.sourceUrl}
-               target="_blank"
-               rel="noopener noreferrer"
-               onClick={(e) => e.stopPropagation()}
-               title={'Открыть «' + fac.name + '» на сайте ПолесГУ'}
-               aria-label={'Открыть «' + fac.name + '» на сайте ПолесГУ'}>
-              <span className="material-symbols-outlined">open_in_new</span>
-            </a>
-          )}
-        </header>
-
-        {hasClosed ? (
-          <div className="card-body is-closed-body">
-            <p className="closed-note">{eff.notice || 'на сайте объявление о приостановке работы.'}</p>
-          </div>
-        ) : hasSessions ? (
-          <div className="card-body has-sessions">
-            {buildSessionItems(sessions, nowMins, isNow, onToday)}
-          </div>
-        ) : (
-          <div className="card-body">
-            {activity && <p className="activity">{activity}</p>}
-          </div>
-        )}
-
-        <footer className="card-footer">
-          <span className={'status ' + pill.mod}>
-            <span className="material-symbols-outlined">{pill.icon}</span>
-            {pill.text}
-          </span>
-          {(eff.start !== shift.start || eff.end !== shift.end) && !hasClosed && (
-            <span className="schedule-hint" title="Время по вашему графику">
-              {'гр. ' + shift.start + '–' + shift.end}
-            </span>
-          )}
-          <span className="duration">
-            {hasClosed ? '— не отработано' : dur}
-          </span>
-        </footer>
-      </div>
-    </article>
-  );
-}
 
 // (SiteCompareRow удалён — карточка теперь сразу показывает сайтовое окно)
-function _SiteCompareRowRemoved({ cmp, shift }) {
-  if (cmp.state === 'closed') {
-    return (
-      <div className="site-compare is-closed">
-        <span className="material-symbols-outlined">event_busy</span>
-        <div className="body">
-          <p className="kicker">объект закрыт</p>
-          <p className="text">{cmp.notice || 'на сайте сейчас объявление о приостановке работы.'}</p>
-        </div>
-      </div>
-    );
-  }
-  // Если у всех сеансов одна активность — не повторяем в каждом slot,
-  // чтобы не плодить визуальный шум.
-  const acts = Array.from(new Set(cmp.siteSessions.map(s => s.activity).filter(Boolean)));
-  const sharedActivity = acts.length === 1;
-  return (
-    <div className="site-compare is-mismatch">
-      <span className="material-symbols-outlined">compare_arrows</span>
-      <div className="body">
-        <p className="kicker">по сайту в этот день</p>
-        <ul className="slots">
-          {cmp.siteSessions.map((s, i) => {
-            const overlap = window.Data.toMinutes(s.start) < window.Data.toMinutes(shift.end)
-              && window.Data.toMinutes(s.end) > window.Data.toMinutes(shift.start);
-            return (
-              <li key={i} className={overlap ? 'is-overlap' : ''}>
-                <span className="tm">{s.start}&ndash;{s.end}</span>
-                {!sharedActivity && s.activity && <span className="act">{s.activity}</span>}
-              </li>
-            );
-          })}
-        </ul>
-      </div>
-    </div>
-  );
-}
 
-function BreakDivider({ br }) {
-  const cls = ['brk'];
-  if (br.label === 'заливка льда') cls.push('is-ice');
-  if (br.crossFacility) cls.push('is-cross');
-  const labelText = br.crossFacility
-    ? `${window.Data.getFacility(br.prevFacility)?.name} → ${window.Data.getFacility(br.nextFacility)?.name}`
-    : `${br.from} — ${br.to}`;
-  return (
-    <div className={cls.join(' ')}>
-      <div className="brk-spine">{window.Data.formatDuration(br.minutes)}</div>
-      <div className="brk-line">
-        <span className="label"><strong>{br.crossFacility ? 'переход' : br.label}</strong>{labelText}</span>
-        <span className="rule"/>
-      </div>
-    </div>
-  );
-}
 
 // ──────────────────────────────────────────────────────────────────
 // FacilityCard — карточка-на-объект (новый дизайн v2)
@@ -1122,27 +757,33 @@ function FacilityCard({ facilityId, shifts, today, date, nowMins, idx, onPushEdi
   const noData = cached && (cached.dataQuality === 'template' || cached.dataQuality === 'parse_error');
   const facOk = !closed && !noData && cached?.dataQuality === 'ok';
 
-  // Окно для range/occ-bar: union(мои смены, сайтовые сессии)
+  // Окно карточки = объединение моих смен на объекте. Сессии вне окна
+  // отбрасываем (только то, что попадает в моё время — это и есть смысл
+  // карточки «что у меня происходит во время смены»).
   const myStart = Math.min(...shifts.map(s => window.Data.toMinutes(s.start)));
   const myEnd   = Math.max(...shifts.map(s => window.Data.toMinutes(s.end)));
-  const winStart = siteSessions.length
-    ? Math.min(myStart, window.Data.toMinutes(siteSessions[0].start))
-    : myStart;
-  const winEnd = siteSessions.length
-    ? Math.max(myEnd, window.Data.toMinutes(siteSessions[siteSessions.length - 1].end))
-    : myEnd;
+  const winStart = myStart;
+  const winEnd   = myEnd;
   const winSpan = Math.max(winEnd - winStart, 1);
-  const pctOf = (m) => ((m - winStart) / winSpan) * 100;
+  const pctOf = (m) => Math.max(0, Math.min(100, ((m - winStart) / winSpan) * 100));
+
+  // Только пересекающиеся с моим окном сессии. Не пересекающиеся уходят
+  // в общий day-overview сверху, но в карточке они не нужны.
+  const overlapSessions = siteSessions.filter(ss =>
+    window.Data.toMinutes(ss.start) < winEnd &&
+    window.Data.toMinutes(ss.end)   > winStart
+  );
 
   const onToday = date === today;
   const showNowMark = onToday && nowMins >= winStart && nowMins <= winEnd && !closed;
 
   // Строки sess-list: сессия → inner-break → сессия → ...
+  // (только между смежными отображаемыми сессиями)
   const rows = [];
-  for (let i = 0; i < siteSessions.length; i++) {
+  for (let i = 0; i < overlapSessions.length; i++) {
     if (i > 0) {
-      const gap = window.Data.toMinutes(siteSessions[i].start)
-                - window.Data.toMinutes(siteSessions[i - 1].end);
+      const gap = window.Data.toMinutes(overlapSessions[i].start)
+                - window.Data.toMinutes(overlapSessions[i - 1].end);
       if (gap > 0) {
         rows.push({
           kind: 'brk',
@@ -1151,7 +792,7 @@ function FacilityCard({ facilityId, shifts, today, date, nowMins, idx, onPushEdi
         });
       }
     }
-    rows.push({ kind: 'sess', s: siteSessions[i] });
+    rows.push({ kind: 'sess', s: overlapSessions[i] });
   }
 
   // Хинт «график 07:30–13:30» — объединённый диапазон моих смен
@@ -1162,13 +803,12 @@ function FacilityCard({ facilityId, shifts, today, date, nowMins, idx, onPushEdi
     schedHint = `${window.Data.minutesToHHMM(myStart)}–${window.Data.minutesToHHMM(myEnd)}`;
   }
 
-  // Pill: рассчитываем по наличию данных на ЭТУ ДАТУ, а не на общий dataQuality
-  // объекта. Если facility.dataQuality='ok', но на дату нет сессий — это «нет на
-  // сайте» (объект в этот день не работает), а не «по сайту».
-  const haveSiteForDate = facOk && siteSessions.length > 0;
+  // Pill: «по сайту» только если в моё окно реально что-то попадает.
+  // Если сайт работает, но мои часы вне сетки → «нет на сайте».
+  const haveSiteForDate = facOk && overlapSessions.length > 0;
 
-  // Итого — сумма пересечений моих смен с сайтовыми сессиями.
-  // Если сайта нет — schedMin.
+  // Итого — сумма пересечений моих смен с overlap-сессиями.
+  // Если в моё окно ничего из сайта не попало — schedMin (доверяем графику).
   let totalMin = 0;
   if (closed) {
     totalMin = 0;
@@ -1179,7 +819,7 @@ function FacilityCard({ facilityId, shifts, today, date, nowMins, idx, onPushEdi
     for (const sh of shifts) {
       const a = window.Data.toMinutes(sh.start);
       const b = window.Data.toMinutes(sh.end);
-      for (const ss of siteSessions) {
+      for (const ss of overlapSessions) {
         const u = Math.max(a, window.Data.toMinutes(ss.start));
         const v = Math.min(b, window.Data.toMinutes(ss.end));
         if (v > u) totalMin += (v - u);
@@ -1232,9 +872,10 @@ function FacilityCard({ facilityId, shifts, today, date, nowMins, idx, onPushEdi
 
           <div className="fc-occ-bar">
             <div className="track">
-              {siteSessions.map((ss, i) => {
-                const a = window.Data.toMinutes(ss.start);
-                const b = window.Data.toMinutes(ss.end);
+              {overlapSessions.map((ss, i) => {
+                // Клипуем сегмент к окну смены (сессия может торчать наружу)
+                const a = Math.max(window.Data.toMinutes(ss.start), winStart);
+                const b = Math.min(window.Data.toMinutes(ss.end),   winEnd);
                 return (
                   <span key={i} className="seg"
                     style={{ left: pctOf(a) + '%',
@@ -1261,7 +902,7 @@ function FacilityCard({ facilityId, shifts, today, date, nowMins, idx, onPushEdi
             })}
           </div>
 
-          {siteSessions.length ? (
+          {overlapSessions.length ? (
             <div className="fc-sess-list">
               {rows.map((r, i) => r.kind === 'sess'
                 ? <SessionRow key={'s' + i} session={r.s} facilityId={facilityId}
@@ -1274,7 +915,9 @@ function FacilityCard({ facilityId, shifts, today, date, nowMins, idx, onPushEdi
             <p className="fc-empty">
               {noData
                 ? 'сайт ещё не сматчен — показываем ваш график'
-                : 'на сайте на эту дату ничего'}
+                : siteSessions.length
+                  ? 'в это время на сайте ничего'
+                  : 'на эту дату на сайте ничего'}
             </p>
           )}
         </>
@@ -1346,12 +989,20 @@ function SessionBreak({ minutes, label, facilityId }) {
 function SessionIndicator({ ind }) {
   if (!ind) return null;
   if (ind.type === 'lanes') {
+    const total = ind.total || 10;
+    const count = ind.count;
+    const isFull = count != null && count >= total;
+    const bars = [];
+    for (let i = 0; i < total; i++) {
+      bars.push(<span key={i} className={'l' + (count != null && i < count ? ' on' : '')}/>);
+    }
     return (
-      <span className="fc-lanes" title="дорожки">
-        <span className="material-symbols-outlined">pool</span>
-        {ind.count != null && ind.total != null
-          ? <><span className="count">{ind.count}</span>/{ind.total}</>
-          : 'дорожки'}
+      <span className={'fc-lanes' + (isFull ? ' is-full' : '')}
+            title={count != null ? `${count} из ${total} дорожек` : 'дорожки'}>
+        {bars}
+        {count != null
+          ? <span className="count">{count}/{total}</span>
+          : <span className="count">дорожки</span>}
       </span>
     );
   }
@@ -1430,13 +1081,22 @@ function DayOverview({ shifts, date, today, nowMins, onFacClick }) {
 
   const onToday = date === today;
   const totalSessions = tracks.reduce((n, t) => n + t.sessions.length, 0);
+  const totalSessionMin = tracks.reduce((n, t) =>
+    n + t.sessions.reduce((m, s) => m + (window.Data.toMinutes(s.end) - window.Data.toMinutes(s.start)), 0),
+    0
+  );
   const ticks = buildHourTicks(winStart, winEnd);
+  const showNowLabel = onToday && nowMins >= winStart && nowMins <= winEnd;
+  const nowHHMM = window.Data.minutesToHHMM(nowMins);
 
   return (
     <div className="day-overview">
       <div className="do-head">
         <span className="do-title">день <em>полностью</em></span>
-        <span className="do-meta">{totalSessions} {pluralizeSessions(totalSessions)}</span>
+        <span className="do-meta">
+          {totalSessions} {pluralizeSessions(totalSessions)}
+          {totalSessionMin > 0 && <> · {window.Data.formatDuration(totalSessionMin)}</>}
+        </span>
       </div>
 
       <div className="do-grid">
@@ -1475,10 +1135,16 @@ function DayOverview({ shifts, date, today, nowMins, onFacClick }) {
               })}
             </div>
           ))}
-          {onToday && nowMins >= winStart && nowMins <= winEnd && (
-            <span className="do-now-line"
-                  style={{ '--pos': pctOf(nowMins) + '%' }}
-                  aria-hidden="true"/>
+          {showNowLabel && (
+            <>
+              <span className="do-now-line"
+                    style={{ '--pos': pctOf(nowMins) + '%' }}
+                    aria-hidden="true"/>
+              <span className="do-now-label"
+                    style={{ left: pctOf(nowMins) + '%' }}>
+                сейчас {nowHHMM}
+              </span>
+            </>
           )}
         </div>
 

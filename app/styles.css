@@ -3012,7 +3012,7 @@ html.light .about-sheet {
 /* ─── DayOverview ─────────────────────────────────────────────── */
 .day-overview {
   margin: 12px 18px 6px;
-  padding: 14px 16px 12px;
+  padding: 16px 18px 14px;
   border-radius: 18px;
   background: var(--bg-elevated);
   border: 1px solid var(--hairline);
@@ -3091,7 +3091,7 @@ html.light .about-sheet {
 
 .day-overview .do-track {
   position: relative;
-  height: 12px;
+  height: 14px;
   border-radius: 999px;
   background: rgba(245, 241, 235, 0.04);
   overflow: visible;
@@ -3138,6 +3138,24 @@ html.light .day-overview .do-track {
   background: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
   transform: translateX(-50%);
+}
+/* «сейчас 16:34» pill над now-line — тот же приём, что и в occ-bar */
+.day-overview .do-now-label {
+  position: absolute;
+  top: -16px;
+  transform: translateX(-50%);
+  font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  font-size: 8.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--accent);
+  font-weight: 700;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 4;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--bg-elevated) 95%, var(--accent) 5%);
 }
 
 .day-overview .do-ticks {
@@ -3613,19 +3631,31 @@ html.light .fc-card .fc-occ-bar { background: rgba(24, 21, 19, 0.05); }
 }
 .fc-zone-chip .material-symbols-outlined { font-size: 12px; color: var(--fac-color); }
 
+/* Визуальные дорожки: N filled + (total-N) empty вертикальных полос +
+   подпись count/total. Из дизайна v2. */
 .fc-lanes {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 2px 7px;
+  gap: 2px;
+  padding: 3px 7px 3px 6px;
   border-radius: 6px;
   background: var(--bg-sunken);
   border: 1px solid var(--hairline);
-  color: var(--text-muted);
+}
+.fc-lanes .l {
+  width: 3px; height: 12px;
+  border-radius: 1px;
+  background: rgba(245, 241, 235, 0.10);
+  flex-shrink: 0;
+}
+html.light .fc-lanes .l { background: rgba(24, 21, 19, 0.10); }
+.fc-lanes .l.on { background: var(--fac-color); }
+.fc-lanes .count {
   font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
-  font-size: 10px;
+  font-size: 9.5px;
+  color: var(--text-muted);
   font-weight: 500;
+  margin-left: 4px;
   letter-spacing: 0.04em;
 }
-.fc-lanes .material-symbols-outlined { font-size: 12px; color: var(--fac-color); }
-.fc-lanes .count { color: var(--text); font-weight: 600; }
+.fc-lanes.is-full .count { color: var(--fac-color); }

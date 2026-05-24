@@ -128,18 +128,28 @@ function inferSessionIndicator(facilityId, activity) {
     return { type: 'lanes-free' };
   }
 
-  // Большой бассейн: ищем «N/M дорожек» или просто «дорожк».
+  // Большой бассейн: визуальные дорожки. Базовая ёмкость — 10 (из дизайна v2,
+  // подгоняется вверх если в activity встретилось большее число).
   if (facilityId === 'sports_pool' || /дорожк/.test(a)) {
-    // «3/10», «3 из 10», «3 из 10 дорожек»
-    const m = a.match(/(\d+)\s*(?:\/|из)\s*(\d+)/);
-    if (m) {
-      const count = Number(m[1]);
-      const total = Number(m[2]);
+    const baseTotal = 10;
+    // «3/10», «3 из 10»
+    const mFraction = a.match(/(\d+)\s*(?:\/|из)\s*(\d+)/);
+    if (mFraction) {
+      const count = Number(mFraction[1]);
+      const total = Number(mFraction[2]);
       if (count > 0 && total > 0 && count <= total) {
         return { type: 'lanes', count, total };
       }
     }
-    if (/дорожк/.test(a)) return { type: 'lanes' };
+    // «6 дорожек» — count без total
+    const mCount = a.match(/(\d+)\s*дорожк/);
+    if (mCount) {
+      const count = Number(mCount[1]);
+      if (count > 0) {
+        return { type: 'lanes', count, total: Math.max(count, baseTotal) };
+      }
+    }
+    if (/дорожк/.test(a)) return { type: 'lanes', total: baseTotal };
   }
 
   // Гребная база: тренажёрный / штанга / силовая.
