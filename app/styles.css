@@ -3000,181 +3000,12 @@ html.light .about-sheet {
 }
 
 /* ──────────────────────────────────────────────────────────────────
-   FACILITY CARDS (главный экран, режим «День»)
-   карточка-на-объект из дизайна v2:
-     .day-overview — mini-Gantt по всем объектам с моими сменами
+   FACILITY CARDS (главный экран — карточка-на-объект из дизайна v2)
      .fc-card      — карточка одного объекта
      .fc-occ-bar   — occupancy bar с тиками часов и now-mark
      .fc-sess-*    — список сессий с inner-breaks
      .fc-*-chip / .fc-lanes — end-indicators у сессии (эвристика)
    ────────────────────────────────────────────────────────────────── */
-
-/* ─── DayOverview ─────────────────────────────────────────────── */
-.day-overview {
-  margin: 12px 18px 6px;
-  padding: 16px 18px 14px;
-  border-radius: 18px;
-  background: var(--bg-elevated);
-  border: 1px solid var(--hairline);
-  position: relative;
-  overflow: hidden;
-}
-.day-overview::before {
-  content: '';
-  position: absolute; inset: 0;
-  background: radial-gradient(120% 80% at 18% 0%, var(--accent-soft), transparent 55%);
-  opacity: 0.5;
-  pointer-events: none;
-}
-.day-overview .do-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  margin-bottom: 12px;
-  position: relative; z-index: 1;
-}
-.day-overview .do-title {
-  font-family: "Newsreader", Georgia, serif;
-  font-weight: 500;
-  font-size: 15px;
-  letter-spacing: -0.015em;
-  color: var(--text-strong);
-}
-.day-overview .do-title em {
-  font-style: italic;
-  color: var(--accent);
-  font-weight: 500;
-}
-.day-overview .do-meta {
-  font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
-  font-size: 10px;
-  color: var(--text-subtle);
-  letter-spacing: 0.04em;
-}
-.day-overview .do-grid {
-  display: grid;
-  grid-template-columns: 68px 1fr;
-  gap: 8px 10px;
-  align-items: stretch;
-  position: relative; z-index: 1;
-}
-.day-overview .do-labels,
-.day-overview .do-tracks {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  justify-content: space-around;
-}
-.day-overview .do-tracks { position: relative; }
-
-.day-overview .do-fac {
-  appearance: none;
-  background: transparent;
-  border: 0;
-  padding: 0;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 12px;
-  font-family: "Inter", sans-serif;
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--fac-color, var(--text-muted));
-  letter-spacing: 0.005em;
-  cursor: pointer;
-  transition: opacity 200ms ease;
-  justify-content: flex-start;
-  text-align: left;
-}
-.day-overview .do-fac .material-symbols-outlined { font-size: 14px; }
-.day-overview .do-fac:hover { opacity: 0.75; }
-
-.day-overview .do-track {
-  position: relative;
-  height: 14px;
-  border-radius: 999px;
-  background: rgba(245, 241, 235, 0.04);
-  overflow: visible;
-}
-html.light .day-overview .do-track {
-  background: rgba(24, 21, 19, 0.05);
-}
-.day-overview .do-track .seg {
-  position: absolute;
-  top: 1px; bottom: 1px;
-  background: var(--fac-color, var(--accent));
-  border-radius: 999px;
-  opacity: 0.72;
-  transition: opacity 200ms ease, transform 200ms ease;
-  cursor: pointer;
-}
-.day-overview .do-track .seg:hover {
-  opacity: 0.95;
-  transform: scaleY(1.15);
-}
-.day-overview .do-track .seg.is-now {
-  opacity: 1;
-  box-shadow: 0 0 10px var(--accent-glow);
-}
-.day-overview .do-track .seg.is-past { opacity: 0.34; }
-
-.day-overview .do-now-line {
-  position: absolute;
-  top: -4px; bottom: -4px;
-  left: var(--pos, 0%);
-  width: 1px;
-  background: var(--accent);
-  transform: translateX(-50%);
-  pointer-events: none;
-  z-index: 3;
-  box-shadow: 0 0 6px var(--accent-glow);
-}
-.day-overview .do-now-line::before {
-  content: '';
-  position: absolute;
-  top: -3px; left: 0;
-  width: 7px; height: 7px;
-  border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-soft);
-  transform: translateX(-50%);
-}
-/* «сейчас 16:34» pill над now-line — тот же приём, что и в occ-bar */
-.day-overview .do-now-label {
-  position: absolute;
-  top: -16px;
-  transform: translateX(-50%);
-  font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
-  font-size: 8.5px;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--accent);
-  font-weight: 700;
-  white-space: nowrap;
-  pointer-events: none;
-  z-index: 4;
-  padding: 1px 5px;
-  border-radius: 3px;
-  background: color-mix(in srgb, var(--bg-elevated) 95%, var(--accent) 5%);
-}
-
-.day-overview .do-ticks {
-  grid-column: 2;
-  position: relative;
-  height: 14px;
-  margin: 4px 0 0;
-  font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
-  font-size: 9px;
-  color: var(--text-subtle);
-  letter-spacing: 0.04em;
-}
-.day-overview .do-ticks .tick {
-  position: absolute;
-  top: 2px;
-  transform: translateX(-50%);
-}
-.day-overview .do-ticks .tick.is-first { left: 0; transform: none; text-align: left; }
-.day-overview .do-ticks .tick.is-last  { right: 0; left: auto; transform: none; text-align: right; }
 
 /* ─── FacilityCard ────────────────────────────────────────────── */
 .fc-list { padding: 4px 0 0; }
@@ -3363,19 +3194,15 @@ html.light .fc-card .fc-occ-bar { background: rgba(24, 21, 19, 0.05); }
 .fc-card .fc-sess + .fc-sess { border-top: 1px solid var(--hairline); }
 .fc-card .fc-sess + .fc-sess-brk { border-top: 1px solid var(--hairline); }
 
-.fc-card .fc-sess .fc-sess-main {
-  display: flex; align-items: center; gap: 10px;
-  min-width: 0;
-}
 .fc-card .fc-sess .fc-tm {
   font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 500;
   letter-spacing: 0.01em;
   color: var(--text-strong);
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
   flex-shrink: 0;
 }
 .fc-card .fc-sess .fc-tm::before {
@@ -3384,19 +3211,6 @@ html.light .fc-card .fc-occ-bar { background: rgba(24, 21, 19, 0.05); }
   border-radius: 50%;
   background: var(--fac-color);
   flex-shrink: 0;
-}
-.fc-card .fc-sess .fc-act {
-  font-size: 12.5px;
-  color: var(--text-muted);
-  line-height: 1.25;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.fc-card .fc-sess .fc-act strong {
-  color: var(--text);
-  font-weight: 500;
 }
 .fc-card .fc-sess .fc-ind {
   flex-shrink: 0;

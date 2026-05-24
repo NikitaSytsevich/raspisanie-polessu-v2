@@ -224,17 +224,6 @@ function HomeScreen() {
                 }}
                 onPick={(date) => date && setSelectedDate(date)}
               />
-              <DayOverview
-                shifts={dayShifts}
-                date={selectedDate}
-                today={today}
-                nowMins={nowMins}
-                onFacClick={(facId) => {
-                  // Скролл к карточке объекта внутри списка.
-                  const el = scrollRef.current?.querySelector(`.fc-card.is-fac-${facId}`);
-                  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                }}
-              />
               <FacilityList
                 shifts={dayShifts}
                 today={today}
@@ -955,12 +944,12 @@ function SessionRow({ session, facilityId, nowMins, onToday }) {
   const isNow = onToday && start <= nowMins && end > nowMins;
   const isPast = onToday && end <= nowMins;
   const ind = window.Data.inferSessionIndicator(facilityId, session.activity);
+  // Активность не показываем в строке — индикатор справа несёт смысл
+  // (дорожки / зона / группа). Полное описание остаётся в tooltip.
   return (
-    <div className={'fc-sess' + (isNow ? ' is-now' : '') + (isPast ? ' is-past' : '')}>
-      <div className="fc-sess-main">
-        <span className="fc-tm">{session.start} — {session.end}</span>
-        {session.activity && <span className="fc-act">{session.activity}</span>}
-      </div>
+    <div className={'fc-sess' + (isNow ? ' is-now' : '') + (isPast ? ' is-past' : '')}
+         title={session.activity || undefined}>
+      <span className="fc-tm">{session.start} — {session.end}</span>
       {ind && (
         <span className="fc-ind">
           <SessionIndicator ind={ind}/>
@@ -1033,176 +1022,33 @@ function SessionIndicator({ ind }) {
   return null;
 }
 
-// ── DayOverview (mini-Gantt по объектам с моими сменами) ───────
-function DayOverview({ shifts, date, today, nowMins, onFacClick }) {
-  const tracks = _hm(() => {
-    // Группируем смены по объекту, сохраняя порядок «утро → вечер».
-    const order = [];
-    const map = new Map();
-    for (const s of shifts) {
-      if (!map.has(s.facilityId)) {
-        map.set(s.facilityId, { facilityId: s.facilityId, shifts: [] });
-        order.push(s.facilityId);
-      }
-      map.get(s.facilityId).shifts.push(s);
-    }
-    const out = order.map(facilityId => {
-      const item = map.get(facilityId);
-      return {
-        facilityId,
-        shifts: item.shifts,
-        sessions: window.Data.getSiteSessionsForDay(facilityId, date),
-      };
-    });
-    out.sort((a, b) => {
-      const aMin = Math.min(...a.shifts.map(s => window.Data.toMinutes(s.start)));
-      const bMin = Math.min(...b.shifts.map(s => window.Data.toMinutes(s.start)));
-      return aMin - bMin;
-    });
-    return out;
-  }, [shifts, date]);
-
-  if (tracks.length < 2) return null; // Один объект — нет смысла в общем обзоре
-
-  const allMins = [];
-  for (const t of tracks) {
-    for (const s of t.sessions) {
-      allMins.push(window.Data.toMinutes(s.start), window.Data.toMinutes(s.end));
-    }
-    for (const sh of t.shifts) {
-      allMins.push(window.Data.toMinutes(sh.start), window.Data.toMinutes(sh.end));
-    }
-  }
-  if (!allMins.length) return null;
-  const winStart = Math.min(...allMins);
-  const winEnd   = Math.max(...allMins);
-  const winSpan  = Math.max(winEnd - winStart, 1);
-  const pctOf = (m) => ((m - winStart) / winSpan) * 100;
-
-  const onToday = date === today;
-  const totalSessions = tracks.reduce((n, t) => n + t.sessions.length, 0);
-  const totalSessionMin = tracks.reduce((n, t) =>
-    n + t.sessions.reduce((m, s) => m + (window.Data.toMinutes(s.end) - window.Data.toMinutes(s.start)), 0),
-    0
-  );
-  const ticks = buildHourTicks(winStart, winEnd);
-  const showNowLabel = onToday && nowMins >= winStart && nowMins <= winEnd;
-  const nowHHMM = window.Data.minutesToHHMM(nowMins);
-
-  return (
-    <div className="day-overview">
-      <div className="do-head">
-        <span className="do-title">день <em>полностью</em></span>
-        <span className="do-meta">
-          {totalSessions} {pluralizeSessions(totalSessions)}
-          {totalSessionMin > 0 && <> · {window.Data.formatDuration(totalSessionMin)}</>}
-        </span>
-      </div>
-
-      <div className="do-grid">
-        <div className="do-labels">
-          {tracks.map(t => {
-            const fac = window.Data.getFacility(t.facilityId);
-            return (
-              <button key={t.facilityId} type="button" className="do-fac"
-                      style={{ '--fac-color': `var(--${facShortKey(t.facilityId)})` }}
-                      onClick={() => onFacClick?.(t.facilityId)}
-                      title={fac?.name}>
-                <span className="material-symbols-outlined">{fac?.icon}</span>
-                {shortFacilityName(t.facilityId)}
-              </button>
-            );
-          })}
-        </div>
-
-        <div className="do-tracks">
-          {tracks.map(t => (
-            <div key={t.facilityId} className="do-track"
-                 style={{ '--fac-color': `var(--${facShortKey(t.facilityId)})` }}>
-              {t.sessions.map((s, i) => {
-                const a = window.Data.toMinutes(s.start);
-                const b = window.Data.toMinutes(s.end);
-                const isNow = onToday && a <= nowMins && b > nowMins;
-                const isPast = onToday && b <= nowMins;
-                return (
-                  <span key={i}
-                    className={'seg' + (isNow ? ' is-now' : '') + (isPast ? ' is-past' : '')}
-                    style={{ left: pctOf(a) + '%',
-                             width: Math.max(pctOf(b) - pctOf(a), 1.5) + '%' }}
-                    onClick={() => onFacClick?.(t.facilityId)}
-                    title={`${s.start}–${s.end}${s.activity ? ' · ' + s.activity : ''}`}/>
-                );
-              })}
-            </div>
-          ))}
-          {showNowLabel && (
-            <>
-              <span className="do-now-line"
-                    style={{ '--pos': pctOf(nowMins) + '%' }}
-                    aria-hidden="true"/>
-              <span className="do-now-label"
-                    style={{ left: pctOf(nowMins) + '%' }}>
-                сейчас {nowHHMM}
-              </span>
-            </>
-          )}
-        </div>
-
-        <span></span>
-        <div className="do-ticks">
-          {ticks.map((t, i) => {
-            const isFirst = i === 0;
-            const isLast = i === ticks.length - 1;
-            return (
-              <span key={t.min + '-' + i}
-                className={'tick' + (isFirst ? ' is-first' : isLast ? ' is-last' : '')}
-                style={isFirst || isLast ? undefined : { left: pctOf(t.min) + '%' }}>
-                {t.label}
-              </span>
-            );
-          })}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// Хелперы для DayOverview / FacilityCard
+// Тики occ-bar — на круглых часах/получасах. winStart и winEnd всегда
+// сохраняем как первый/последний тик; внутренние — на кратных «красивого»
+// шага позициях (зависит от длины окна).
 function buildHourTicks(winStart, winEnd) {
-  const out = [{ min: winStart, label: window.Data.minutesToHHMM(winStart) }];
+  const toLabel = window.Data.minutesToHHMM;
   const span = Math.max(winEnd - winStart, 1);
-  for (const f of [0.25, 0.5, 0.75]) {
-    const m = Math.round((winStart + span * f) / 15) * 15;
-    out.push({ min: m, label: window.Data.minutesToHHMM(m) });
+
+  let step;
+  if (span <=  90) step = 30;
+  else if (span <= 180) step = 60;
+  else if (span <= 300) step = 60;
+  else if (span <= 540) step = 120;
+  else if (span <= 900) step = 180;
+  else                  step = 240;
+
+  const out = [{ min: winStart, label: toLabel(winStart) }];
+  let m = Math.ceil((winStart + 1) / step) * step;
+  while (m < winEnd) {
+    if (m - winStart >= 15 && winEnd - m >= 15) {
+      out.push({ min: m, label: toLabel(m) });
+    }
+    m += step;
   }
-  out.push({ min: winEnd, label: window.Data.minutesToHHMM(winEnd) });
+  out.push({ min: winEnd, label: toLabel(winEnd) });
   return out;
 }
 
-function shortFacilityName(facilityId) {
-  if (facilityId === 'ice_arena')   return 'Лёд';
-  if (facilityId === 'sports_pool') return 'Большой';
-  if (facilityId === 'small_pool')  return 'Малый';
-  if (facilityId === 'rowing_base') return 'Гребная';
-  return facilityId;
-}
-
-function facShortKey(facilityId) {
-  if (facilityId === 'ice_arena')   return 'ice';
-  if (facilityId === 'sports_pool') return 'pool';
-  if (facilityId === 'small_pool')  return 'small';
-  if (facilityId === 'rowing_base') return 'rowing';
-  return 'accent';
-}
-
-function pluralizeSessions(n) {
-  const last = n % 10, last2 = n % 100;
-  if (last === 1 && last2 !== 11) return 'сессия';
-  if (last >= 2 && last <= 4 && (last2 < 12 || last2 > 14)) return 'сессии';
-  return 'сессий';
-}
-
-// ── Inline add link ─────────────────────────────────────────────
 function AddShiftInlineLink({ date, onPush }) {
   const label = date === window.Data.TODAY_ISO ? 'добавить смену сегодня'
     : date === window.Data.isoOffset(1) ? 'добавить смену на завтра'
