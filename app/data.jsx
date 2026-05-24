@@ -131,55 +131,87 @@ function inferSessionIndicator(facilityId, activity) {
   // Большой бассейн: визуальные дорожки. Модель — какие дорожки СВОБОДНЫ
   // (доступны посетителю) vs ЗАНЯТЫ (тренировкой/группой/закрыты).
   //
-  // Семантика: «N дорожек» в полесГУ-расписании = N дорожек выделено под
-  // свободное плавание (т.е. ИХ можно занять). «Кроме крайних» / «кроме
-  // крайней» = крайние закрыты (одна или обе), остальные свободны.
+  // Семантика реальных активностей с polessu:
+  //   «N дорожек»                   — N свободных, остальные ?
+  //   «кроме крайних / без крайних» — 2 края закрыты
+  //   «кроме крайней / без крайней» — 1 край закрыт
+  //   «без N крайних»               — явное число краёв закрыто
+  //   «свободно N дорожек, без M крайних» — комбинация: N свободны в
+  //                                  середине, M краёв закрыты, total=N+M
   //
-  // Возврат: { type:'lanes', occupied: int[], free: int, total: 10 }
-  //   occupied — индексы занятых дорожек (для позиционного рендера)
-  //   free     — кол-во свободных (для подписи)
+  // Возврат: { type:'lanes', occupied: int[], free: int, total }
+  //   occupied — индексы закрытых дорожек (для позиционного рендера)
+  //   free     — кол-во свободных
+  //   total    — переменный: 8 или 10 в зависимости от данных
   //
   // Морфология: корень /дорож/ (не /дорожк/) — иначе «дорожек» (после 5+
   // с вставочным «е») не матчит.
   if (facilityId === 'sports_pool' || /дорож/.test(a)) {
-    const total = 10;
+    const baseTotal = 10;
 
-    // Маркер «крайние закрыты»: крайних (мн.) → обе, крайней (ед.) → одна
-    const hasExceptEdges = /кроме\s+крайн/.test(a);
-    if (hasExceptEdges) {
-      const both = /крайн(?:их|ие|ими|их)/.test(a); // мн.: «крайних/крайние/крайними»
-      const occupied = both ? [0, total - 1] : [0];
-      return { type: 'lanes', occupied, free: total - occupied.length, total };
+    // Парсим маркер крайних: «(без|кроме) [N] крайн…».
+    // ВАЖНО: \w в JS-regex не матчит кириллицу — поэтому захват формы
+    // через (\w*) не работает. Вместо этого проверяем плюрализм
+    // отдельным regex на исходной строке.
+    let edgeOcc = 0;
+    const edgeMatch = a.match(/(?:без|кроме)\s+(?:(\d+)\s+)?крайн/);
+    if (edgeMatch) {
+      if (edgeMatch[1]) {
+        edgeOcc = Number(edgeMatch[1]);
+      } else {
+        // Без явного числа: множественное → 2, единственное → 1.
+        // Плюрал: «крайних», «крайние», «крайними», «крайним».
+        // Сингуляр: «крайней», «крайнюю», «крайняя».
+        // ВАЖНО: без \b — в JS regex \b работает по ASCII, конец
+        // кириллического слова не считается word-boundary.
+        const isPlural = /крайн(?:их|ие|ими|им)/.test(a);
+        edgeOcc = isPlural ? 2 : 1;
+      }
+      edgeOcc = Math.min(edgeOcc, 2);
     }
 
-    // «N/M» или «N из M»
+    // Парсим количество свободных: «N дорожек/дорожки/дорожка»
+    let freeCount = null;
+    const mCount = a.match(/(\d+)\s*дорож/);
+    if (mCount) freeCount = Number(mCount[1]);
+
+    // Парсим явную фракцию «N/M» — переопределяет всё
     const mFraction = a.match(/(\d+)\s*(?:\/|из)\s*(\d+)/);
     if (mFraction) {
       const free = Number(mFraction[1]);
       const tot = Number(mFraction[2]);
       if (free > 0 && tot > 0 && free <= tot) {
-        // Занятые — последние (tot-free) индексов
         const occupied = [];
         for (let i = free; i < tot; i++) occupied.push(i);
         return { type: 'lanes', occupied, free, total: tot };
       }
     }
 
-    // «N дорожек» / «N дорожки» / «N дорожка»
-    const mCount = a.match(/(\d+)\s*дорож/);
-    if (mCount) {
-      const free = Number(mCount[1]);
-      if (free > 0) {
-        const tot = Math.max(free, total);
-        const occupied = [];
-        for (let i = free; i < tot; i++) occupied.push(i);
-        return { type: 'lanes', occupied, free, total: tot };
-      }
+    // Сборка с учётом и edges и freeCount
+    if (edgeOcc > 0 && freeCount && freeCount > 0) {
+      // «свободно 6, без 2 крайних» → total = 6 + 2 = 8
+      // Края [0] и [total-1] закрыты, середина — свободна
+      const total = freeCount + edgeOcc;
+      const occupied = edgeOcc >= 2 ? [0, total - 1] : [0];
+      return { type: 'lanes', occupied, free: freeCount, total };
+    }
+    if (edgeOcc > 0) {
+      // Только края, без указания свободных. Total=10 по умолчанию.
+      const total = baseTotal;
+      const occupied = edgeOcc >= 2 ? [0, total - 1] : [0];
+      return { type: 'lanes', occupied, free: total - edgeOcc, total };
+    }
+    if (freeCount && freeCount > 0) {
+      // Только свободные, без краёв. Trailing занятые.
+      const total = Math.max(freeCount, baseTotal);
+      const occupied = [];
+      for (let i = freeCount; i < total; i++) occupied.push(i);
+      return { type: 'lanes', occupied, free: freeCount, total };
     }
 
-    // Просто «дорож» без числа — считаем что весь бассейн свободен
+    // Просто «дорож» без числа — весь бассейн свободен
     if (/дорож/.test(a)) {
-      return { type: 'lanes', occupied: [], free: total, total };
+      return { type: 'lanes', occupied: [], free: baseTotal, total: baseTotal };
     }
   }
 
