@@ -984,7 +984,8 @@ function LaneDetailSheet({ facility, session, laneIdx, indicator, isToday, nowMi
   const occupiedSet = new Set(indicator?.occupied || []);
   const isOccupied = occupiedSet.has(laneIdx);
   const free = indicator?.free != null ? indicator.free : (total - occupiedSet.size);
-  const laneNumber = laneIdx + 1;
+  // Нумерация 0..(total-1) — отображается как есть (lane 0 — правый край).
+  const laneNumber = laneIdx;
   const sStart = window.Data.toMinutes(session.start);
   const sEnd   = window.Data.toMinutes(session.end);
   const isNow  = isToday && sStart <= nowMins && sEnd > nowMins;
@@ -1015,17 +1016,19 @@ function LaneDetailSheet({ facility, session, laneIdx, indicator, isToday, nowMi
           <p className="ln-sub">{statusHint}</p>
         </header>
 
-        {/* Контекст: визуализация всей сетки 10 дорожек, выбранная
-            крупно подсвечена */}
+        {/* Контекст: визуализация всей сетки 10 дорожек. Render в REVERSE-
+            order — слева направо номера 9, 8, …, 1, 0 (lane 0 — правый
+            край физически). Выбранная подсвечена. */}
         <div className="ln-vis" role="img"
              aria-label={`Бассейн: ${free} свободно из ${total}, выбрана дорожка ${laneNumber}`}>
-          {Array.from({ length: total }).map((_, i) => {
-            const occ = occupiedSet.has(i);
-            const sel = i === laneIdx;
+          {Array.from({ length: total }).map((_, idx) => {
+            const n = total - 1 - idx;
+            const occ = occupiedSet.has(n);
+            const sel = n === laneIdx;
             return (
-              <div key={i}
+              <div key={n}
                    className={`ln-lane ${occ ? 'is-occ' : 'is-free'} ${sel ? 'is-selected' : ''}`}>
-                <span className="ln-lane-num">{i + 1}</span>
+                <span className="ln-lane-num">{n}</span>
               </div>
             );
           })}
@@ -1119,21 +1122,22 @@ function SessionIndicator({ ind, onLaneClick }) {
     const occupied = new Set(ind.occupied || []);
     const free = ind.free != null ? ind.free : (total - occupied.size);
     const allFree = occupied.size === 0;
-    // Bright (accent) = занятая дорожка (тренировкой/закрытая).
-    // Серая = свободная для посетителя.
+    // Нумерация дорожек 0..9: lane 0 — правый край, lane 9 — левый.
+    // Render в REVERSE: на экране слева направо идут номера 9, 8, …, 1, 0.
+    // Bright (accent) = занятая (тренировка/закрытая), серая = свободная.
     // Каждая полоска — <button>: тап открывает LaneDetailSheet про эту
     // дорожку. stopPropagation, чтобы не было ложных bubble-кликов вверх.
     const bars = [];
-    for (let i = 0; i < total; i++) {
-      const isOcc = occupied.has(i);
+    for (let n = total - 1; n >= 0; n--) {
+      const isOcc = occupied.has(n);
       bars.push(
         <button
-          key={i}
+          key={n}
           type="button"
           className={'l' + (isOcc ? ' occ' : '')}
-          onClick={(e) => { e.stopPropagation(); onLaneClick?.(i); }}
-          aria-label={`Дорожка ${i + 1}, ${isOcc ? 'занята' : 'свободна'}`}
-          title={`Дорожка ${i + 1} · ${isOcc ? 'занята' : 'свободна'}`}
+          onClick={(e) => { e.stopPropagation(); onLaneClick?.(n); }}
+          aria-label={`Дорожка ${n}, ${isOcc ? 'занята' : 'свободна'}`}
+          title={`Дорожка ${n} · ${isOcc ? 'занята' : 'свободна'}`}
         />
       );
     }
