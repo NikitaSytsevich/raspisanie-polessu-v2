@@ -944,8 +944,8 @@ function SessionIndicator({ ind }) {
     const occupied = new Set(ind.occupied || []);
     const free = ind.free != null ? ind.free : (total - occupied.size);
     const allFree = occupied.size === 0;
-    // Bright (facility-color) = свободная дорожка для посетителя.
-    // Muted = занятая (тренировкой/закрытая).
+    // Bright (facility-color) = занятая дорожка (тренировкой/закрытая).
+    // Muted = свободная для посетителя.
     const bars = [];
     for (let i = 0; i < total; i++) {
       bars.push(<span key={i} className={'l' + (occupied.has(i) ? ' occ' : '')}/>);

@@ -3439,13 +3439,13 @@ html.light .about-sheet {
 .fc-lanes .l {
   width: 3px; height: 12px;
   border-radius: 1px;
-  background: var(--fac-color);
+  background: rgba(245, 241, 235, 0.10);
   flex-shrink: 0;
 }
+html.light .fc-lanes .l { background: rgba(24, 21, 19, 0.10); }
 .fc-lanes .l.occ {
-  background: rgba(245, 241, 235, 0.10);
+  background: var(--fac-color);
 }
-html.light .fc-lanes .l.occ { background: rgba(24, 21, 19, 0.10); }
 .fc-lanes .count {
   font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
   font-size: 9.5px;
