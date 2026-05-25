@@ -65,7 +65,9 @@ function ChangesScreen() {
 
   function handleAck() {
     if (!latest) return;
-    setChanges(window.Data.ackChange(latest.id));
+    // Квитируем ВСЕ unread-записи, а не только latest — иначе старая запись
+    // с affectsMe удержит SiteCard в «верхней» позиции на главной.
+    setChanges(window.Data.ackAllPending());
     toast.show('Помечено как просмотренное');
   }
 

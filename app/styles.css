@@ -2584,8 +2584,9 @@ html.light .add-shift-link:hover .plus { color: #fffaf3; }
   border: 1px solid var(--hairline);
 }
 /* Когда SiteCard поднята вверх (affectsMe) — даём ей дышать, чтобы баннер
-   визуально не слипался с переключателем «День / Лента». */
+   визуально не слипался с переключателем «День / Лента» или с week-strip. */
 .site-card + .mode-tabs { margin-top: 14px; }
+.site-card + .week-nav  { margin-top: 16px; }
 .mode-tab {
   appearance: none;
   padding: 8px 10px;

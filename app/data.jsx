@@ -148,6 +148,12 @@ function inferSessionIndicator(facilityId, activity) {
   // с вставочным «е») не матчит.
   if (facilityId === 'sports_pool' || /дорож/.test(a)) {
     const baseTotal = 10;
+    // У большого бассейна total дорожек ФИКСИРОВАН — всегда 10. Сайт
+    // обычно пишет только «N свободно» и/или «без M крайних»; остаток
+    // (если меньше 10) — занят тренировкой. Раньше total собирался как
+    // freeCount+edgeOcc и в карточке появлялись «короткие» бассейны на
+    // 7-8 дорожек, которых физически не существует.
+    const isPool = facilityId === 'sports_pool';
 
     // Парсим маркер крайних: «(без|кроме) [N] крайн…».
     // ВАЖНО: \w в JS-regex не матчит кириллицу — поэтому захват формы
@@ -181,19 +187,42 @@ function inferSessionIndicator(facilityId, activity) {
       const free = Number(mFraction[1]);
       const tot = Number(mFraction[2]);
       if (free > 0 && tot > 0 && free <= tot) {
+        const total = isPool ? baseTotal : tot;
+        const cappedFree = Math.min(free, total);
         const occupied = [];
-        for (let i = free; i < tot; i++) occupied.push(i);
-        return { type: 'lanes', occupied, free, total: tot };
+        for (let i = cappedFree; i < total; i++) occupied.push(i);
+        return { type: 'lanes', occupied, free: cappedFree, total };
       }
+    }
+
+    // Раскладка позиций: edges по краям, остаток свободных в середине,
+    // оставшиеся middle-слоты — заняты тренировкой и упираются к
+    // внутренней стороне правого края.
+    function buildLanes(total, free, edges) {
+      const occupied = [];
+      if (edges >= 1) occupied.push(0);
+      if (edges >= 2) occupied.push(total - 1);
+      const middleSlots = total - edges;
+      const middleOcc = Math.max(0, middleSlots - free);
+      // Заполняем middle-occupied начиная от внутреннего края правого
+      // борта и двигаясь к центру.
+      let idx = (edges >= 2) ? total - 2 : total - 1;
+      let placed = 0;
+      while (placed < middleOcc && idx >= 0) {
+        if (!occupied.includes(idx)) { occupied.push(idx); placed++; }
+        idx--;
+      }
+      occupied.sort((a, b) => a - b);
+      return occupied;
     }
 
     // Сборка с учётом и edges и freeCount
     if (edgeOcc > 0 && freeCount && freeCount > 0) {
-      // «свободно 6, без 2 крайних» → total = 6 + 2 = 8
-      // Края [0] и [total-1] закрыты, середина — свободна
-      const total = freeCount + edgeOcc;
-      const occupied = edgeOcc >= 2 ? [0, total - 1] : [0];
-      return { type: 'lanes', occupied, free: freeCount, total };
+      // «свободно 6, без 2 крайних» при isPool → total=10, edges=[0,9],
+      // 6 свободных в середине, 2 средних слота заняты тренировкой.
+      const total = isPool ? baseTotal : (freeCount + edgeOcc);
+      const cappedFree = Math.min(freeCount, total - edgeOcc);
+      return { type: 'lanes', occupied: buildLanes(total, cappedFree, edgeOcc), free: cappedFree, total };
     }
     if (edgeOcc > 0) {
       // Только края, без указания свободных. Total=10 по умолчанию.
@@ -203,10 +232,11 @@ function inferSessionIndicator(facilityId, activity) {
     }
     if (freeCount && freeCount > 0) {
       // Только свободные, без краёв. Trailing занятые.
-      const total = Math.max(freeCount, baseTotal);
+      const total = isPool ? baseTotal : Math.max(freeCount, baseTotal);
+      const cappedFree = Math.min(freeCount, total);
       const occupied = [];
-      for (let i = freeCount; i < total; i++) occupied.push(i);
-      return { type: 'lanes', occupied, free: freeCount, total };
+      for (let i = cappedFree; i < total; i++) occupied.push(i);
+      return { type: 'lanes', occupied, free: cappedFree, total };
     }
 
     // Просто «дорож» без числа — весь бассейн свободен
@@ -453,6 +483,20 @@ const Data = {
   ackChange(id) {
     const list = this.loadSiteChanges().map(c =>
       c.id === id ? { ...c, acknowledgedAt: new Date().toISOString() } : c
+    );
+    this.saveSiteChanges(list);
+    return list;
+  },
+  // Квитируем ВСЕ непросмотренные записи журнала. Кнопка «Просмотрено»
+  // на экране сверки означает «я ознакомился со всем» — если оставлять
+  // старую unacked-запись с affectsMe, плашка на главной не уйдёт вниз
+  // (unreadChange найдёт её и снова поднимет SiteCard вверх).
+  ackAllPending() {
+    const now = new Date().toISOString();
+    const list = this.loadSiteChanges().map(c =>
+      (!c.acknowledgedAt && (c.hasChanges || c.hasSourceIssues))
+        ? { ...c, acknowledgedAt: now }
+        : c
     );
     this.saveSiteChanges(list);
     return list;
