@@ -54,12 +54,22 @@ function HomeScreen() {
 
   // Автозагрузка расписания при первом запуске — чтобы карточки смен сразу
   // могли показать сопоставление «по графику vs по сайту».
+  //
+  // setShifts(loadShifts()) — не косметика, а ИНВАЛИДАЦИЯ useMemo:
+  //   • { totalMin, ... } замемоизирован по [dayShifts] и зовёт внутри
+  //     computeEffectiveShift → читает кэш расписания;
+  //   • FacilityCard.siteSessions — useMemo([facilityId, date]) → читает
+  //     getSiteSessionsForDay → тоже кэш.
+  // Сам по себе force(x+1) ре-рендер триггерит, но deps useMemo не
+  // меняются → возвращается старое значение (с badge='no_data', с пустыми
+  // siteSessions). loadShifts() даёт НОВЫЙ массив (JSON.parse), ссылка
+  // отличается → useMemo пересчитывается → карточки оживают.
   _he(() => {
     let cancelled = false;
     window.Data.fetchSchedule().then(() => {
       if (!cancelled) {
+        setShifts(window.Data.loadShifts());
         setChanges(window.Data.loadSiteChanges());
-        force(x => x + 1);
       }
     }).catch(() => {});
     return () => { cancelled = true; };
@@ -94,7 +104,11 @@ function HomeScreen() {
     return { totalMin: t, unconfirmedMin: u, facCount: facs.size };
   }, [dayShifts]);
 
-  const nowMins = new Date().getHours() * 60 + new Date().getMinutes();
+  // Минск-TZ, не локальный браузерный — `today` и все даты в приложении
+  // считаются в зоне Минска, и если бы здесь стояло new Date().getHours(),
+  // у пользователя из другой TZ подсветка «сейчас» и «прошедшие сессии»
+  // в SessionRow разъезжались бы с минским днём.
+  const nowMins = window.Data.nowMinutesInMinsk();
 
   // Site-changes summary (latest unread)
   const unreadChange = changes.find(c => !c.acknowledgedAt && (c.hasChanges || c.hasSourceIssues));
@@ -107,7 +121,11 @@ function HomeScreen() {
     setRefreshing(true);
     try {
       await window.Data.fetchSchedule({ force: true });
-      toast.show('Сайт сверён');
+      // Не врём «сайт сверён», если фолбэкнулись в MOCK_SCHEDULE
+      // (нет /api/schedule / сеть упала). Раньше тост говорил успех в
+      // обоих случаях, пользователь не понимал, почему данные не обновились.
+      const wasMock = window.Data.loadCachedMock();
+      toast.show(wasMock ? 'Не удалось связаться с сайтом' : 'Сайт сверён');
       setShifts(window.Data.loadShifts());
       setChanges(window.Data.loadSiteChanges());
     } finally {

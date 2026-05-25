@@ -6,7 +6,7 @@
 const cheerio = require('cheerio');
 const closure = require('./closureNotice');
 const {
-  normalizeText, parseTime, parseTimeRange,
+  normalizeText, parseTimeRange,
   weekdayIndex, nextDateForWeekday,
 } = require('../_lib/timeParse');
 
@@ -104,7 +104,17 @@ function genericParse(html, { todayIso }) {
   if (!sessions.length) {
     return { ok: false, reason: 'no_table' };
   }
-  return { ok: true, sessions };
+  // На странице бывает несколько таблиц (основная + повтор/превью), и
+  // одна и та же (date,start,end,activity) попадает дважды. Лишние слоты
+  // потом раздували бы карточку «по сайту» и счётчики Hero.
+  const seen = new Set();
+  const unique = sessions.filter(s => {
+    const k = `${s.date}|${s.start}|${s.end}|${s.activity}`;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+  return { ok: true, sessions: unique };
 }
 
 module.exports = { genericParse, extractContentRoot, extractSessionsFromTable };

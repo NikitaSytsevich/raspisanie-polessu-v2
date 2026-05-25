@@ -27,6 +27,18 @@ function isoInMinsk(date) { return _ISO_DAY_FMT.format(date); }
 // показывал «вчера» как «сегодня».
 function todayIso() { return isoInMinsk(new Date()); }
 
+// «Сейчас» в минутах от полуночи в зоне Минска. Раньше home.jsx брал
+// new Date().getHours()*60 + getMinutes(), но это локальное время браузера —
+// для пользователя в другой TZ подсветка «сейчас» и «прошедшие сессии»
+// рассинхронизировались с минскими датами (today тут — минский).
+const _MINSK_HM_FMT = new Intl.DateTimeFormat('en-GB', {
+  timeZone: TZ, hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+});
+function nowMinutesInMinsk() {
+  const [h, m] = _MINSK_HM_FMT.format(new Date()).split(':').map(Number);
+  return h * 60 + m;
+}
+
 // ── Facility catalog (mirrors api/schedule.js) ──────────────────
 const FACILITIES = [
   { id: 'ice_arena',   name: 'Ледовая арена',   icon: 'ac_unit',
@@ -599,6 +611,7 @@ const Data = {
   formatRelativeMinutes,
   formatDayHeading,
   isoOffset,
+  nowMinutesInMinsk,
   RU_WEEKDAYS_SHORT,
   RU_WEEKDAYS_LONG,
   RU_MONTHS,
@@ -613,6 +626,12 @@ const Data = {
   // ISO-таймстемп последнего успешного fetchSchedule (или null, если ещё не было)
   loadCachedAt() {
     return _readCachedSnapshot()?.at || null;
+  },
+  // true, если последний fetchSchedule свалился в MOCK_SCHEDULE (нет
+  // доступа к /api/schedule). UI показывает другой toast, чтобы не врать
+  // пользователю, что «сайт сверён», когда на деле бекенда не было.
+  loadCachedMock() {
+    return _readCachedSnapshot()?.mock === true;
   },
   getCachedFacility(facilityId) {
     const payload = _readCachedSnapshot()?.payload;

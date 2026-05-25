@@ -37,7 +37,6 @@ function parseWeekdayRange(raw) {
   const to   = weekdayIndex(m[2]);
   if (from < 0 || to < 0) return [];
   const days = [];
-  let cur = from;
   // Понедельник=1...Воскресенье=0, обходим по календарному порядку с пн.
   const order = [1, 2, 3, 4, 5, 6, 0];
   const a = order.indexOf(from), b = order.indexOf(to);

@@ -80,7 +80,8 @@ function ChangesScreen() {
       // явно — порядок микротасков с await не даёт гарантии, что listener
       // уже сработал к моменту следующего рендера.
       setChanges(window.Data.loadSiteChanges());
-      toast.show('Сверка обновлена');
+      const wasMock = window.Data.loadCachedMock();
+      toast.show(wasMock ? 'Не удалось связаться с сайтом' : 'Сверка обновлена');
     } finally {
       setRefreshing(false);
     }
