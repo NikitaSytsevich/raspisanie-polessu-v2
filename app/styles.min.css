@@ -3988,7 +3988,7 @@ html.light .about-sheet {
   grid-template-columns: 1fr auto;
   gap: 12px;
   align-items: center;
-  padding: 9px 0;
+  padding: 12px 0;
   font-size: 13px;
 }
 .fc-card .fc-sess + .fc-sess {
@@ -4315,31 +4315,38 @@ html.light .about-sheet {
 .fc-lanes {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
-  padding: 3px 7px 3px 6px;
-  border-radius: 6px;
+  gap: 3px;
+  padding: 6px 11px 6px 9px;
+  border-radius: 10px;
   background: var(--bg-sunken);
   border: 1px solid var(--hairline);
+  transition: border-color 160ms ease, background 160ms ease;
+}
+.fc-lanes:hover {
+  border-color: var(--border);
 }
 .fc-lanes .l {
   appearance: none;
-  width: 5px;
-  height: 13px;
-  border-radius: 1px;
+  width: 6px;
+  height: 22px;
+  border-radius: 2px;
   background: rgba(245, 241, 235, 0.30);
   flex-shrink: 0;
   border: 0;
   padding: 0;
   cursor: pointer;
-  transition: transform 120ms ease, box-shadow 120ms ease;
+  transition:
+    transform 140ms ease,
+    box-shadow 140ms ease,
+    background 160ms ease;
 }
 .fc-lanes .l:hover {
-  transform: scaleY(1.18);
-  box-shadow: 0 0 0 1px rgba(245, 241, 235, 0.30);
+  transform: scaleY(1.10);
+  box-shadow: 0 0 0 1.5px rgba(245, 241, 235, 0.30);
 }
 .fc-lanes .l:focus-visible {
-  outline: 1px solid var(--accent);
-  outline-offset: 1px;
+  outline: 1.5px solid var(--accent);
+  outline-offset: 2px;
 }
 html.light .fc-lanes .l {
   background: rgba(24, 21, 19, 0.28);
@@ -4356,11 +4363,11 @@ html.light .fc-lanes .l {
     ui-monospace,
     Menlo,
     monospace;
-  font-size: 9.5px;
+  font-size: 11px;
   color: var(--text-muted);
   font-weight: 500;
-  margin-left: 4px;
-  letter-spacing: 0.04em;
+  margin-left: 7px;
+  letter-spacing: 0.03em;
 }
 .fc-lanes.is-full .count {
   color: var(--fac-color);
