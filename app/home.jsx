@@ -774,6 +774,8 @@ function FacilityCard({ facilityId, shifts, today, date, nowMins, idx, onPushEdi
     () => window.Data.getSiteSessionsForDay(facilityId, date),
     [facilityId, date]
   );
+  // Sheet с детальной разбивкой по сессиям (тап по карточке).
+  const [detailOpen, setDetailOpen] = _hs(false);
 
   // Состояние объекта на эту дату
   let closed = false;
@@ -854,17 +856,22 @@ function FacilityCard({ facilityId, shifts, today, date, nowMins, idx, onPushEdi
     }
   }
 
-  const openEditor = () => onPushEditor(shifts[0]);
+  // Все клики по внутренним кнопкам должны останавливать propagation,
+  // иначе тап по «график»/«ext» откроет ещё и detail-sheet (карта стала
+  // кликабельной — см. onCardClick ниже).
+  const openEditor = (e) => { e?.stopPropagation?.(); onPushEditor(shifts[0]); };
   const openSite = (e) => {
     e.stopPropagation();
     if (fac?.sourceUrl) window.open(fac.sourceUrl, '_blank', 'noopener');
   };
+  const onCardClick = () => setDetailOpen(true);
 
   const cls = ['fc-card', `is-fac-${facilityId}`, `idx-${idx}`,
-               closed ? 'is-closed' : ''].filter(Boolean).join(' ');
+               closed ? 'is-closed' : '', 'is-tappable'].filter(Boolean).join(' ');
 
   return (
-    <article className={cls}>
+    <article className={cls} onClick={onCardClick} role="button" tabIndex={0}
+             onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onCardClick(); } }}>
       <div className="fc-watermark" aria-hidden="true">
         <span className="material-symbols-outlined">{fac?.icon || 'place'}</span>
       </div>
@@ -938,8 +945,124 @@ function FacilityCard({ facilityId, shifts, today, date, nowMins, idx, onPushEdi
           {closed ? '— не отработано' : window.Data.formatDuration(totalMin)}
         </span>
       </footer>
+
+      {detailOpen && (
+        <FacilityDetailSheet
+          facility={fac}
+          sessions={siteSessions}
+          closed={closed}
+          dataQuality={cached?.dataQuality}
+          isToday={onToday}
+          nowMins={nowMins}
+          onClose={() => setDetailOpen(false)}
+        />
+      )}
     </article>
   );
+}
+
+// Bottom-sheet с детальной разбивкой сессий за день. Открывается тапом
+// по карточке. Для большого бассейна показывает крупный индикатор
+// дорожек на каждую сессию + текст «N свободно из 10, занято M». Для
+// прочих объектов — просто time + activity. Закрывается по backdrop,
+// крестику, Escape.
+//
+// ВАЖНО: используем createPortal в document.body. Без портала sheet
+// рендерится внутри .fc-card, у которой есть transform в анимации
+// fcRise — а transform создаёт containing block, и position:fixed
+// перестаёт привязываться к viewport (header sheet'а обрезался рамкой
+// карточки, backdrop не покрывал весь экран).
+function FacilityDetailSheet({ facility, sessions, closed, dataQuality, isToday, nowMins, onClose }) {
+  _he(() => {
+    function onKey(e) { if (e.key === 'Escape') onClose?.(); }
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  // Прорастает наружу через bubble click — иначе onClick карточки снова
+  // откроет sheet после backdrop click.
+  const stop = (e) => e.stopPropagation();
+
+  const sheet = (
+    <div className="fd-sheet-root" role="dialog" aria-modal="true" aria-label={`Детали: ${facility?.name}`}
+         onClick={stop}>
+      <div className="fd-sheet-backdrop" onClick={onClose}/>
+      <div className={`fd-sheet is-fac-${facility?.id || ''}`}>
+        <header className="fd-sheet-head">
+          <div className="fd-titles">
+            {facility?.hint && <p className="kicker">{facility.hint}</p>}
+            <h2>{facility?.name}</h2>
+          </div>
+          <button type="button" className="fd-close" onClick={onClose} aria-label="Закрыть">
+            <span className="material-symbols-outlined">close</span>
+          </button>
+        </header>
+
+        {closed ? (
+          <div className="fd-empty is-closed">
+            <span className="material-symbols-outlined">event_busy</span>
+            <p>{closed.notice || 'на сайте объявление о приостановке работы.'}</p>
+          </div>
+        ) : sessions.length === 0 ? (
+          <div className="fd-empty">
+            <span className="material-symbols-outlined">event_available</span>
+            <p>{dataQuality === 'ok'
+                ? 'на эту дату на сайте ничего не запланировано.'
+                : 'сайт ещё не сматчен.'}</p>
+          </div>
+        ) : (
+          <ul className="fd-sessions">
+            {sessions.map((s, i) => {
+              const ind = window.Data.inferSessionIndicator(facility.id, s.activity);
+              const sStart = window.Data.toMinutes(s.start);
+              const sEnd   = window.Data.toMinutes(s.end);
+              const isNow  = isToday && sStart <= nowMins && sEnd > nowMins;
+              const isPast = isToday && sEnd <= nowMins;
+              return (
+                <li key={i} className={`fd-row ${isNow ? 'is-now' : ''} ${isPast ? 'is-past' : ''}`}>
+                  <div className="fd-tm">{s.start}<span className="dash">—</span>{s.end}</div>
+                  <div className="fd-body">
+                    {ind?.type === 'lanes' && (
+                      <div className="fd-lanes-row">
+                        <SessionIndicator ind={ind}/>
+                        <span className="fd-lanes-txt">
+                          <strong>{ind.free}</strong> свободно
+                          {ind.occupied?.length > 0 && (
+                            <> · занято <strong>{ind.occupied.length}</strong></>
+                          )}
+                          {ind.occupied?.length === 0 && ' · весь бассейн'}
+                        </span>
+                      </div>
+                    )}
+                    {ind?.type === 'lanes-free' && (
+                      <div className="fd-lanes-row">
+                        <SessionIndicator ind={ind}/>
+                        <span className="fd-lanes-txt">без разделения дорожек</span>
+                      </div>
+                    )}
+                    {s.activity && <p className="fd-act">{s.activity}</p>}
+                    {!s.activity && ind?.type !== 'lanes' && ind?.type !== 'lanes-free' && (
+                      <p className="fd-act fd-act-muted">без описания на сайте</p>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+
+        {facility?.sourceUrl && (
+          <a className="fd-source" href={facility.sourceUrl}
+             target="_blank" rel="noopener noreferrer" onClick={stop}>
+            <span className="material-symbols-outlined">open_in_new</span>
+            <span>открыть на сайте ПолесГУ</span>
+          </a>
+        )}
+      </div>
+    </div>
+  );
+
+  return ReactDOM.createPortal(sheet, document.body);
 }
 
 function SessionRow({ session, facilityId, nowMins, onToday }) {

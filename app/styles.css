@@ -3468,15 +3468,24 @@ html.light .about-sheet {
   background: var(--bg-sunken);
   border: 1px solid var(--hairline);
 }
+/* Свободные дорожки — яркие «белые», видны на тёмном фоне без
+   присматривания. Раньше стояло 0.10 — почти прозрачные полоски,
+   читалось как «пустой контейнер». */
 .fc-lanes .l {
   width: 3px; height: 12px;
   border-radius: 1px;
-  background: rgba(245, 241, 235, 0.10);
+  background: rgba(245, 241, 235, 0.78);
   flex-shrink: 0;
 }
-html.light .fc-lanes .l { background: rgba(24, 21, 19, 0.10); }
+html.light .fc-lanes .l { background: rgba(24, 21, 19, 0.65); }
 .fc-lanes .l.occ {
   background: var(--fac-color);
+}
+/* Большой бассейн — занятые дорожки рисуем accent'ом приложения
+   (оранжевым), а не teal-цветом --pool: явный визуальный сигнал
+   «эта дорожка недоступна для свободного плавания». */
+.fc-card.is-fac-sports_pool .fc-lanes .l.occ {
+  background: var(--accent);
 }
 .fc-lanes .count {
   font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
@@ -3487,3 +3496,171 @@ html.light .fc-lanes .l { background: rgba(24, 21, 19, 0.10); }
   letter-spacing: 0.04em;
 }
 .fc-lanes.is-full .count { color: var(--fac-color); }
+.fc-card.is-fac-sports_pool .fc-lanes.is-full .count { color: var(--accent); }
+
+/* ──────────────────────────────────────────────────────────────────
+   FACILITY DETAIL SHEET — bottom-sheet с разбивкой сессий за день.
+   Открывается тапом по .fc-card. Для большого бассейна показывает
+   крупный индикатор дорожек и текст «N свободно из 10, занято M».
+   ────────────────────────────────────────────────────────────────── */
+.fc-card.is-tappable { cursor: pointer; }
+.fc-card.is-tappable:active { transform: translateY(0) scale(0.997); }
+.fc-card.is-tappable .fc-ext,
+.fc-card.is-tappable .fc-sched-hint { cursor: pointer; }
+
+.fd-sheet-root {
+  position: fixed; inset: 0;
+  z-index: 200;
+  display: flex; align-items: flex-end; justify-content: center;
+  /* Перебиваем cursor от родителя (.fc-card), чтобы внутри sheet был
+     обычный курсор. */
+  cursor: auto;
+}
+.fd-sheet-backdrop {
+  position: absolute; inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(4px);
+  animation: fdFade 220ms ease-out;
+}
+@keyframes fdFade { from { opacity: 0; } to { opacity: 1; } }
+
+.fd-sheet {
+  position: relative;
+  width: min(540px, 100% - 20px);
+  margin: 0 10px max(10px, env(safe-area-inset-bottom, 10px));
+  background: var(--bg-elevated);
+  border: 1px solid var(--hairline);
+  border-radius: 22px;
+  padding: 18px 18px 14px;
+  max-height: 78vh;
+  overflow-y: auto;
+  animation: fdRise 320ms cubic-bezier(0.34, 1.2, 0.64, 1);
+  box-shadow: 0 24px 60px -20px rgba(0, 0, 0, 0.5);
+}
+@keyframes fdRise {
+  from { opacity: 0; transform: translateY(40px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.fd-sheet-head {
+  display: flex; align-items: flex-start; gap: 12px;
+  margin-bottom: 14px;
+}
+.fd-sheet-head .fd-titles { flex: 1; min-width: 0; }
+.fd-sheet-head .kicker {
+  margin: 0 0 4px;
+  font-family: "Newsreader", Georgia, serif;
+  font-style: italic;
+  font-size: 12px;
+  color: var(--fac-color);
+  letter-spacing: 0.01em;
+}
+.fd-sheet-head h2 {
+  margin: 0;
+  font-family: "Newsreader", Georgia, serif;
+  font-weight: 500;
+  font-size: 22px;
+  color: var(--text);
+  letter-spacing: -0.01em;
+}
+.fd-close {
+  appearance: none;
+  border: 0;
+  background: var(--bg-raised);
+  color: var(--text-muted);
+  width: 32px; height: 32px;
+  border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  transition: background 160ms ease, color 160ms ease;
+  flex-shrink: 0;
+}
+.fd-close:hover { background: var(--bg-sunken); color: var(--text); }
+.fd-close .material-symbols-outlined { font-size: 18px; }
+
+.fd-empty {
+  padding: 28px 12px;
+  text-align: center;
+  color: var(--text-muted);
+}
+.fd-empty .material-symbols-outlined {
+  font-size: 36px;
+  color: var(--text-subtle);
+  margin-bottom: 8px;
+  display: block;
+}
+.fd-empty p { margin: 0; font-size: 14px; }
+.fd-empty.is-closed .material-symbols-outlined { color: var(--accent); }
+
+.fd-sessions {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: var(--hairline);
+  border: 1px solid var(--hairline);
+  border-radius: 14px;
+  overflow: hidden;
+}
+.fd-row {
+  background: var(--bg-elevated);
+  padding: 12px 14px;
+  display: grid;
+  grid-template-columns: 88px 1fr;
+  gap: 12px;
+  align-items: center;
+  transition: background 160ms ease;
+}
+.fd-row.is-now {
+  background: var(--accent-soft);
+}
+.fd-row.is-past { opacity: 0.55; }
+
+.fd-tm {
+  font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  font-size: 13px;
+  color: var(--text);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.fd-tm .dash { color: var(--text-subtle); margin: 0 3px; }
+
+.fd-body { min-width: 0; }
+.fd-lanes-row {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 6px;
+}
+/* В sheet'е дорожки крупнее, чем в карточке: 5px × 18px вместо 3 × 12 */
+.fd-lanes-row .fc-lanes { padding: 5px 9px; gap: 3px; }
+.fd-lanes-row .fc-lanes .l { width: 5px; height: 18px; border-radius: 2px; }
+.fd-lanes-row .fc-lanes .count { font-size: 11px; margin-left: 6px; }
+.fd-lanes-txt {
+  font-size: 13px;
+  color: var(--text);
+  line-height: 1.3;
+}
+.fd-lanes-txt strong { color: var(--text); font-weight: 600; }
+.fd-act {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  line-height: 1.35;
+}
+.fd-act-muted { font-style: italic; color: var(--text-subtle); }
+
+.fd-source {
+  display: flex; align-items: center; gap: 8px;
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--bg-raised);
+  border: 1px solid var(--hairline);
+  color: var(--text-muted);
+  text-decoration: none;
+  font-size: 13px;
+  transition: background 160ms ease, color 160ms ease;
+}
+.fd-source:hover { background: var(--bg-sunken); color: var(--text); }
+.fd-source .material-symbols-outlined { font-size: 16px; color: var(--fac-color); }
