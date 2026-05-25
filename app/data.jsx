@@ -395,15 +395,25 @@ function computeScheduleDiff(prev, next) {
   return events;
 }
 
-// Помечает события, пересекающиеся с пользовательскими сменами
+// Пересечение события сайта с конкретной сменой пользователя. Базовая
+// единица для аннотации журнала И для on-the-fly валидации в UI:
+// UI не может доверять записанному affectsShiftId, потому что смена могла
+// быть удалена/перенесена после recordSiteCheck (orphan-ссылка), либо
+// наоборот — добавлена ПОСЛЕ (тогда affectsShiftId пуст, но overlap есть).
+function eventOverlapsShift(ev, shift) {
+  return shift.facilityId === ev.facilityId
+    && shift.date === ev.date
+    && toMinutes(shift.start) < toMinutes(ev.end)
+    && toMinutes(shift.end)   > toMinutes(ev.start);
+}
+
+// Помечает события, пересекающиеся с пользовательскими сменами. Аннотация
+// «снимок на момент сверки» — для журнала и для wasStart/wasEnd.
+// UI должен валидировать affectsShiftId через eventOverlapsShift, а не
+// полагаться на сохранённое значение.
 function annotateAffectedShifts(events, shifts) {
   for (const ev of events) {
-    const overlap = shifts.find(s =>
-      s.facilityId === ev.facilityId &&
-      s.date === ev.date &&
-      toMinutes(s.start) < toMinutes(ev.end) &&
-      toMinutes(s.end)   > toMinutes(ev.start)
-    );
+    const overlap = shifts.find(s => eventOverlapsShift(ev, s));
     if (overlap) {
       ev.affectsShiftId = overlap.id;
       if (ev.kind === 'mod' && overlap.start !== ev.start) {
@@ -428,6 +438,13 @@ function saveJSON(key, value) {
 // инвалидируем через _invalidateCache при saveJSON(STORAGE.cache).
 let _cacheParsed = null;       // { at, payload, mock }
 let _cacheRawHash = null;      // строка из localStorage, для детектирования multi-tab изменений
+
+// Результат ПОСЛЕДНЕЙ попытки fetchSchedule: true если свалились в mock.
+// Раньше mock-флаг писали в cache.mock и читали через loadCachedMock — но
+// теперь при mock-фолбэке мы НЕ перезатираем кэш реальных данных, поэтому
+// флаг живёт в памяти модуля. handleRefresh читает его сразу после await,
+// поэтому page-reload (сбрасывающий флаг) не критичен — toast уже показан.
+let _lastFetchWasMock = false;
 function _readCachedSnapshot() {
   const raw = localStorage.getItem(STORAGE.cache);
   if (raw === _cacheRawHash) return _cacheParsed;
@@ -518,6 +535,7 @@ const Data = {
   async fetchSchedule({ force = false } = {}) {
     const cached = loadJSON(STORAGE.cache, null);
     if (!force && cached && (Date.now() - new Date(cached.at).getTime() < 5 * 60_000)) {
+      _lastFetchWasMock = false;  // вернули кэш, реальной попытки не было
       return cached.payload;
     }
     const prevPayload = cached?.payload || null;
@@ -533,10 +551,24 @@ const Data = {
       payload = { ...MOCK_SCHEDULE, generatedAt: new Date().toISOString() };
       isMock = true;
     }
-    saveJSON(STORAGE.cache, { at: new Date().toISOString(), payload, mock: isMock });
+
+    _lastFetchWasMock = isMock;
+
+    if (isMock) {
+      // НЕ перезаписываем кэш реальных данных моком и НЕ зовём recordSiteCheck.
+      // Иначе diff(real_prev, mock_empty) пометит ВСЕ реальные сессии как
+      // 'rem', а на следующем успешном fetch они вернутся как 'add' —
+      // в журнале появятся phantom события (баг #3 из аудита).
+      // Если реального prev ещё не было — отдадим mock как best-effort
+      // ответ для UI, но в кэш всё равно не пишем, чтобы первый успешный
+      // fetch попал в ветку baseline (prev=null), а не diff'нулся с mock'ом.
+      return cached?.payload || payload;
+    }
+
+    saveJSON(STORAGE.cache, { at: new Date().toISOString(), payload, mock: false });
     _invalidateCache();
     // Сверка с предыдущим снапшотом — на клиенте, без обращения к серверу
-    try { Data.recordSiteCheck(prevPayload, payload, { mock: isMock }); } catch {}
+    try { Data.recordSiteCheck(prevPayload, payload, { mock: false }); } catch {}
     return payload;
   },
 
@@ -612,6 +644,7 @@ const Data = {
   formatDayHeading,
   isoOffset,
   nowMinutesInMinsk,
+  eventOverlapsShift,
   RU_WEEKDAYS_SHORT,
   RU_WEEKDAYS_LONG,
   RU_MONTHS,
@@ -627,11 +660,11 @@ const Data = {
   loadCachedAt() {
     return _readCachedSnapshot()?.at || null;
   },
-  // true, если последний fetchSchedule свалился в MOCK_SCHEDULE (нет
-  // доступа к /api/schedule). UI показывает другой toast, чтобы не врать
-  // пользователю, что «сайт сверён», когда на деле бекенда не было.
+  // true, если ПОСЛЕДНЯЯ попытка fetchSchedule свалилась в MOCK_SCHEDULE
+  // (нет доступа к /api/schedule). UI читает сразу после await — флаг
+  // отражает только что произошедшую попытку, не состояние кэша.
   loadCachedMock() {
-    return _readCachedSnapshot()?.mock === true;
+    return _lastFetchWasMock === true;
   },
   getCachedFacility(facilityId) {
     const payload = _readCachedSnapshot()?.payload;

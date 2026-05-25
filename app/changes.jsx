@@ -32,13 +32,6 @@ function ChangesScreen() {
 
   const facilities = window.Data.FACILITIES;
 
-  let state = 'stable';
-  if (latest && ackPending) {
-    if (latest.hasSourceIssues && !latest.hasChanges) state = 'issue';
-    else if (latest.affectsMe) state = 'important';
-    else state = 'changes';
-  }
-
   // Group latest events by facility + date
   const groupedEvents = _cm(() => {
     if (!latest?.events?.length) return [];
@@ -51,17 +44,36 @@ function ChangesScreen() {
     return Array.from(map.values());
   }, [latest]);
 
-  // Affected shifts (events that link to my shift)
+  // Список затронутых смен пересчитываем по ТЕКУЩИМ shifts, а не по
+  // сохранённому ev.affectsShiftId. Иначе:
+  //   • удалённая смена даёт orphan-ссылку, её всё равно нет в списке (find
+  //     по id вернёт undefined) — но «Влияние на мои смены» не покажет
+  //     смену, добавленную ПОСЛЕ recordSiteCheck (баг #4 аудита).
+  // Расчёт overlap идентичен annotateAffectedShifts → выносим в
+  // Data.eventOverlapsShift, чтобы UI и журналирование шли по одной формуле.
   const affectedShifts = _cm(() => {
     if (!latest?.events?.length) return [];
     const out = [];
     for (const ev of latest.events) {
-      if (!ev.affectsShiftId) continue;
-      const shift = shifts.find(s => s.id === ev.affectsShiftId);
+      const shift = shifts.find(s => window.Data.eventOverlapsShift(ev, s));
       if (shift) out.push({ shift, event: ev });
     }
     return out;
   }, [latest, shifts]);
+  const affectedEventIds = _cm(() => {
+    const set = new Set();
+    for (const { event } of affectedShifts) set.add(event.id);
+    return set;
+  }, [affectedShifts]);
+
+  // hero state: «important» только если ТЕКУЩИЕ смены реально перекрываются
+  // — не по storage-флагу latest.affectsMe (он может быть устаревшим).
+  let state = 'stable';
+  if (latest && ackPending) {
+    if (latest.hasSourceIssues && !latest.hasChanges) state = 'issue';
+    else if (affectedShifts.length > 0) state = 'important';
+    else state = 'changes';
+  }
 
   function handleAck() {
     if (!latest) return;
@@ -184,7 +196,7 @@ function ChangesScreen() {
             <window.UI.SecLabel count={latest.events.length}>Что изменилось</window.UI.SecLabel>
             <section className="diff">
               {groupedEvents.map((g, i) => (
-                <DiffGroup key={i} group={g}/>
+                <DiffGroup key={i} group={g} affectedEventIds={affectedEventIds}/>
               ))}
             </section>
           </>
@@ -264,7 +276,7 @@ function AffectedCard({ shift, event }) {
   );
 }
 
-function DiffGroup({ group }) {
+function DiffGroup({ group, affectedEventIds }) {
   const fac = window.Data.getFacility(group.facilityId);
   return (
     <div className="diff-group">
@@ -272,19 +284,24 @@ function DiffGroup({ group }) {
         <span className="diff-group-name"><em>{fac?.name}</em></span>
         <span className="diff-group-when">{window.Data.formatDayHeading(group.date)}</span>
       </div>
-      {group.events.map(ev => <DiffRow key={ev.id} event={ev}/>)}
+      {group.events.map(ev => (
+        <DiffRow key={ev.id} event={ev} isAffecting={affectedEventIds?.has(ev.id)}/>
+      ))}
     </div>
   );
 }
 
-function DiffRow({ event }) {
+function DiffRow({ event, isAffecting }) {
   const isAdd = event.kind === 'add';
   const isRem = event.kind === 'rem';
   const isMod = event.kind === 'mod';
   const glyph = isAdd ? '+' : isRem ? '−' : '↔';
   const kindWord = isAdd ? 'добавлен' : isRem ? 'снят' : 'перенесён';
+  // Подсветка «affects-me» — по факту пересечения с ТЕКУЩИМИ shifts
+  // (Set рассчитан в ChangesScreen), а не по сохранённому
+  // event.affectsShiftId — он мог устареть после remove/add смен.
   return (
-    <div className={`diff-row ${isAdd ? 'is-add' : ''} ${isRem ? 'is-rem' : ''} ${isMod ? 'is-mod' : ''} ${event.affectsShiftId ? 'affects-me' : ''}`}>
+    <div className={`diff-row ${isAdd ? 'is-add' : ''} ${isRem ? 'is-rem' : ''} ${isMod ? 'is-mod' : ''} ${isAffecting ? 'affects-me' : ''}`}>
       <span className="glyph">{glyph}</span>
       <span className="when">{event.start}&nbsp;—&nbsp;{event.end}</span>
       <span className="body">

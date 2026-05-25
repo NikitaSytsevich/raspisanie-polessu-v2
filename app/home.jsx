@@ -113,6 +113,22 @@ function HomeScreen() {
   // Site-changes summary (latest unread)
   const unreadChange = changes.find(c => !c.acknowledgedAt && (c.hasChanges || c.hasSourceIssues));
 
+  // Аффектед-счёт считаем НА ЛЕТУ против ТЕКУЩИХ shifts, а не по
+  // сохранённому ev.affectsShiftId. Иначе:
+  //   • удалённая смена оставляет orphan ссылку → SiteCard кричит «Затронута
+  //     1 ваша смена», хотя её уже нет (баг #1 аудита);
+  //   • добавленная ПОСЛЕ recordSiteCheck смена, пересекающая старое
+  //     событие, не учитывается (event.affectsShiftId = undefined) — SiteCard
+  //     врёт «ваши смены не тронуты» (баг #4).
+  // Та же величина управляет и плашкой-вверху/внизу (см. ниже).
+  const unreadAffectedCount = _hm(() => {
+    if (!unreadChange?.events?.length) return 0;
+    return unreadChange.events.filter(
+      ev => shifts.some(s => window.Data.eventOverlapsShift(ev, s))
+    ).length;
+  }, [unreadChange, shifts]);
+  const unreadAffectsMe = unreadAffectedCount > 0;
+
   // Pull-to-refresh handler (один и тот же путь и для кнопки в шапке,
   // и для PTR-жеста). Дополнительно тикает refreshing-флаг для анимации
   // в кнопке шапки.
@@ -223,9 +239,13 @@ function HomeScreen() {
             <>
               <Hero date={selectedDate} count={dayShifts.length} totalMin={totalMin} unconfirmedMin={unconfirmedMin} facCount={facCount} isToday={isToday}/>
               {/* Если сайт нашёл изменения, затронувшие наши смены — поднимаем
-                  SiteCard вверх, чтобы пользователь сразу увидел проблему. */}
-              {unreadChange?.affectsMe && (
-                <SiteCard change={unreadChange} onClick={() => router.push('changes')}/>
+                  SiteCard вверх, чтобы пользователь сразу увидел проблему.
+                  Используем unreadAffectsMe (рассчитан против ТЕКУЩИХ shifts),
+                  а не сохранённый change.affectsMe — иначе ловим orphan и
+                  missed-add кейсы из аудита. */}
+              {unreadAffectsMe && (
+                <SiteCard change={unreadChange} affectedCount={unreadAffectedCount}
+                          onClick={() => router.push('changes')}/>
               )}
               <WeekStrip
                 days={weekDays}
@@ -252,8 +272,9 @@ function HomeScreen() {
               {dayShifts.length > 0 && (
                 <AddShiftInlineLink date={selectedDate} onPush={() => router.push('editor', { date: selectedDate })}/>
               )}
-              {!unreadChange?.affectsMe && (
-                <SiteCard change={unreadChange} onClick={() => router.push('changes')}/>
+              {!unreadAffectsMe && (
+                <SiteCard change={unreadChange} affectedCount={0}
+                          onClick={() => router.push('changes')}/>
               )}
             </>
           )}
@@ -1017,10 +1038,21 @@ function AddShiftInlineLink({ date, onPush }) {
 }
 
 // ── Bottom site-check card ──────────────────────────────────────
-function SiteCard({ change, onClick }) {
+//
+// affectedCount считается в HomeScreen НА ЛЕТУ против текущих shifts,
+// а не из сохранённого events.filter(e => e.affectsShiftId): юзер мог
+// удалить смену (orphan ссылка) или добавить смену уже после
+// recordSiteCheck (overlap есть, affectsShiftId — нет). Поэтому
+// affectedCount приходит prop'ом, а не вычисляется здесь.
+//
+// checkedAt: предпочитаем loadCachedAt() (метку последнего fetchSchedule)
+// над change.checkedAt — у unreadChange может быть СТАРЫЙ checkedAt,
+// если с момента события было несколько quiet-проверок, и тогда юзер
+// видел «проверено 1 ч назад» при только что прошедшей проверке.
+function SiteCard({ change, affectedCount = 0, onClick }) {
   const hasUnread = Boolean(change);
-  const checkedAt = change?.checkedAt || window.Data.loadCachedAt();
-  const affectedCount = change?.events?.filter(e => e.affectsShiftId).length || 0;
+  const checkedAt = window.Data.loadCachedAt() || change?.checkedAt;
+  const eventsLen = change?.events?.length || 0;
   const affectsMe = affectedCount > 0;
   let head;
   if (!hasUnread) {
@@ -1028,9 +1060,13 @@ function SiteCard({ change, onClick }) {
   } else if (affectsMe) {
     const p = affectedShiftsPhrase(affectedCount);
     head = <>{p.verb} <em>{affectedCount}</em> {p.noun}</>;
+  } else if (eventsLen === 0 && change.hasSourceIssues) {
+    // Запись unread только из-за sourceIssues — реальных событий нет.
+    // Раньше тут отрисовывалось «Есть события — 0 событий, ваши смены
+    // не тронуты» (баг #2 аудита).
+    head = <>Один из <em>источников не ответил</em></>;
   } else {
-    const total = change.events?.length || 0;
-    head = <>Есть события — <em>{total}</em> {pluralizeEvents(total)}, ваши смены не тронуты</>;
+    head = <>Есть события — <em>{eventsLen}</em> {pluralizeEvents(eventsLen)}, ваши смены не тронуты</>;
   }
   const checkedText = checkedAt
     ? `проверено ${window.Data.formatRelativeMinutes(checkedAt)}`
