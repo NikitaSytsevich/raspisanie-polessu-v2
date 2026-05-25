@@ -774,8 +774,6 @@ function FacilityCard({ facilityId, shifts, today, date, nowMins, idx, onPushEdi
     () => window.Data.getSiteSessionsForDay(facilityId, date),
     [facilityId, date]
   );
-  // Sheet с детальной разбивкой по сессиям (тап по карточке).
-  const [detailOpen, setDetailOpen] = _hs(false);
 
   // Состояние объекта на эту дату
   let closed = false;
@@ -856,22 +854,24 @@ function FacilityCard({ facilityId, shifts, today, date, nowMins, idx, onPushEdi
     }
   }
 
-  // Все клики по внутренним кнопкам должны останавливать propagation,
-  // иначе тап по «график»/«ext» откроет ещё и detail-sheet (карта стала
-  // кликабельной — см. onCardClick ниже).
-  const openEditor = (e) => { e?.stopPropagation?.(); onPushEditor(shifts[0]); };
+  const openEditor = () => onPushEditor(shifts[0]);
   const openSite = (e) => {
     e.stopPropagation();
     if (fac?.sourceUrl) window.open(fac.sourceUrl, '_blank', 'noopener');
   };
-  const onCardClick = () => setDetailOpen(true);
+
+  // Открытие LaneDetailSheet: тап по конкретной дорожке (кнопка .l внутри
+  // .fc-lanes) — пробрасывается из SessionRow → FacilityCard.
+  const [laneSheet, setLaneSheet] = _hs(null);  // { session, laneIdx, indicator }
+  const onLaneClick = (session, laneIdx, indicator) => {
+    setLaneSheet({ session, laneIdx, indicator });
+  };
 
   const cls = ['fc-card', `is-fac-${facilityId}`, `idx-${idx}`,
-               closed ? 'is-closed' : '', 'is-tappable'].filter(Boolean).join(' ');
+               closed ? 'is-closed' : ''].filter(Boolean).join(' ');
 
   return (
-    <article className={cls} onClick={onCardClick} role="button" tabIndex={0}
-             onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onCardClick(); } }}>
+    <article className={cls}>
       <div className="fc-watermark" aria-hidden="true">
         <span className="material-symbols-outlined">{fac?.icon || 'place'}</span>
       </div>
@@ -906,7 +906,8 @@ function FacilityCard({ facilityId, shifts, today, date, nowMins, idx, onPushEdi
             <div className="fc-sess-list">
               {rows.map((r, i) => r.kind === 'sess'
                 ? <SessionRow key={'s' + i} session={r.s} facilityId={facilityId}
-                              nowMins={nowMins} onToday={onToday}/>
+                              nowMins={nowMins} onToday={onToday}
+                              onLaneClick={onLaneClick}/>
                 : <SessionBreak key={'b' + i} minutes={r.minutes} label={r.label}
                                 facilityId={facilityId}/>
               )}
@@ -946,116 +947,124 @@ function FacilityCard({ facilityId, shifts, today, date, nowMins, idx, onPushEdi
         </span>
       </footer>
 
-      {detailOpen && (
-        <FacilityDetailSheet
+      {laneSheet && (
+        <LaneDetailSheet
           facility={fac}
-          sessions={siteSessions}
-          closed={closed}
-          dataQuality={cached?.dataQuality}
+          session={laneSheet.session}
+          laneIdx={laneSheet.laneIdx}
+          indicator={laneSheet.indicator}
           isToday={onToday}
           nowMins={nowMins}
-          onClose={() => setDetailOpen(false)}
+          onClose={() => setLaneSheet(null)}
         />
       )}
     </article>
   );
 }
 
-// Bottom-sheet с детальной разбивкой сессий за день. Открывается тапом
-// по карточке. Для большого бассейна показывает крупный индикатор
-// дорожек на каждую сессию + текст «N свободно из 10, занято M». Для
-// прочих объектов — просто time + activity. Закрывается по backdrop,
-// крестику, Escape.
+// LaneDetailSheet — модальный sheet про ОДНУ выбранную дорожку.
+// Открывается тапом по конкретной полоске .fc-lanes .l. Содержит:
+//   • Hero: «Дорожка N» крупно, под ним — имя объекта.
+//   • Большая визуализация всех дорожек: выбранная подсвечена.
+//   • Статус-пилюля: свободна / занята.
+//   • Карточка сессии: время + activity-текст с сайта.
+//   • Footer: ссылка на источник.
 //
-// ВАЖНО: используем createPortal в document.body. Без портала sheet
-// рендерится внутри .fc-card, у которой есть transform в анимации
-// fcRise — а transform создаёт containing block, и position:fixed
-// перестаёт привязываться к viewport (header sheet'а обрезался рамкой
-// карточки, backdrop не покрывал весь экран).
-function FacilityDetailSheet({ facility, sessions, closed, dataQuality, isToday, nowMins, onClose }) {
+// Через ReactDOM.createPortal в document.body — иначе .fc-card.transform
+// (анимация fcRise) ломает position:fixed (баг с прошлой итерации).
+function LaneDetailSheet({ facility, session, laneIdx, indicator, isToday, nowMins, onClose }) {
   _he(() => {
     function onKey(e) { if (e.key === 'Escape') onClose?.(); }
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  // Прорастает наружу через bubble click — иначе onClick карточки снова
-  // откроет sheet после backdrop click.
   const stop = (e) => e.stopPropagation();
+  const total = indicator?.total || 10;
+  const occupiedSet = new Set(indicator?.occupied || []);
+  const isOccupied = occupiedSet.has(laneIdx);
+  const free = indicator?.free != null ? indicator.free : (total - occupiedSet.size);
+  const laneNumber = laneIdx + 1;
+  const sStart = window.Data.toMinutes(session.start);
+  const sEnd   = window.Data.toMinutes(session.end);
+  const isNow  = isToday && sStart <= nowMins && sEnd > nowMins;
+  const isPast = isToday && sEnd <= nowMins;
+
+  const statusLabel = isOccupied ? 'занята' : 'свободна';
+  const statusHint  = isOccupied
+    ? 'недоступна для свободного плавания'
+    : 'открыта для свободного плавания';
 
   const sheet = (
-    <div className="fd-sheet-root" role="dialog" aria-modal="true" aria-label={`Детали: ${facility?.name}`}
-         onClick={stop}>
-      <div className="fd-sheet-backdrop" onClick={onClose}/>
-      <div className={`fd-sheet is-fac-${facility?.id || ''}`}>
-        <header className="fd-sheet-head">
-          <div className="fd-titles">
-            {facility?.hint && <p className="kicker">{facility.hint}</p>}
-            <h2>{facility?.name}</h2>
-          </div>
-          <button type="button" className="fd-close" onClick={onClose} aria-label="Закрыть">
-            <span className="material-symbols-outlined">close</span>
-          </button>
+    <div className="ln-sheet-root" role="dialog" aria-modal="true"
+         aria-label={`Дорожка ${laneNumber}`} onClick={stop}>
+      <div className="ln-sheet-backdrop" onClick={onClose}/>
+      <div className={`ln-sheet is-fac-${facility?.id || ''} ${isOccupied ? 'is-occ' : 'is-free'} ${isPast ? 'is-past' : ''}`}>
+
+        <button type="button" className="ln-close" onClick={onClose} aria-label="Закрыть">
+          <span className="material-symbols-outlined">close</span>
+        </button>
+
+        <header className="ln-head">
+          <p className="ln-kicker">
+            {facility?.name}
+            {isNow && <span className="ln-now-dot" aria-hidden="true"/>}
+            {isNow && <span className="ln-now">сейчас</span>}
+          </p>
+          <h2 className="ln-title">Дорожка&nbsp;<em>{laneNumber}</em></h2>
+          <p className="ln-sub">{statusHint}</p>
         </header>
 
-        {closed ? (
-          <div className="fd-empty is-closed">
-            <span className="material-symbols-outlined">event_busy</span>
-            <p>{closed.notice || 'на сайте объявление о приостановке работы.'}</p>
+        {/* Контекст: визуализация всей сетки 10 дорожек, выбранная
+            крупно подсвечена */}
+        <div className="ln-vis" role="img"
+             aria-label={`Бассейн: ${free} свободно из ${total}, выбрана дорожка ${laneNumber}`}>
+          {Array.from({ length: total }).map((_, i) => {
+            const occ = occupiedSet.has(i);
+            const sel = i === laneIdx;
+            return (
+              <div key={i}
+                   className={`ln-lane ${occ ? 'is-occ' : 'is-free'} ${sel ? 'is-selected' : ''}`}>
+                <span className="ln-lane-num">{i + 1}</span>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="ln-status-row">
+          <span className={`ln-status-pill is-${isOccupied ? 'occ' : 'free'}`}>
+            <span className="material-symbols-outlined">
+              {isOccupied ? 'block' : 'check_circle'}
+            </span>
+            {statusLabel}
+          </span>
+          <span className="ln-counts">
+            <strong>{free}</strong> свободно
+            {occupiedSet.size > 0 && <> · <strong>{occupiedSet.size}</strong> занято</>}
+            <span className="ln-counts-sep">из {total}</span>
+          </span>
+        </div>
+
+        <div className="ln-session">
+          <p className="ln-section-label">на сайте сейчас</p>
+          <div className="ln-session-card">
+            <div className="ln-time">
+              <span className="from">{session.start}</span>
+              <span className="dash">—</span>
+              <span className="to">{session.end}</span>
+            </div>
+            <p className="ln-act">
+              {session.activity || <span className="muted">без описания</span>}
+            </p>
           </div>
-        ) : sessions.length === 0 ? (
-          <div className="fd-empty">
-            <span className="material-symbols-outlined">event_available</span>
-            <p>{dataQuality === 'ok'
-                ? 'на эту дату на сайте ничего не запланировано.'
-                : 'сайт ещё не сматчен.'}</p>
-          </div>
-        ) : (
-          <ul className="fd-sessions">
-            {sessions.map((s, i) => {
-              const ind = window.Data.inferSessionIndicator(facility.id, s.activity);
-              const sStart = window.Data.toMinutes(s.start);
-              const sEnd   = window.Data.toMinutes(s.end);
-              const isNow  = isToday && sStart <= nowMins && sEnd > nowMins;
-              const isPast = isToday && sEnd <= nowMins;
-              return (
-                <li key={i} className={`fd-row ${isNow ? 'is-now' : ''} ${isPast ? 'is-past' : ''}`}>
-                  <div className="fd-tm">{s.start}<span className="dash">—</span>{s.end}</div>
-                  <div className="fd-body">
-                    {ind?.type === 'lanes' && (
-                      <div className="fd-lanes-row">
-                        <SessionIndicator ind={ind}/>
-                        <span className="fd-lanes-txt">
-                          <strong>{ind.free}</strong> свободно
-                          {ind.occupied?.length > 0 && (
-                            <> · занято <strong>{ind.occupied.length}</strong></>
-                          )}
-                          {ind.occupied?.length === 0 && ' · весь бассейн'}
-                        </span>
-                      </div>
-                    )}
-                    {ind?.type === 'lanes-free' && (
-                      <div className="fd-lanes-row">
-                        <SessionIndicator ind={ind}/>
-                        <span className="fd-lanes-txt">без разделения дорожек</span>
-                      </div>
-                    )}
-                    {s.activity && <p className="fd-act">{s.activity}</p>}
-                    {!s.activity && ind?.type !== 'lanes' && ind?.type !== 'lanes-free' && (
-                      <p className="fd-act fd-act-muted">без описания на сайте</p>
-                    )}
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        )}
+        </div>
 
         {facility?.sourceUrl && (
-          <a className="fd-source" href={facility.sourceUrl}
+          <a className="ln-source" href={facility.sourceUrl}
              target="_blank" rel="noopener noreferrer" onClick={stop}>
             <span className="material-symbols-outlined">open_in_new</span>
-            <span>открыть на сайте ПолесГУ</span>
+            <span>посмотреть «{facility.name}» на сайте ПолесГУ</span>
+            <span className="material-symbols-outlined arr">arrow_forward</span>
           </a>
         )}
       </div>
@@ -1065,21 +1074,22 @@ function FacilityDetailSheet({ facility, sessions, closed, dataQuality, isToday,
   return ReactDOM.createPortal(sheet, document.body);
 }
 
-function SessionRow({ session, facilityId, nowMins, onToday }) {
+function SessionRow({ session, facilityId, nowMins, onToday, onLaneClick }) {
   const start = window.Data.toMinutes(session.start);
   const end = window.Data.toMinutes(session.end);
   const isNow = onToday && start <= nowMins && end > nowMins;
   const isPast = onToday && end <= nowMins;
   const ind = window.Data.inferSessionIndicator(facilityId, session.activity);
-  // Активность не показываем в строке — индикатор справа несёт смысл
-  // (дорожки / зона / группа). Полное описание остаётся в tooltip.
+  // Дорожки кликабельны: тап по любой полоске → LaneDetailSheet про
+  // конкретную дорожку. Прокидываем сессию + indicator для контекста.
+  const handleLane = (laneIdx) => onLaneClick?.(session, laneIdx, ind);
   return (
     <div className={'fc-sess' + (isNow ? ' is-now' : '') + (isPast ? ' is-past' : '')}
          title={session.activity || undefined}>
       <span className="fc-tm">{session.start} — {session.end}</span>
       {ind && (
         <span className="fc-ind">
-          <SessionIndicator ind={ind}/>
+          <SessionIndicator ind={ind} onLaneClick={handleLane}/>
         </span>
       )}
     </div>
@@ -1102,18 +1112,30 @@ function SessionBreak({ minutes, label, facilityId }) {
   );
 }
 
-function SessionIndicator({ ind }) {
+function SessionIndicator({ ind, onLaneClick }) {
   if (!ind) return null;
   if (ind.type === 'lanes') {
     const total = ind.total || 10;
     const occupied = new Set(ind.occupied || []);
     const free = ind.free != null ? ind.free : (total - occupied.size);
     const allFree = occupied.size === 0;
-    // Bright (facility-color) = занятая дорожка (тренировкой/закрытая).
-    // Muted = свободная для посетителя.
+    // Bright (accent) = занятая дорожка (тренировкой/закрытая).
+    // Серая = свободная для посетителя.
+    // Каждая полоска — <button>: тап открывает LaneDetailSheet про эту
+    // дорожку. stopPropagation, чтобы не было ложных bubble-кликов вверх.
     const bars = [];
     for (let i = 0; i < total; i++) {
-      bars.push(<span key={i} className={'l' + (occupied.has(i) ? ' occ' : '')}/>);
+      const isOcc = occupied.has(i);
+      bars.push(
+        <button
+          key={i}
+          type="button"
+          className={'l' + (isOcc ? ' occ' : '')}
+          onClick={(e) => { e.stopPropagation(); onLaneClick?.(i); }}
+          aria-label={`Дорожка ${i + 1}, ${isOcc ? 'занята' : 'свободна'}`}
+          title={`Дорожка ${i + 1} · ${isOcc ? 'занята' : 'свободна'}`}
+        />
+      );
     }
     return (
       <span className={'fc-lanes' + (allFree ? ' is-full' : '')}

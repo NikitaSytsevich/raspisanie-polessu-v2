@@ -201,54 +201,39 @@ function inferSessionIndicator(facilityId, activity) {
       if (free > 0 && tot > 0 && free <= tot) {
         const total = isPool ? baseTotal : tot;
         const cappedFree = Math.min(free, total);
-        const occupied = [];
-        for (let i = cappedFree; i < total; i++) occupied.push(i);
-        return { type: 'lanes', occupied, free: cappedFree, total };
+        return { type: 'lanes', occupied: buildLanes(total, cappedFree), free: cappedFree, total };
       }
     }
 
-    // Раскладка позиций: edges по краям, остаток свободных в середине,
-    // оставшиеся middle-слоты — заняты тренировкой и упираются к
-    // внутренней стороне правого края.
-    function buildLanes(total, free, edges) {
+    // Линейная раскладка: свободные слева [0..free-1], занятые справа.
+    // Раньше для «N свободно + M крайних» крайние клались в позиции
+    // [0, total-1] и занятые-середины тянулись к правому борту — это
+    // соответствовало физическому бассейну, но UI читался неровно
+    // (orange | free×6 | orange×3). Юзер попросил: всегда слева направо,
+    // free|occ. Семантика «крайних» переезжает в текст карточки/окна.
+    function buildLanes(total, free) {
       const occupied = [];
-      if (edges >= 1) occupied.push(0);
-      if (edges >= 2) occupied.push(total - 1);
-      const middleSlots = total - edges;
-      const middleOcc = Math.max(0, middleSlots - free);
-      // Заполняем middle-occupied начиная от внутреннего края правого
-      // борта и двигаясь к центру.
-      let idx = (edges >= 2) ? total - 2 : total - 1;
-      let placed = 0;
-      while (placed < middleOcc && idx >= 0) {
-        if (!occupied.includes(idx)) { occupied.push(idx); placed++; }
-        idx--;
-      }
-      occupied.sort((a, b) => a - b);
+      for (let i = free; i < total; i++) occupied.push(i);
       return occupied;
     }
 
-    // Сборка с учётом и edges и freeCount
+    // Объединяем edgeOcc + freeCount в одну величину «занятых», свободные
+    // считаем от total. Информация о крайних остаётся в исходной
+    // activity-строке и будет показана в LaneDetailSheet как есть.
     if (edgeOcc > 0 && freeCount && freeCount > 0) {
-      // «свободно 6, без 2 крайних» при isPool → total=10, edges=[0,9],
-      // 6 свободных в середине, 2 средних слота заняты тренировкой.
       const total = isPool ? baseTotal : (freeCount + edgeOcc);
       const cappedFree = Math.min(freeCount, total - edgeOcc);
-      return { type: 'lanes', occupied: buildLanes(total, cappedFree, edgeOcc), free: cappedFree, total };
+      return { type: 'lanes', occupied: buildLanes(total, cappedFree), free: cappedFree, total };
     }
     if (edgeOcc > 0) {
-      // Только края, без указания свободных. Total=10 по умолчанию.
       const total = baseTotal;
-      const occupied = edgeOcc >= 2 ? [0, total - 1] : [0];
-      return { type: 'lanes', occupied, free: total - edgeOcc, total };
+      const cappedFree = Math.max(0, total - edgeOcc);
+      return { type: 'lanes', occupied: buildLanes(total, cappedFree), free: cappedFree, total };
     }
     if (freeCount && freeCount > 0) {
-      // Только свободные, без краёв. Trailing занятые.
       const total = isPool ? baseTotal : Math.max(freeCount, baseTotal);
       const cappedFree = Math.min(freeCount, total);
-      const occupied = [];
-      for (let i = cappedFree; i < total; i++) occupied.push(i);
-      return { type: 'lanes', occupied, free: cappedFree, total };
+      return { type: 'lanes', occupied: buildLanes(total, cappedFree), free: cappedFree, total };
     }
 
     // Просто «дорож» без числа — весь бассейн свободен
