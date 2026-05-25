@@ -3644,20 +3644,34 @@ html.light .fc-lanes .l { background: rgba(24, 21, 19, 0.28); }
   border-radius: 16px;
   border: 1px solid var(--hairline);
 }
+/* Плитки-дорожки в sheet'е — <button>: тап переключает выбранную
+   дорожку без закрытия окна (см. selected state в LaneDetailSheet).
+   Сбрасываем appearance/border, добавляем hover/focus. */
 .ln-lane {
+  appearance: none;
+  border: 0;
+  padding: 0 0 5px;
+  font-family: inherit;
+  cursor: pointer;
   position: relative;
   height: 58px;
   border-radius: 7px;
   background: rgba(245, 241, 235, 0.18);
   display: flex; align-items: flex-end; justify-content: center;
-  padding-bottom: 5px;
-  transition: transform 200ms ease;
+  transition: transform 200ms ease, background 160ms ease, box-shadow 200ms ease, opacity 160ms ease;
+}
+.ln-lane:hover { background: rgba(245, 241, 235, 0.32); }
+.ln-lane:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 html.light .ln-lane { background: rgba(24, 21, 19, 0.16); }
+html.light .ln-lane:hover { background: rgba(24, 21, 19, 0.26); }
 .ln-lane.is-occ {
   background: var(--accent);
   opacity: 0.42;
 }
+.ln-lane.is-occ:hover { opacity: 0.55; }
 .ln-lane.is-selected {
   transform: scaleY(1.10);
   background: rgba(245, 241, 235, 0.85);
@@ -3667,6 +3681,7 @@ html.light .ln-lane { background: rgba(24, 21, 19, 0.16); }
     0 10px 28px -8px rgba(217, 119, 87, 0.55);
   z-index: 1;
 }
+.ln-lane.is-selected:hover { background: rgba(245, 241, 235, 0.95); }
 html.light .ln-lane.is-selected { background: rgba(24, 21, 19, 0.92); }
 .ln-lane.is-occ.is-selected {
   background: var(--accent);
@@ -3720,10 +3735,13 @@ html.light .ln-status-pill.is-free { background: rgba(63, 130, 118, 0.18); color
 .ln-counts strong { color: var(--text); font-weight: 600; }
 .ln-counts-sep { color: var(--text-subtle); font-style: italic; }
 
-/* SESSION CARD */
-.ln-session { margin-bottom: 14px; }
+/* SESSION CARD — крупное моноширинное время с стрелкой → длительность
+   chip'ом справа, activity ниже. Слева тонкая accent-полоска (цвет
+   зависит от now/past/future). Если сессия идёт прямо сейчас — снизу
+   тонкий прогресс-бар (live-индикатор сколько от сессии прошло). */
+.ln-session { margin-bottom: 16px; }
 .ln-section-label {
-  margin: 0 0 8px;
+  margin: 0 0 10px;
   font-size: 10.5px;
   text-transform: uppercase;
   letter-spacing: 0.1em;
@@ -3731,29 +3749,96 @@ html.light .ln-status-pill.is-free { background: rgba(63, 130, 118, 0.18); color
   font-weight: 600;
 }
 .ln-session-card {
-  padding: 14px 16px;
-  border-radius: 16px;
-  background: var(--bg-raised);
+  position: relative;
+  padding: 16px 18px 14px;
+  border-radius: 18px;
+  background: linear-gradient(180deg, var(--bg-raised), var(--bg-elevated));
   border: 1px solid var(--hairline);
-  display: flex; align-items: flex-start; gap: 14px;
+  overflow: hidden;
+  transition: border-color 160ms ease;
+}
+/* Accent-полоска слева — color-coded под состояние сессии */
+.ln-session-card::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  background: var(--fac-color);
+  border-radius: 3px 0 0 3px;
+}
+.ln-session-card.is-now {
+  border-color: var(--accent);
+}
+.ln-session-card.is-now::before { background: var(--accent); }
+.ln-session-card.is-past::before { background: var(--text-subtle); }
+.ln-session-card.is-past { opacity: 0.75; }
+.ln-sheet.is-fac-sports_pool .ln-session-card::before { background: var(--accent); }
+
+.ln-time-block {
+  display: flex; align-items: baseline; gap: 12px;
+  margin-bottom: 10px;
 }
 .ln-time {
   font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
-  font-size: 15px;
+  font-size: 22px;
   color: var(--text);
+  letter-spacing: -0.01em;
+  font-weight: 500;
+  line-height: 1;
   white-space: nowrap;
-  display: flex; flex-direction: column; align-items: flex-start;
-  line-height: 1.15;
+  display: inline-flex; align-items: baseline; gap: 8px;
 }
-.ln-time .dash { color: var(--text-subtle); font-size: 12px; padding: 1px 0; }
+.ln-time .arr {
+  color: var(--text-subtle);
+  font-size: 16px;
+  font-weight: 400;
+  position: relative;
+  top: -1px;
+}
+.ln-time .t { font-feature-settings: 'tnum' 1; }
+.ln-dur {
+  margin-left: auto;
+  font-size: 10.5px;
+  font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  padding: 4px 9px;
+  background: var(--bg-sunken);
+  border-radius: 100px;
+  border: 1px solid var(--hairline);
+  white-space: nowrap;
+}
+.ln-session-card.is-now .ln-dur {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: transparent;
+}
+
 .ln-act {
-  flex: 1;
   margin: 0;
-  font-size: 13.5px;
+  font-size: 14px;
   color: var(--text);
   line-height: 1.4;
+  font-family: "Newsreader", Georgia, serif;
+  font-style: italic;
+  letter-spacing: 0.002em;
 }
-.ln-act .muted { font-style: italic; color: var(--text-subtle); }
+.ln-act.is-muted { color: var(--text-subtle); }
+
+/* Live прогресс-бар у текущей сессии */
+.ln-progress {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 3px;
+  background: var(--accent-soft);
+  overflow: hidden;
+}
+.ln-progress-bar {
+  height: 100%;
+  background: var(--accent);
+  transition: width 1200ms ease-out;
+  box-shadow: 0 0 8px var(--accent);
+}
 
 /* FOOTER LINK */
 .ln-source {

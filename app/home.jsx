@@ -973,23 +973,38 @@ function FacilityCard({ facilityId, shifts, today, date, nowMins, idx, onPushEdi
 // Через ReactDOM.createPortal в document.body — иначе .fc-card.transform
 // (анимация fcRise) ломает position:fixed (баг с прошлой итерации).
 function LaneDetailSheet({ facility, session, laneIdx, indicator, isToday, nowMins, onClose }) {
+  // Локальный state выбранной дорожки: открыли sheet на одной — можно
+  // переключаться на другие тапом по плиткам, не закрывая окно.
+  // Стрелки ← → также листают prev/next.
+  const [selected, setSelected] = _hs(laneIdx);
+
   _he(() => {
-    function onKey(e) { if (e.key === 'Escape') onClose?.(); }
+    function onKey(e) {
+      if (e.key === 'Escape') onClose?.();
+      else if (e.key === 'ArrowLeft')  setSelected(s => Math.min(total - 1, s + 1));
+      else if (e.key === 'ArrowRight') setSelected(s => Math.max(0, s - 1));
+    }
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onClose]);
 
   const stop = (e) => e.stopPropagation();
   const total = indicator?.total || 10;
   const occupiedSet = new Set(indicator?.occupied || []);
-  const isOccupied = occupiedSet.has(laneIdx);
+  const isOccupied = occupiedSet.has(selected);
   const free = indicator?.free != null ? indicator.free : (total - occupiedSet.size);
   // Нумерация 0..(total-1) — отображается как есть (lane 0 — правый край).
-  const laneNumber = laneIdx;
+  const laneNumber = selected;
   const sStart = window.Data.toMinutes(session.start);
   const sEnd   = window.Data.toMinutes(session.end);
   const isNow  = isToday && sStart <= nowMins && sEnd > nowMins;
   const isPast = isToday && sEnd <= nowMins;
+  const durationMin = Math.max(0, sEnd - sStart);
+  // Прогресс текущей сессии (0..1), нужен только для is-now прогресс-бара.
+  const progress = isNow && durationMin > 0
+    ? Math.min(1, Math.max(0, (nowMins - sStart) / durationMin))
+    : 0;
 
   const statusLabel = isOccupied ? 'занята' : 'свободна';
   const statusHint  = isOccupied
@@ -1018,18 +1033,26 @@ function LaneDetailSheet({ facility, session, laneIdx, indicator, isToday, nowMi
 
         {/* Контекст: визуализация всей сетки 10 дорожек. Render в REVERSE-
             order — слева направо номера 9, 8, …, 1, 0 (lane 0 — правый
-            край физически). Выбранная подсвечена. */}
-        <div className="ln-vis" role="img"
-             aria-label={`Бассейн: ${free} свободно из ${total}, выбрана дорожка ${laneNumber}`}>
+            край физически). Плитки — <button>: тап меняет выбранную
+            дорожку без закрытия sheet'а. Sheet остаётся открытым и
+            перерисовывается на новой дорожке. */}
+        <div className="ln-vis" role="radiogroup"
+             aria-label={`Дорожки бассейна: ${free} свободно из ${total}`}>
           {Array.from({ length: total }).map((_, idx) => {
             const n = total - 1 - idx;
             const occ = occupiedSet.has(n);
-            const sel = n === laneIdx;
+            const sel = n === selected;
             return (
-              <div key={n}
-                   className={`ln-lane ${occ ? 'is-occ' : 'is-free'} ${sel ? 'is-selected' : ''}`}>
+              <button
+                key={n}
+                type="button"
+                role="radio"
+                aria-checked={sel}
+                aria-label={`Дорожка ${n}, ${occ ? 'занята' : 'свободна'}`}
+                className={`ln-lane ${occ ? 'is-occ' : 'is-free'} ${sel ? 'is-selected' : ''}`}
+                onClick={() => setSelected(n)}>
                 <span className="ln-lane-num">{n}</span>
-              </div>
+              </button>
             );
           })}
         </div>
@@ -1049,16 +1072,27 @@ function LaneDetailSheet({ facility, session, laneIdx, indicator, isToday, nowMi
         </div>
 
         <div className="ln-session">
-          <p className="ln-section-label">на сайте сейчас</p>
-          <div className="ln-session-card">
-            <div className="ln-time">
-              <span className="from">{session.start}</span>
-              <span className="dash">—</span>
-              <span className="to">{session.end}</span>
+          <p className="ln-section-label">
+            на сайте {isPast ? 'было' : isNow ? 'сейчас' : 'будет'}
+          </p>
+          <div className={`ln-session-card ${isNow ? 'is-now' : ''} ${isPast ? 'is-past' : ''}`}>
+            <div className="ln-time-block">
+              <span className="ln-time">
+                <span className="t">{session.start}</span>
+                <span className="arr">→</span>
+                <span className="t">{session.end}</span>
+              </span>
+              <span className="ln-dur">{window.Data.formatDuration(durationMin)}</span>
             </div>
-            <p className="ln-act">
-              {session.activity || <span className="muted">без описания</span>}
+            <p className={'ln-act' + (session.activity ? '' : ' is-muted')}>
+              {session.activity || 'без описания на сайте'}
             </p>
+            {isNow && (
+              <div className="ln-progress" aria-hidden="true"
+                   title={`${Math.round(progress * 100)}% сессии прошло`}>
+                <div className="ln-progress-bar" style={{ width: `${progress * 100}%` }}/>
+              </div>
+            )}
           </div>
         </div>
 
