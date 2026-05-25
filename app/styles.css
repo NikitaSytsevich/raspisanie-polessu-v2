@@ -210,16 +210,11 @@ body::before {
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
   position: relative;
-  /* Запас снизу: в браузере оставляем 40px флор (нижняя панель Safari /
-     визуальный воздух). В standalone-PWA (добавлено на главный экран iOS)
-     нет URL-бара — обходимся только home-indicator-инсетом, без лишней
-     полосы внизу. */
-  padding-bottom: max(40px, env(safe-area-inset-bottom, 40px));
-}
-@media (display-mode: standalone) {
-  .screen-scroll {
-    padding-bottom: env(safe-area-inset-bottom, 16px);
-  }
+  /* Только safe-area-inset (для iOS home-bar). Раньше тут стоял
+     `max(40px, ...)` как «визуальный воздух» в браузере — это читалось
+     как непрозрачная полоска снизу и поднимало контент. В standalone-PWA
+     env() даст реальное значение home-bar; в обычном браузере = 0. */
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 /* iOS-имитация status bar убрана; класс остаётся скрытым на случай старого кеша. */
@@ -1218,14 +1213,30 @@ html.light .add-shift-link:hover .plus { color: #fffaf3; }
 }
 
 /* HOME — bottom site card (компактная одно-рядная версия) */
+/* SiteCard = контейнер (article), внутри:
+   .site-card-main — основная click-зона (переход на ChangesScreen);
+   .site-card-ack  — отдельная кнопка ✓ справа (квитирование на месте,
+                     показывается только когда hasUnread).
+   Раньше outer был сам <button>, но ack нельзя вложить (button-в-button
+   невалидно), поэтому стили фон/рамки переехали на .site-card-main. */
 .site-card {
-  appearance: none;
   width: calc(100% - 44px);
   margin: 8px 22px 0;
-  padding: 11px 12px 11px 12px;
   border-radius: 14px;
   background: var(--bg-elevated);
   border: 1px solid var(--hairline);
+  display: flex;
+  align-items: stretch;
+  overflow: hidden;
+  transition: background 200ms ease, border-color 200ms ease;
+}
+.site-card-main {
+  appearance: none;
+  flex: 1;
+  min-width: 0;
+  padding: 11px 12px;
+  background: transparent;
+  border: 0;
   cursor: pointer;
   text-align: left;
   display: grid;
@@ -1234,13 +1245,34 @@ html.light .add-shift-link:hover .plus { color: #fffaf3; }
   gap: 10px;
   font-family: inherit;
   color: inherit;
-  transition: background 200ms ease, border-color 200ms ease, transform 120ms ease;
+  transition: background 160ms ease, transform 120ms ease;
 }
 .site-card:hover {
   border-color: var(--border);
-  background: var(--bg-raised);
 }
-.site-card:active { transform: scale(0.99); }
+.site-card-main:hover { background: var(--bg-raised); }
+.site-card-main:active { transform: scale(0.99); }
+
+/* ✓-кнопка ack: визуально отделена тонкой границей слева, оттенена
+   accent'ом — намекает «это действие, а не навигация». */
+.site-card-ack {
+  appearance: none;
+  border: 0;
+  border-left: 1px solid var(--hairline);
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  padding: 0 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: inherit;
+  transition: background 160ms ease, transform 120ms ease;
+}
+.site-card-ack:hover { background: var(--accent-soft); }
+.site-card-ack:active { transform: scale(0.94); }
+.site-card-ack .material-symbols-outlined { font-size: 22px; }
+
 .site-card .icon-cell {
   width: 32px; height: 32px;
   border-radius: 10px;
@@ -1286,7 +1318,7 @@ html.light .add-shift-link:hover .plus { color: #fffaf3; }
   font-size: 20px;
   transition: transform 160ms ease, color 160ms ease;
 }
-.site-card:hover .arrow { color: var(--accent); transform: translateX(2px); }
+.site-card-main:hover .arrow { color: var(--accent); transform: translateX(2px); }
 
 .site-card {
   position: relative;

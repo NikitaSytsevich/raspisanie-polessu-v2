@@ -242,10 +242,13 @@ function HomeScreen() {
                   SiteCard вверх, чтобы пользователь сразу увидел проблему.
                   Используем unreadAffectsMe (рассчитан против ТЕКУЩИХ shifts),
                   а не сохранённый change.affectsMe — иначе ловим orphan и
-                  missed-add кейсы из аудита. */}
+                  missed-add кейсы из аудита.
+                  onAck → ackAllPending: после клика на ✓ запись становится
+                  acknowledged, unreadChange исчезает, плашка уезжает вниз. */}
               {unreadAffectsMe && (
                 <SiteCard change={unreadChange} affectedCount={unreadAffectedCount}
-                          onClick={() => router.push('changes')}/>
+                          onClick={() => router.push('changes')}
+                          onAck={() => setChanges(window.Data.ackAllPending())}/>
               )}
               <WeekStrip
                 days={weekDays}
@@ -1049,11 +1052,18 @@ function AddShiftInlineLink({ date, onPush }) {
 // над change.checkedAt — у unreadChange может быть СТАРЫЙ checkedAt,
 // если с момента события было несколько quiet-проверок, и тогда юзер
 // видел «проверено 1 ч назад» при только что прошедшей проверке.
-function SiteCard({ change, affectedCount = 0, onClick }) {
+//
+// onAck (опциональный) — рендерим ✓-кнопку справа: одним тапом отметить
+// запись просмотренной, без перехода в ChangesScreen. Сразу после ack
+// unreadChange становится null → плашка уезжает в самый низ страницы.
+// Чтобы внутренняя кнопка не нарушала HTML (button-в-button нельзя),
+// outer — article, body — отдельная button.
+function SiteCard({ change, affectedCount = 0, onClick, onAck }) {
   const hasUnread = Boolean(change);
   const checkedAt = window.Data.loadCachedAt() || change?.checkedAt;
   const eventsLen = change?.events?.length || 0;
   const affectsMe = affectedCount > 0;
+  const showAck = Boolean(onAck && hasUnread);
   let head;
   if (!hasUnread) {
     head = <>Все источники сматчены, изменений <em>не найдено</em></>;
@@ -1073,19 +1083,31 @@ function SiteCard({ change, affectedCount = 0, onClick }) {
     : 'ещё не проверено';
   const icon = affectsMe ? 'event_busy' : hasUnread ? 'compare_arrows' : 'sync';
   return (
-    <button
-      className={`site-card ${hasUnread ? 'is-attention' : ''} ${affectsMe ? 'is-important' : ''}`}
-      onClick={onClick}
+    <article
+      className={`site-card ${hasUnread ? 'is-attention' : ''} ${affectsMe ? 'is-important' : ''} ${showAck ? 'has-ack' : ''}`}
     >
-      <div className="icon-cell">
-        <span className="material-symbols-outlined">{icon}</span>
-      </div>
-      <div className="body">
-        <p className="kicker">Проверка сайта · <span className="meta">{checkedText}</span></p>
-        <p className="head">{head}</p>
-      </div>
-      <span className="material-symbols-outlined arrow">chevron_right</span>
-    </button>
+      <button type="button" className="site-card-main" onClick={onClick}>
+        <div className="icon-cell">
+          <span className="material-symbols-outlined">{icon}</span>
+        </div>
+        <div className="body">
+          <p className="kicker">Проверка сайта · <span className="meta">{checkedText}</span></p>
+          <p className="head">{head}</p>
+        </div>
+        {!showAck && <span className="material-symbols-outlined arrow">chevron_right</span>}
+      </button>
+      {showAck && (
+        <button
+          type="button"
+          className="site-card-ack"
+          onClick={onAck}
+          title="Отметить просмотренным"
+          aria-label="Отметить просмотренным"
+        >
+          <span className="material-symbols-outlined">done</span>
+        </button>
+      )}
+    </article>
   );
 }
 
