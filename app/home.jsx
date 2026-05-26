@@ -1158,13 +1158,14 @@ function SessionIndicator({ ind, onLaneClick }) {
     const allFree = occupied.size === 0;
     // Нумерация дорожек 0..9: lane 0 — правый край, lane 9 — левый.
     // Render в REVERSE: на экране слева направо идут номера 9, 8, …, 1, 0.
-    // Bright (accent) = занятая (тренировка/закрытая), серая = свободная.
-    // Каждая полоска — <button>: тап открывает LaneDetailSheet про эту
+    // Стиль — мини-копия LaneDetailSheet: крупные плитки с номерами,
+    // занятая в едином orange (--lane-occ) одинаковом в обеих темах.
+    // Каждая плитка — <button>: тап открывает LaneDetailSheet про эту
     // дорожку. stopPropagation, чтобы не было ложных bubble-кликов вверх.
-    const bars = [];
+    const tiles = [];
     for (let n = total - 1; n >= 0; n--) {
       const isOcc = occupied.has(n);
-      bars.push(
+      tiles.push(
         <button
           key={n}
           type="button"
@@ -1172,13 +1173,15 @@ function SessionIndicator({ ind, onLaneClick }) {
           onClick={(e) => { e.stopPropagation(); onLaneClick?.(n); }}
           aria-label={`Дорожка ${n}, ${isOcc ? 'занята' : 'свободна'}`}
           title={`Дорожка ${n} · ${isOcc ? 'занята' : 'свободна'}`}
-        />
+        >
+          <span className="num">{n}</span>
+        </button>
       );
     }
     return (
       <span className={'fc-lanes' + (allFree ? ' is-full' : '')}
             title={`${free} свободно из ${total}`}>
-        {bars}
+        <span className="lanes-row">{tiles}</span>
         <span className="count">{free}/{total}</span>
       </span>
     );
