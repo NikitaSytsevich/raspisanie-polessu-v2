@@ -15,23 +15,83 @@
 (function () {
   const { useEffect: _ie, useState: _is } = React;
 
-  // ── Геометрия / цвета (из дизайна) ─────────────────────────────
+  // ── Геометрия / тайминги ───────────────────────────────────────
   const W = 540;
   const H = 1170;
   const DURATION = 4.0;        // длительность анимации (с)
   const FADE_OUT_MS = 280;     // CSS fade overlay перед unmount
 
-  const BG = '#181513';
-  const BG_TOP = '#1d1815';
-  const TEXT = '#f5f1eb';
-  const TEXT_MUTED = '#a8a098';
-  const TEXT_SUBTLE = '#6b665f';
-  const ACCENT = '#d97757';
-  const ACCENT_GLOW = 'rgba(217, 119, 87, 0.34)';
+  // ── Палитра в зависимости от темы ──────────────────────────────
+  // Заставка рисует много инлайн-стилей с hex/rgba: CSS-переменные
+  // через `var(--…)` в SVG-фильтрах / линейных градиентах работают
+  // через раз, поэтому раз вычисляем «снэпшот» цветов из активной
+  // темы и пробрасываем его пропом `pal` в каждый sub-компонент.
+  function makePalette(theme) {
+    if (theme === 'light') {
+      return {
+        // Background
+        BG:           '#f5f1eb',
+        BG_TOP:       '#fbf6ef',
+        // Text
+        TEXT:         '#181513',
+        TEXT_MUTED:   '#5a544c',
+        TEXT_SUBTLE:  '#8a847a',
+        // Accent
+        ACCENT:       '#c96442',
+        ACCENT_DEEP:  '#9c441f',
+        ACCENT_GLOW:  'rgba(201, 100, 66, 0.22)',
+        // Decorative layers
+        GRAIN:        'rgba(24, 21, 19, 0.35)',
+        GRAIN_BLEND:  'multiply',
+        VIGNETTE:     'radial-gradient(120% 80% at 50% 0%, transparent 50%, rgba(168, 122, 58, 0.12) 100%)',
+        // Card
+        CARD_BG:      'linear-gradient(165deg, rgba(255,255,255,0.98) 0%, rgba(248,243,236,0.98) 100%)',
+        CARD_BORDER:  'rgba(24, 21, 19, 0.10)',
+        CARD_SHADOW:
+          '0 22px 50px -20px rgba(75, 50, 30, 0.22),' +
+          '0 8px 20px -8px rgba(75, 50, 30, 0.14),' +
+          '0 1px 0 0 rgba(255, 255, 255, 0.7) inset,' +
+          '0 -1px 0 0 rgba(24, 21, 19, 0.05) inset',
+        CARD_DIVIDER: 'rgba(24, 21, 19, 0.08)',
+        // Loading hint
+        TRACK_BG:     'rgba(24, 21, 19, 0.10)',
+        // Per-facility tints
+        ICE:          '#4a7da3',
+        POOL:         '#3f8276',
+        ROWING:       '#a87a3a',
+      };
+    }
+    // dark — оригинальная палитра
+    return {
+      BG:           '#181513',
+      BG_TOP:       '#1d1815',
+      TEXT:         '#f5f1eb',
+      TEXT_MUTED:   '#a8a098',
+      TEXT_SUBTLE:  '#6b665f',
+      ACCENT:       '#d97757',
+      ACCENT_DEEP:  '#b3522f',
+      ACCENT_GLOW:  'rgba(217, 119, 87, 0.34)',
+      GRAIN:        'rgba(255, 255, 255, 0.40)',
+      GRAIN_BLEND:  'overlay',
+      VIGNETTE:     'radial-gradient(120% 80% at 50% 0%, transparent 50%, rgba(0,0,0,0.45) 100%)',
+      CARD_BG:      'linear-gradient(165deg, rgba(46,41,36,0.96) 0%, rgba(28,25,22,0.96) 100%)',
+      CARD_BORDER:  'rgba(245, 241, 235, 0.09)',
+      CARD_SHADOW:
+        '0 30px 60px -18px rgba(0,0,0,0.7),' +
+        '0 12px 28px -10px rgba(0,0,0,0.5),' +
+        '0 1px 0 0 rgba(245,241,235,0.07) inset,' +
+        '0 -1px 0 0 rgba(0,0,0,0.25) inset',
+      CARD_DIVIDER: 'rgba(245, 241, 235, 0.08)',
+      TRACK_BG:     'rgba(245, 241, 235, 0.08)',
+      ICE:          '#8ab4d4',
+      POOL:         '#7dbbb0',
+      ROWING:       '#d4a76e',
+    };
+  }
 
-  const ICE = '#8ab4d4';
-  const POOL = '#7dbbb0';
-  const ROWING = '#d4a76e';
+  function readTheme() {
+    return document.documentElement.classList.contains('light') ? 'light' : 'dark';
+  }
 
   // ── Easing-хелперы (минимальный набор, нужный для сцены) ───────
   const clamp = (v, mn, mx) => Math.max(mn, Math.min(mx, v));
@@ -43,40 +103,43 @@
   };
 
   // ── Background — тёплый фон + дышащий радиальный glow ──────────
-  function Background({ t }) {
+  function Background({ t, pal }) {
     // glow раскрывается до t=1.0, потом мягко «дышит»
     const glowIn = t <= 0 ? 0 : t >= 1.0 ? 1 : easeOutCubic(t / 1.0);
     const breathe = 0.85 + 0.15 * Math.sin((t / DURATION) * Math.PI * 2 - Math.PI / 2);
     const glow = glowIn * breathe;
 
     const cy = H * 0.46;
+    // Парный «дальний» оттенок accent-glow для радиального градиента —
+    // на 0.08 alpha без рассчёта на парсинг hex: производное от accent.
+    const glowFar = pal.ACCENT_GLOW.replace(/[\d.]+\)$/, '0.08)');
 
     return (
       <>
         <div style={{
           position: 'absolute', inset: 0,
-          background: `linear-gradient(180deg, ${BG_TOP} 0%, ${BG} 55%, ${BG} 100%)`,
+          background: `linear-gradient(180deg, ${pal.BG_TOP} 0%, ${pal.BG} 55%, ${pal.BG} 100%)`,
         }}/>
         <div style={{
           position: 'absolute', inset: 0,
           opacity: 0.04,
-          backgroundImage: 'radial-gradient(rgba(255,255,255,0.4) 1px, transparent 1px)',
+          backgroundImage: `radial-gradient(${pal.GRAIN} 1px, transparent 1px)`,
           backgroundSize: '3px 3px',
-          mixBlendMode: 'overlay',
+          mixBlendMode: pal.GRAIN_BLEND,
         }}/>
         <div style={{
           position: 'absolute',
           left: W / 2, top: cy,
           width: 900, height: 900,
           transform: 'translate(-50%, -50%)',
-          background: `radial-gradient(circle at center, ${ACCENT_GLOW} 0%, rgba(217,119,87,0.08) 35%, transparent 65%)`,
+          background: `radial-gradient(circle at center, ${pal.ACCENT_GLOW} 0%, ${glowFar} 35%, transparent 65%)`,
           opacity: glow,
           filter: 'blur(8px)',
           pointerEvents: 'none',
         }}/>
         <div style={{
           position: 'absolute', inset: 0,
-          background: 'radial-gradient(120% 80% at 50% 0%, transparent 50%, rgba(0,0,0,0.45) 100%)',
+          background: pal.VIGNETTE,
           pointerEvents: 'none',
         }}/>
       </>
@@ -85,7 +148,7 @@
 
   // ── Карточка смены (мини-представление shift'а) ────────────────
   function ShiftCard({
-    t, tint, day, dateNum, time, activity, facility,
+    t, pal, tint, day, dateNum, time, activity, facility,
     inAt, stackY, rotZ = 0, z = 1, showCheck = false,
   }) {
     const inDur = 0.7;
@@ -129,15 +192,11 @@
         <div style={{
           position: 'absolute', inset: 0,
           borderRadius: 22,
-          background: 'linear-gradient(165deg, rgba(46,41,36,0.96) 0%, rgba(28,25,22,0.96) 100%)',
+          background: pal.CARD_BG,
           backdropFilter: 'blur(20px)',
           WebkitBackdropFilter: 'blur(20px)',
-          border: '1px solid rgba(245,241,235,0.09)',
-          boxShadow:
-            '0 30px 60px -18px rgba(0,0,0,0.7),' +
-            '0 12px 28px -10px rgba(0,0,0,0.5),' +
-            '0 1px 0 0 rgba(245,241,235,0.07) inset,' +
-            '0 -1px 0 0 rgba(0,0,0,0.25) inset',
+          border: `1px solid ${pal.CARD_BORDER}`,
+          boxShadow: pal.CARD_SHADOW,
           overflow: 'hidden',
         }}>
           <div style={{
@@ -162,33 +221,33 @@
             }}>
               <div style={{
                 fontSize: 10, letterSpacing: '0.16em',
-                textTransform: 'uppercase', color: TEXT_SUBTLE,
+                textTransform: 'uppercase', color: pal.TEXT_SUBTLE,
                 fontWeight: 600,
               }}>{day}</div>
               <div style={{
                 fontFamily: 'Newsreader, Georgia, serif',
                 fontSize: 28, fontWeight: 500,
-                color: TEXT, lineHeight: 1, marginTop: 4,
+                color: pal.TEXT, lineHeight: 1, marginTop: 4,
                 fontVariantNumeric: 'tabular-nums',
               }}>{dateNum}</div>
             </div>
 
             <div style={{
               width: 1, height: 52,
-              background: 'rgba(245,241,235,0.08)',
+              background: pal.CARD_DIVIDER,
               flexShrink: 0,
             }}/>
 
             <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
               <div style={{
                 fontSize: 15, fontWeight: 600,
-                color: TEXT, fontVariantNumeric: 'tabular-nums',
+                color: pal.TEXT, fontVariantNumeric: 'tabular-nums',
                 letterSpacing: '-0.01em',
               }}>{time}</div>
               <div style={{
                 fontFamily: 'Newsreader, Georgia, serif',
                 fontStyle: 'italic', fontSize: 13,
-                color: TEXT_MUTED, fontWeight: 400,
+                color: pal.TEXT_MUTED, fontWeight: 400,
                 whiteSpace: 'nowrap', overflow: 'hidden',
                 textOverflow: 'ellipsis',
               }}>{activity}</div>
@@ -215,14 +274,14 @@
             </div>
           </div>
 
-          {showCheck && <CheckBadge t={t} tint={ACCENT}/>}
+          {showCheck && <CheckBadge t={t} pal={pal}/>}
         </div>
       </div>
     );
   }
 
   // ── Чекмарк на верхней карточке ────────────────────────────────
-  function CheckBadge({ t, tint }) {
+  function CheckBadge({ t, pal }) {
     const badgeStart = 1.5, badgeDur = 0.4;
     const bT = clamp((t - badgeStart) / badgeDur, 0, 1);
     const bEased = easeOutBack(bT);
@@ -235,6 +294,7 @@
     const glowAmt = Math.sin(glowT * Math.PI) * 0.6;
 
     const pathLen = 26;
+    const tint = pal.ACCENT;
 
     return (
       <div style={{
@@ -255,8 +315,8 @@
         <div style={{
           position: 'absolute', inset: 0,
           borderRadius: '50%',
-          background: `linear-gradient(160deg, ${tint} 0%, #b3522f 100%)`,
-          boxShadow: `0 6px 14px -2px ${tint}80, 0 0 0 1px rgba(245,241,235,0.18) inset`,
+          background: `linear-gradient(160deg, ${tint} 0%, ${pal.ACCENT_DEEP} 100%)`,
+          boxShadow: `0 6px 14px -2px ${tint}80, 0 0 0 1px rgba(255,255,255,0.22) inset`,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}>
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
@@ -275,18 +335,18 @@
   }
 
   // ── Стопка карточек ────────────────────────────────────────────
-  function CardStack({ t }) {
+  function CardStack({ t, pal }) {
     return (
       <>
-        <ShiftCard t={t} tint={ROWING}
+        <ShiftCard t={t} pal={pal} tint={pal.ROWING}
           day="ПТ" dateNum="29" time="06:30 — 07:30"
           activity="штанга, разминка" facility="греб. база"
           inAt={0.30} stackY={18} rotZ={-0.8} z={1}/>
-        <ShiftCard t={t} tint={POOL}
+        <ShiftCard t={t} pal={pal} tint={pal.POOL}
           day="СР" dateNum="27" time="18:30 — 21:00"
           activity="тренировка U-14" facility="бассейн"
           inAt={0.55} stackY={0} rotZ={0.5} z={2}/>
-        <ShiftCard t={t} tint={ICE}
+        <ShiftCard t={t} pal={pal} tint={pal.ICE}
           day="ПН" dateNum="25" time="15:00 — 17:30"
           activity="лёд, общая группа" facility="лёд. арена"
           inAt={0.80} stackY={-18} rotZ={-0.2} z={3} showCheck/>
@@ -295,7 +355,7 @@
   }
 
   // ── Wordmark «Расписание» ──────────────────────────────────────
-  function Wordmark({ t }) {
+  function Wordmark({ t, pal }) {
     const titleStart = 2.05, titleDur = 0.7;
     const titleT = clamp((t - titleStart) / titleDur, 0, 1);
     const titleEased = easeOutCubic(titleT);
@@ -323,7 +383,7 @@
           fontStyle: 'italic',
           fontSize: 64,
           letterSpacing: '-0.015em',
-          color: TEXT,
+          color: pal.TEXT,
           lineHeight: 1,
           opacity: titleEased,
           transform: `translateY(${(1 - titleEased) * 18}px)`,
@@ -335,8 +395,8 @@
             const isFirst = i === 0;
             // «Р» окрашивается в accent
             const color = isFirst
-              ? (accentT <= 0 ? TEXT : accentT >= 1 ? ACCENT : mixColor(TEXT, ACCENT, accentT))
-              : TEXT;
+              ? (accentT <= 0 ? pal.TEXT : accentT >= 1 ? pal.ACCENT : mixColor(pal.TEXT, pal.ACCENT, accentT))
+              : pal.TEXT;
             return (
               <span key={i} style={{
                 display: 'inline-block',
@@ -359,20 +419,20 @@
           fontWeight: 600,
           letterSpacing: '0.32em',
           textTransform: 'uppercase',
-          color: TEXT_MUTED,
+          color: pal.TEXT_MUTED,
           opacity: tagEased,
           transform: `translateY(${(1 - tagEased) * 8}px)`,
         }}>
-          <span style={{ color: TEXT_SUBTLE }}>спортивные объекты</span>
+          <span style={{ color: pal.TEXT_SUBTLE }}>спортивные объекты</span>
           <span style={{
             display: 'inline-block',
             width: 4, height: 4, borderRadius: '50%',
-            background: ACCENT,
+            background: pal.ACCENT,
             margin: '0 12px',
             verticalAlign: 'middle',
-            boxShadow: `0 0 6px ${ACCENT}`,
+            boxShadow: `0 0 6px ${pal.ACCENT}`,
           }}/>
-          <span style={{ color: TEXT }}>ПолесГУ</span>
+          <span style={{ color: pal.TEXT }}>ПолесГУ</span>
         </div>
       </>
     );
@@ -390,7 +450,7 @@
   }
 
   // ── Loading hint снизу ─────────────────────────────────────────
-  function LoadingHint({ t }) {
+  function LoadingHint({ t, pal }) {
     const start = 2.8, dur = 1.1;
     const localT = clamp((t - start) / dur, 0, 1);
     const eased = easeInOutCubic(localT);
@@ -407,7 +467,7 @@
       }}>
         <div style={{
           width: 84, height: 2,
-          background: 'rgba(245,241,235,0.08)',
+          background: pal.TRACK_BG,
           borderRadius: 2,
           overflow: 'hidden',
           position: 'relative',
@@ -416,16 +476,16 @@
             position: 'absolute',
             left: 0, top: 0, bottom: 0,
             width: `${eased * 100}%`,
-            background: `linear-gradient(90deg, ${ACCENT} 0%, ${ACCENT}80 100%)`,
+            background: `linear-gradient(90deg, ${pal.ACCENT} 0%, ${pal.ACCENT}80 100%)`,
             borderRadius: 2,
-            boxShadow: `0 0 8px ${ACCENT}80`,
+            boxShadow: `0 0 8px ${pal.ACCENT}80`,
           }}/>
         </div>
         <div style={{
           fontFamily: 'JetBrains Mono, ui-monospace, monospace',
           fontSize: 10,
           letterSpacing: '0.22em',
-          color: TEXT_SUBTLE,
+          color: pal.TEXT_SUBTLE,
           textTransform: 'uppercase',
           fontWeight: 500,
         }}>
@@ -442,6 +502,12 @@
     const [t, setT] = _is(0);
     const [leaving, setLeaving] = _is(false);
     const [scale, setScale] = _is(() => computeScale());
+    // Тема выбирается один раз на mount — за 4 секунды переключение
+    // через настройки маловероятно, а MutationObserver на html-классе
+    // ради этого избыточен. Если main.jsx применяет класс до mount —
+    // мы прочитаем актуальное значение.
+    const [theme] = _is(() => readTheme());
+    const pal = makePalette(theme);
 
     function computeScale() {
       const vw = window.innerWidth;
@@ -494,20 +560,21 @@
 
     return (
       <div
-        className={'intro-overlay' + (leaving ? ' is-leaving' : '')}
+        className={'intro-overlay is-' + theme + (leaving ? ' is-leaving' : '')}
         onClick={skip}
         role="button"
         tabIndex={-1}
         aria-label="Заставка приложения"
+        style={{ background: pal.BG }}
       >
         <div
           className="intro-stage"
           style={{ transform: `translate(-50%, -50%) scale(${scale})` }}
         >
-          <Background t={t}/>
-          <CardStack t={t}/>
-          <Wordmark t={t}/>
-          <LoadingHint t={t}/>
+          <Background t={t} pal={pal}/>
+          <CardStack t={t} pal={pal}/>
+          <Wordmark t={t} pal={pal}/>
+          <LoadingHint t={t} pal={pal}/>
         </div>
       </div>
     );

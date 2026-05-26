@@ -3043,16 +3043,22 @@ html.light .about-sheet {
   position: fixed;
   inset: 0;
   z-index: 9999;
+  /* Базовый цвет — на случай мерцания до того, как JS установит inline
+     background через палитру (см. IntroOverlay → style={{ background }}).
+     Перекрывается .intro-overlay.is-light ниже. */
   background: #181513;
   overflow: hidden;
   cursor: pointer;
-  /* Игнорируем светлую тему — заставка задумана тёмной */
   color-scheme: dark;
   opacity: 1;
   transition: opacity 280ms ease-out;
   /* Предотвращаем нежелательные жесты пока заставка на экране */
   touch-action: none;
   -webkit-tap-highlight-color: transparent;
+}
+.intro-overlay.is-light {
+  background: #f5f1eb;
+  color-scheme: light;
 }
 .intro-overlay.is-leaving {
   opacity: 0;
@@ -3535,6 +3541,9 @@ html.light .fc-lanes .l { background: rgba(24, 21, 19, 0.28); }
   -webkit-backdrop-filter: blur(6px);
   animation: lnFade 240ms ease-out;
 }
+/* Тёплое полупрозрачное затемнение под сheет, чтобы не было резкого
+   чёрного провала на светлой подложке. Согласовано с .about-backdrop. */
+html.light .ln-sheet-backdrop { background: rgba(20, 15, 10, 0.42); }
 @keyframes lnFade { from { opacity: 0; } to { opacity: 1; } }
 
 .ln-sheet {
@@ -3553,6 +3562,15 @@ html.light .fc-lanes .l { background: rgba(24, 21, 19, 0.28); }
     0 24px 80px -24px rgba(0, 0, 0, 0.65),
     0 0 0 1px rgba(245, 241, 235, 0.04) inset;
   animation: lnRise 340ms cubic-bezier(0.32, 1.15, 0.62, 1);
+}
+/* На светлой теме светлый inset-блик невидим и читается «без обводки»:
+   меняем тон тени на мягко-тёплый и добавляем верхний highlight. */
+html.light .ln-sheet {
+  box-shadow:
+    0 22px 60px -22px rgba(75, 50, 30, 0.28),
+    0 6px 18px -8px rgba(75, 50, 30, 0.14),
+    0 1px 0 0 rgba(255, 255, 255, 0.8) inset,
+    0 0 0 1px rgba(24, 21, 19, 0.05) inset;
 }
 /* Большой бассейн → accent-tint в hero-fade вместо teal --pool-soft */
 .ln-sheet.is-fac-sports_pool {
@@ -3684,11 +3702,12 @@ html.light .ln-lane:hover { background: rgba(24, 21, 19, 0.26); }
   box-shadow:
     0 0 0 2px var(--bg-elevated),
     0 0 0 4px var(--accent),
-    0 10px 28px -8px rgba(217, 119, 87, 0.55);
+    0 10px 28px -8px var(--accent-glow);
   z-index: 1;
 }
 .ln-lane.is-selected:hover { background: rgba(245, 241, 235, 0.95); }
 html.light .ln-lane.is-selected { background: rgba(24, 21, 19, 0.92); }
+html.light .ln-lane.is-selected:hover { background: rgba(24, 21, 19, 0.98); }
 .ln-lane.is-occ.is-selected {
   background: var(--accent);
   opacity: 1;
