@@ -12,7 +12,7 @@
 //      инвалидируем явно — раз скачали, дальше офлайн).
 //   4. Прочее → network-only.
 
-const VERSION = 'v5-2026-05-27-html-network-first';
+const VERSION = 'v6-2026-05-27-color-scheme';
 const SHELL_CACHE = `rpgu-shell-${VERSION}`;
 const API_CACHE   = `rpgu-api-${VERSION}`;
 const FONT_CACHE  = `rpgu-fonts-${VERSION}`;

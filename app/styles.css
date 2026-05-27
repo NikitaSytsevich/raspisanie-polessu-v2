@@ -4,6 +4,15 @@
 
 :root { --studio-bg: #0d0b0a; }
 
+/* color-scheme — КРИТИЧНО для iOS standalone-PWA: подсказывает системе,
+   к какой системной палитре подгонять оверлеи и тинт зоны home-indicator.
+   Без этого, если системная тема в iOS светлая, а приложение тёмное —
+   iOS красит safe-area-bottom светлым (узкая «полоса» внизу dark-app'а).
+   Меняется одновременно с классом темы на <html> (см. early-load <script>
+   в index.html и main.jsx). */
+html.dark { color-scheme: dark; }
+html.light { color-scheme: light; }
+
 html.dark {
   --bg: #181513;
   --bg-elevated: #23201d;
