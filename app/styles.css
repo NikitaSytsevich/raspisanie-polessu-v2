@@ -3837,29 +3837,23 @@ html.light .ln-status-pill.is-free { background: rgba(63, 130, 118, 0.18); color
 }
 .ln-session-card {
   position: relative;
-  padding: 16px 18px 14px;
+  padding: 16px 18px;
   border-radius: 18px;
-  background: linear-gradient(180deg, var(--bg-raised), var(--bg-elevated));
-  border: 1px solid var(--hairline);
-  overflow: hidden;
-  transition: border-color 160ms ease;
-}
-/* Accent-полоска слева — color-coded под состояние сессии */
-.ln-session-card::before {
-  content: '';
-  position: absolute;
-  left: 0; top: 0; bottom: 0;
-  width: 3px;
-  background: var(--fac-color);
-  border-radius: 3px 0 0 3px;
+  background: var(--bg-raised);
+  border: 1px solid var(--hairline-strong);
+  transition: border-color 200ms ease, background 200ms ease, box-shadow 240ms ease;
 }
 .ln-session-card.is-now {
-  border-color: var(--accent);
+  border-color: transparent;
+  background:
+    radial-gradient(120% 70% at 0% 0%, var(--accent-soft) 0%, transparent 60%),
+    var(--bg-raised);
+  box-shadow:
+    0 0 0 1px var(--accent-soft) inset,
+    0 0 0 1px var(--accent) inset,
+    0 10px 28px -14px var(--accent-glow);
 }
-.ln-session-card.is-now::before { background: var(--accent); }
-.ln-session-card.is-past::before { background: var(--text-subtle); }
-.ln-session-card.is-past { opacity: 0.75; }
-.ln-sheet.is-fac-sports_pool .ln-session-card::before { background: var(--accent); }
+.ln-session-card.is-past { opacity: 0.7; }
 
 .ln-time-block {
   display: flex; align-items: baseline; gap: 12px;
@@ -3911,21 +3905,6 @@ html.light .ln-status-pill.is-free { background: rgba(63, 130, 118, 0.18); color
   letter-spacing: 0.002em;
 }
 .ln-act.is-muted { color: var(--text-subtle); }
-
-/* Live прогресс-бар у текущей сессии */
-.ln-progress {
-  position: absolute;
-  left: 0; right: 0; bottom: 0;
-  height: 3px;
-  background: var(--accent-soft);
-  overflow: hidden;
-}
-.ln-progress-bar {
-  height: 100%;
-  background: var(--accent);
-  transition: width 1200ms ease-out;
-  box-shadow: 0 0 8px var(--accent);
-}
 
 /* FOOTER LINK */
 .ln-source {

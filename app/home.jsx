@@ -1022,10 +1022,6 @@ function LaneDetailSheet({ facility, session, laneIdx, indicator, isToday, nowMi
   const isNow  = isToday && sStart <= nowMins && sEnd > nowMins;
   const isPast = isToday && sEnd <= nowMins;
   const durationMin = Math.max(0, sEnd - sStart);
-  // Прогресс текущей сессии (0..1), нужен только для is-now прогресс-бара.
-  const progress = isNow && durationMin > 0
-    ? Math.min(1, Math.max(0, (nowMins - sStart) / durationMin))
-    : 0;
 
   const statusLabel = isOccupied ? 'занята' : 'свободна';
   const statusHint  = isOccupied
@@ -1108,12 +1104,6 @@ function LaneDetailSheet({ facility, session, laneIdx, indicator, isToday, nowMi
             <p className={'ln-act' + (session.activity ? '' : ' is-muted')}>
               {session.activity || 'без описания на сайте'}
             </p>
-            {isNow && (
-              <div className="ln-progress" aria-hidden="true"
-                   title={`${Math.round(progress * 100)}% сессии прошло`}>
-                <div className="ln-progress-bar" style={{ width: `${progress * 100}%` }}/>
-              </div>
-            )}
           </div>
         </div>
 
