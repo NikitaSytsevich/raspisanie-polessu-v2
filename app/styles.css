@@ -145,13 +145,12 @@ body::before {
 #app-root {
   width: 100%;
   max-width: 520px;
-  /* height: 100dvh давало щель в iOS standalone-PWA, где визуальный
-     viewport короче «полного» dvh на величину home-bar safe-area. Сейчас
-     даём гарантию минимума 100dvh, но позволяем растягиваться на
-     -webkit-fill-available (см. body), плюс flex-stretch от body тянет
-     до низа экрана включая safe-area-inset-bottom. */
-  height: 100%;
-  min-height: 100dvh;
+  /* height: 100dvh — ОБЯЗАТЕЛЬНО explicit, иначе .router-stack/.screen
+     с height:100% превращаются в auto и контент схлопывается в пустой
+     экран (баг «после интро белый экран»). Если на iOS PWA dvh короче
+     реального вьюпорта, низ закрывают body::before (fixed, inset:0) +
+     body bg — цвет не разрывается. */
+  height: 100dvh;
   position: relative;
   background: var(--bg);
 }
