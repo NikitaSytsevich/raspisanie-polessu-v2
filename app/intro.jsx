@@ -58,7 +58,13 @@
         // Per-facility tints
         ICE:          '#4a7da3',
         POOL:         '#3f8276',
+        POOL_SOFT:    'rgba(63, 130, 118, 0.08)',
         ROWING:       '#a87a3a',
+        // Lanes (intro карточка большой бассейн)
+        LANE_BG:      'rgba(24, 21, 19, 0.05)',
+        LANE_BORDER:  'rgba(24, 21, 19, 0.10)',
+        LANE_EMPTY:   'rgba(24, 21, 19, 0.16)',
+        LANE_OCC:     '#c96442',
       };
     }
     // dark — оригинальная палитра
@@ -85,7 +91,12 @@
       TRACK_BG:     'rgba(245, 241, 235, 0.08)',
       ICE:          '#8ab4d4',
       POOL:         '#7dbbb0',
+      POOL_SOFT:    'rgba(125, 187, 176, 0.10)',
       ROWING:       '#d4a76e',
+      LANE_BG:      'rgba(245, 241, 235, 0.04)',
+      LANE_BORDER:  'rgba(245, 241, 235, 0.10)',
+      LANE_EMPTY:   'rgba(245, 241, 235, 0.18)',
+      LANE_OCC:     '#d97757',
     };
   }
 
@@ -146,211 +157,253 @@
     );
   }
 
-  // ── Карточка смены (мини-представление shift'а) ────────────────
-  function ShiftCard({
-    t, pal, tint, day, dateNum, time, activity, facility,
-    inAt, stackY, rotZ = 0, z = 1, showCheck = false,
-  }) {
-    const inDur = 0.7;
-    const localT = clamp((t - inAt) / inDur, 0, 1);
-    const eased  = easeOutBack(localT);
+  // ── PoolCard — реплика главной карточки .fc-card.is-fac-sports_pool ──
+  // Появляется снизу вверх (как fcRise в проде), затем по шагам выезжают
+  // header → диапазон смены → инструктор → две сессии. Внутри второй
+  // сессии волной заливаются занятые дорожки (paint от лево к право).
+  // Footer завершает реплику настоящей карточки. Цветовая палитра —
+  // pal.POOL для tint, pal.LANE_OCC (orange) для занятых дорожек.
+  function PoolCard({ t, pal }) {
+    const s = {
+      cardIn:  { at: 0.10, dur: 0.70 },
+      title:   { at: 0.60, dur: 0.45 },
+      range:   { at: 0.85, dur: 0.40 },
+      inst:    { at: 1.10, dur: 0.32 },
+      sess1:   { at: 1.32, dur: 0.36 },
+      sess2:   { at: 1.65, dur: 0.36 },
+      lanes:   { at: 1.95, dur: 0.95 },
+      footer:  { at: 2.70, dur: 0.45 },
+    };
+    const reveal = (st) => clamp((t - st.at) / st.dur, 0, 1);
 
-    let opacity = 0;
-    let y = 220;
-    let scale = 0.92;
-    let rot = rotZ + (1 - localT) * (rotZ > 0 ? -4 : rotZ < 0 ? 4 : -6);
+    const cardR   = reveal(s.cardIn);
+    const cardE   = easeOutCubic(cardR);
+    const titleE  = easeOutCubic(reveal(s.title));
+    const rangeE  = easeOutCubic(reveal(s.range));
+    const instE   = easeOutCubic(reveal(s.inst));
+    const sess1E  = easeOutBack(reveal(s.sess1));
+    const sess2E  = easeOutBack(reveal(s.sess2));
+    const footerE = easeOutCubic(reveal(s.footer));
 
-    if (t >= inAt) {
-      opacity = clamp(localT * 1.6, 0, 1);
-      y = (1 - eased) * 220;
-      scale = 0.92 + 0.08 * eased;
-    }
+    const outroT = clamp((t - 3.55) / (DURATION - 3.55), 0, 1);
+    const outroY = -easeInOutCubic(outroT) * 10;
+    const outroFade = 1 - outroT * 0.25;
 
-    const liftStart = 1.9, liftEnd = 2.6;
-    const liftT = clamp((t - liftStart) / (liftEnd - liftStart), 0, 1);
-    const liftY = -easeInOutCubic(liftT) * 14;
+    const cardW = 460;
+    const cx = W / 2;
+    const topY = 340;          // карточка по вертикали ближе к центру стейджа
+    const cardSlideY = (1 - cardE) * 80;
 
-    const outroStart = 3.5;
-    const outroT = clamp((t - outroStart) / (DURATION - outroStart), 0, 1);
-    const outroFade = 1 - outroT * 0.15;
-
-    const cardW = 320, cardH = 96;
-    const cx = W / 2, cy = H * 0.46;
+    // Паттерн «6 свободно, без 2 крайних» из парсера sports_pool:
+    // визуально слева занят край (9, 8, 7) + справа крайняя (0).
+    const occupiedSet = new Set([9, 8, 7, 0]);
+    const fillOrder = [9, 8, 7, 0];  // визуальный порядок слева направо
+    const perLane = s.lanes.dur / fillOrder.length;
+    const laneFill = (n) => {
+      if (!occupiedSet.has(n)) return 1;
+      const idx = fillOrder.indexOf(n);
+      const startAt = s.lanes.at + idx * perLane * 0.78;  // лёгкое наложение волны
+      return clamp((t - startAt) / perLane, 0, 1);
+    };
 
     return (
       <div style={{
         position: 'absolute',
-        left: cx, top: cy + stackY,
-        width: cardW, height: cardH,
-        marginLeft: -cardW / 2, marginTop: -cardH / 2,
-        transform: `translateY(${y + liftY}px) scale(${scale}) rotate(${rot}deg)`,
-        transformOrigin: 'center',
-        opacity: opacity * outroFade,
-        zIndex: z,
+        left: cx - cardW / 2, top: topY,
+        width: cardW,
+        transform: `translateY(${cardSlideY + outroY}px)`,
+        opacity: clamp(cardR * 1.4, 0, 1) * outroFade,
+        borderRadius: 24,
+        background: pal.CARD_BG,
+        border: `1px solid ${pal.CARD_BORDER}`,
+        boxShadow: pal.CARD_SHADOW,
+        padding: '22px 24px 0',
+        overflow: 'hidden',
         willChange: 'transform, opacity',
       }}>
         <div style={{
-          position: 'absolute', inset: 0,
-          borderRadius: 22,
-          background: pal.CARD_BG,
-          backdropFilter: 'blur(20px)',
-          WebkitBackdropFilter: 'blur(20px)',
-          border: `1px solid ${pal.CARD_BORDER}`,
-          boxShadow: pal.CARD_SHADOW,
-          overflow: 'hidden',
+          position: 'absolute',
+          top: -18, right: -38,
+          color: pal.POOL,
+          opacity: 0.08,
+          fontFamily: '"Material Symbols Outlined"',
+          fontSize: 220,
+          lineHeight: 1,
+          transform: 'rotate(-8deg)',
+          pointerEvents: 'none',
+          fontVariationSettings: "'FILL' 0, 'wght' 200, 'GRAD' 0, 'opsz' 48",
+        }}>pool</div>
+
+        <div style={{
+          position: 'relative', zIndex: 1,
+          opacity: titleE,
+          transform: `translateY(${(1 - titleE) * 8}px)`,
         }}>
-          <div style={{
-            position: 'absolute',
-            left: 0, top: 0, bottom: 0, width: 6,
-            background: tint, opacity: 0.85,
-          }}/>
-          <div style={{
-            position: 'absolute',
-            left: 0, top: 0, bottom: 0, width: 60,
-            background: `linear-gradient(90deg, ${tint}26 0%, transparent 100%)`,
-          }}/>
-          <div style={{
-            position: 'absolute', inset: 0,
-            padding: '14px 18px 14px 22px',
-            display: 'flex', alignItems: 'center', gap: 14,
+          <p style={{
+            margin: 0,
+            fontFamily: 'Newsreader, Georgia, serif',
+            fontWeight: 500,
+            fontSize: 28,
+            letterSpacing: '-0.015em',
+            color: pal.TEXT,
+            lineHeight: 1.1,
+          }}>Большой бассейн</p>
+          <p style={{
+            margin: '5px 0 0',
+            fontFamily: 'Newsreader, Georgia, serif',
+            fontStyle: 'italic',
+            fontSize: 16,
+            color: pal.POOL,
+            opacity: 0.85,
+            letterSpacing: '0.005em',
+          }}>50 м · 10 дорожек</p>
+        </div>
+
+        <div style={{
+          marginTop: 14,
+          display: 'flex', alignItems: 'baseline', gap: 14,
+          opacity: rangeE,
+          transform: `translateY(${(1 - rangeE) * 6}px)`,
+          position: 'relative', zIndex: 1,
+        }}>
+          <span style={{
+            fontFamily: 'Newsreader, Georgia, serif',
+            fontWeight: 500,
+            fontSize: 40,
+            letterSpacing: '-0.02em',
+            color: pal.TEXT,
+            fontVariantNumeric: 'tabular-nums',
+            lineHeight: 1,
+          }}>18:30</span>
+          <span style={{ color: pal.TEXT_SUBTLE, fontSize: 22, lineHeight: 1 }}>→</span>
+          <span style={{
+            fontFamily: 'Newsreader, Georgia, serif',
+            fontWeight: 500,
+            fontSize: 40,
+            letterSpacing: '-0.02em',
+            color: pal.TEXT,
+            fontVariantNumeric: 'tabular-nums',
+            lineHeight: 1,
+          }}>19:30</span>
+        </div>
+
+        <p style={{
+          margin: '12px 0 4px',
+          fontFamily: 'Newsreader, Georgia, serif',
+          fontStyle: 'italic',
+          fontSize: 18,
+          color: pal.TEXT_MUTED,
+          opacity: instE,
+          transform: `translateY(${(1 - instE) * 4}px)`,
+          position: 'relative', zIndex: 1,
+          lineHeight: 1.3,
+        }}>
+          <span style={{ color: pal.TEXT_SUBTLE, marginRight: 8 }}>с</span>
+          Ившина М.Ю.
+        </p>
+
+        <div style={{ position: 'relative', zIndex: 1, marginTop: 6 }}>
+          <SessionRow pal={pal} time="18:00–19:00"
+                      occupiedSet={new Set()} laneFill={() => 1}
+                      revealE={sess1E} isFirst/>
+          <SessionRow pal={pal} time="19:00–20:00"
+                      occupiedSet={occupiedSet} laneFill={laneFill}
+                      revealE={sess2E}/>
+        </div>
+
+        <div style={{
+          marginTop: 14,
+          marginLeft: -24, marginRight: -24,
+          padding: '14px 24px 18px',
+          borderTop: `1px solid ${pal.CARD_DIVIDER}`,
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          opacity: footerE,
+          transform: `translateY(${(1 - footerE) * 4}px)`,
+          position: 'relative', zIndex: 1,
+        }}>
+          <span style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+            padding: '6px 14px',
+            borderRadius: 999,
+            background: `${pal.ACCENT}1f`,
+            border: `1px solid ${pal.ACCENT}3a`,
             fontFamily: 'Inter, system-ui, sans-serif',
-          }}>
-            <div style={{
-              width: 44, flexShrink: 0,
-              display: 'flex', flexDirection: 'column', alignItems: 'flex-start',
-            }}>
-              <div style={{
-                fontSize: 10, letterSpacing: '0.16em',
-                textTransform: 'uppercase', color: pal.TEXT_SUBTLE,
-                fontWeight: 600,
-              }}>{day}</div>
-              <div style={{
-                fontFamily: 'Newsreader, Georgia, serif',
-                fontSize: 28, fontWeight: 500,
-                color: pal.TEXT, lineHeight: 1, marginTop: 4,
-                fontVariantNumeric: 'tabular-nums',
-              }}>{dateNum}</div>
-            </div>
-
-            <div style={{
-              width: 1, height: 52,
-              background: pal.CARD_DIVIDER,
-              flexShrink: 0,
-            }}/>
-
-            <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <div style={{
-                fontSize: 15, fontWeight: 600,
-                color: pal.TEXT, fontVariantNumeric: 'tabular-nums',
-                letterSpacing: '-0.01em',
-              }}>{time}</div>
-              <div style={{
-                fontFamily: 'Newsreader, Georgia, serif',
-                fontStyle: 'italic', fontSize: 13,
-                color: pal.TEXT_MUTED, fontWeight: 400,
-                whiteSpace: 'nowrap', overflow: 'hidden',
-                textOverflow: 'ellipsis',
-              }}>{activity}</div>
-            </div>
-
-            <div style={{
-              flexShrink: 0,
-              display: 'flex', alignItems: 'center', gap: 6,
-              padding: '5px 9px',
-              borderRadius: 999,
-              background: `${tint}1f`,
-              border: `1px solid ${tint}3a`,
-              fontSize: 10.5,
-              letterSpacing: '0.06em',
-              textTransform: 'uppercase',
-              fontWeight: 600,
-              color: tint,
-            }}>
-              <span style={{
-                width: 5, height: 5, borderRadius: '50%',
-                background: tint, boxShadow: `0 0 6px ${tint}`,
-              }}/>
-              {facility}
-            </div>
-          </div>
-
-          {showCheck && <CheckBadge t={t} pal={pal}/>}
+            fontSize: 13,
+            fontWeight: 700,
+            letterSpacing: '0.08em',
+            textTransform: 'uppercase',
+            color: pal.ACCENT,
+          }}>по сайту</span>
+          <span style={{
+            fontFamily: 'Inter, system-ui, sans-serif',
+            fontSize: 15,
+            color: pal.TEXT_SUBTLE,
+            letterSpacing: '0.02em',
+          }}>1 ч</span>
         </div>
       </div>
     );
   }
 
-  // ── Чекмарк на верхней карточке ────────────────────────────────
-  function CheckBadge({ t, pal }) {
-    const badgeStart = 1.5, badgeDur = 0.4;
-    const bT = clamp((t - badgeStart) / badgeDur, 0, 1);
-    const bEased = easeOutBack(bT);
-
-    const strokeStart = 1.7, strokeDur = 0.55;
-    const sT = clamp((t - strokeStart) / strokeDur, 0, 1);
-    const sEased = easeOutCubic(sT);
-
-    const glowT = clamp((t - 2.15) / 0.5, 0, 1);
-    const glowAmt = Math.sin(glowT * Math.PI) * 0.6;
-
-    const pathLen = 26;
-    const tint = pal.ACCENT;
-
+  // SessionRow — одна сессия в PoolCard: время + pill из 10 дорожек.
+  // laneFill(n) ∈ [0..1] — прогресс заливки orange для занятой n.
+  function SessionRow({ pal, time, occupiedSet, laneFill, revealE, isFirst }) {
+    if (revealE <= 0) return null;
+    const total = 10;
+    const e = clamp(revealE, 0, 1);
     return (
       <div style={{
-        position: 'absolute',
-        right: -10, top: -10,
-        width: 36, height: 36,
-        transform: `scale(${bEased})`,
-        opacity: bT,
-        transformOrigin: 'center',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '15px 0',
+        borderTop: isFirst ? 'none' : `1px solid ${pal.CARD_DIVIDER}`,
+        opacity: e,
+        transform: `translateY(${(1 - e) * 12}px)`,
       }}>
-        <div style={{
-          position: 'absolute', inset: -4,
-          borderRadius: '50%',
-          background: `radial-gradient(circle, ${tint}66 0%, transparent 70%)`,
-          opacity: 0.6 + glowAmt,
-          filter: 'blur(4px)',
-        }}/>
-        <div style={{
-          position: 'absolute', inset: 0,
-          borderRadius: '50%',
-          background: `linear-gradient(160deg, ${tint} 0%, ${pal.ACCENT_DEEP} 100%)`,
-          boxShadow: `0 6px 14px -2px ${tint}80, 0 0 0 1px rgba(255,255,255,0.22) inset`,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        <span style={{
+          display: 'inline-flex', alignItems: 'center', gap: 10,
+          fontFamily: '"JetBrains Mono", ui-monospace, monospace',
+          fontSize: 17,
+          fontWeight: 500,
+          color: pal.TEXT,
+          letterSpacing: '0.01em',
+          fontVariantNumeric: 'tabular-nums',
         }}>
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-            <path d="M5 12.5 L10 17.5 L19 7.5"
-                  stroke="#fffaf3" strokeWidth="2.6"
-                  strokeLinecap="round" strokeLinejoin="round"
-                  style={{
-                    strokeDasharray: pathLen,
-                    strokeDashoffset: pathLen * (1 - sEased),
-                    filter: 'drop-shadow(0 1px 0 rgba(0,0,0,0.2))',
-                  }}/>
-          </svg>
-        </div>
+          <span style={{
+            width: 7, height: 7, borderRadius: '50%',
+            background: pal.POOL,
+          }}/>
+          {time}
+        </span>
+        <span style={{
+          display: 'inline-flex',
+          padding: '6px 8px',
+          borderRadius: 12,
+          background: pal.LANE_BG,
+          border: `1px solid ${pal.LANE_BORDER}`,
+        }}>
+          <span style={{ display: 'flex', gap: 3 }}>
+            {Array.from({ length: total }).map((_, idx) => {
+              const n = total - 1 - idx;
+              const isOcc = occupiedSet.has(n);
+              const fill = isOcc ? laneFill(n) : 1;
+              const bg = isOcc
+                ? `linear-gradient(0deg, ${pal.LANE_OCC} ${fill * 100}%, ${pal.LANE_EMPTY} ${fill * 100}%)`
+                : pal.LANE_EMPTY;
+              const pop = isOcc && fill > 0 && fill < 1
+                ? 1 + 0.06 * Math.sin(fill * Math.PI) : 1;
+              return (
+                <span key={n} style={{
+                  width: 14, height: 30,
+                  borderRadius: 4,
+                  background: bg,
+                  transform: `scaleY(${pop})`,
+                  transformOrigin: 'center bottom',
+                }}/>
+              );
+            })}
+          </span>
+        </span>
       </div>
-    );
-  }
-
-  // ── Стопка карточек ────────────────────────────────────────────
-  function CardStack({ t, pal }) {
-    return (
-      <>
-        <ShiftCard t={t} pal={pal} tint={pal.ROWING}
-          day="ПТ" dateNum="29" time="06:30 — 07:30"
-          activity="штанга, разминка" facility="греб. база"
-          inAt={0.30} stackY={18} rotZ={-0.8} z={1}/>
-        <ShiftCard t={t} pal={pal} tint={pal.POOL}
-          day="СР" dateNum="27" time="18:30 — 21:00"
-          activity="тренировка U-14" facility="бассейн"
-          inAt={0.55} stackY={0} rotZ={0.5} z={2}/>
-        <ShiftCard t={t} pal={pal} tint={pal.ICE}
-          day="ПН" dateNum="25" time="15:00 — 17:30"
-          activity="лёд, общая группа" facility="лёд. арена"
-          inAt={0.80} stackY={-18} rotZ={-0.2} z={3} showCheck/>
-      </>
     );
   }
 
@@ -572,9 +625,7 @@
           style={{ transform: `translate(-50%, -50%) scale(${scale})` }}
         >
           <Background t={t} pal={pal}/>
-          <CardStack t={t} pal={pal}/>
-          <Wordmark t={t} pal={pal}/>
-          <LoadingHint t={t} pal={pal}/>
+          <PoolCard t={t} pal={pal}/>
         </div>
       </div>
     );
