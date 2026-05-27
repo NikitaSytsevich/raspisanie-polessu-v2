@@ -18,7 +18,7 @@
   // ── Геометрия / тайминги ───────────────────────────────────────
   const W = 540;
   const H = 1170;
-  const DURATION = 4.0;        // длительность анимации (с)
+  const DURATION = 5.0;        // длительность анимации (с)
   const FADE_OUT_MS = 280;     // CSS fade overlay перед unmount
 
   // ── Палитра в зависимости от темы ──────────────────────────────
@@ -185,13 +185,13 @@
     const sess2E  = easeOutBack(reveal(s.sess2));
     const footerE = easeOutCubic(reveal(s.footer));
 
-    const outroT = clamp((t - 3.55) / (DURATION - 3.55), 0, 1);
+    const outroT = clamp((t - 4.55) / (DURATION - 4.55), 0, 1);
     const outroY = -easeInOutCubic(outroT) * 10;
     const outroFade = 1 - outroT * 0.25;
 
     const cardW = 460;
     const cx = W / 2;
-    const topY = 340;          // карточка по вертикали ближе к центру стейджа
+    const topY = 180;          // карточка занимает верх стейджа, wordmark/loading — под ней
     const cardSlideY = (1 - cardE) * 80;
 
     // Паттерн «6 свободно, без 2 крайних» из парсера sports_pool:
@@ -408,28 +408,31 @@
   }
 
   // ── Wordmark «Расписание» ──────────────────────────────────────
+  // Появляется ПОД карточкой, после того как footer карточки уже на месте.
   function Wordmark({ t, pal }) {
-    const titleStart = 2.05, titleDur = 0.7;
+    const titleStart = 3.00, titleDur = 0.7;
     const titleT = clamp((t - titleStart) / titleDur, 0, 1);
     const titleEased = easeOutCubic(titleT);
 
-    const accentStart = 2.4;
+    const accentStart = 3.35;
     const accentT = clamp((t - accentStart) / 0.5, 0, 1);
 
-    const tagStart = 2.65, tagDur = 0.6;
+    const tagStart = 3.55, tagDur = 0.6;
     const tagT = clamp((t - tagStart) / tagDur, 0, 1);
     const tagEased = easeOutCubic(tagT);
 
     const title = 'Расписание';
     const letterStagger = 0.05;
-    const cy = H * 0.46;
+    // Хардкод y: чтобы лежал под карточкой (которая занимает y=180..~530).
+    const titleY = 600;
+    const tagY = 692;
 
     return (
       <>
         <div style={{
           position: 'absolute',
           left: 0, right: 0,
-          top: cy + 150,
+          top: titleY,
           textAlign: 'center',
           fontFamily: 'Newsreader, Georgia, serif',
           fontWeight: 500,
@@ -465,7 +468,7 @@
         <div style={{
           position: 'absolute',
           left: 0, right: 0,
-          top: cy + 232,
+          top: tagY,
           textAlign: 'center',
           fontFamily: 'Inter, system-ui, sans-serif',
           fontSize: 12,
@@ -504,10 +507,12 @@
 
   // ── Loading hint снизу ─────────────────────────────────────────
   function LoadingHint({ t, pal }) {
-    const start = 2.8, dur = 1.1;
+    // Сдвинут вслед за wordmark'ом: появляется после tag'а, заполняется
+    // к концу DURATION (5.0s), коротко фейдится перед уходом overlay'я.
+    const start = 3.70, dur = 1.10;
     const localT = clamp((t - start) / dur, 0, 1);
     const eased = easeInOutCubic(localT);
-    const opacity = clamp((t - start) / 0.4, 0, 1) * (1 - clamp((t - 3.85) / 0.15, 0, 1));
+    const opacity = clamp((t - start) / 0.4, 0, 1) * (1 - clamp((t - 4.85) / 0.15, 0, 1));
 
     return (
       <div style={{
@@ -626,6 +631,8 @@
         >
           <Background t={t} pal={pal}/>
           <PoolCard t={t} pal={pal}/>
+          <Wordmark t={t} pal={pal}/>
+          <LoadingHint t={t} pal={pal}/>
         </div>
       </div>
     );
