@@ -935,12 +935,6 @@ function FacilityCard({ facilityId, shifts, today, date, nowMins, idx, onPushEdi
               : facOk ? 'нет на сайте'
               : 'по графику'}
           </span>
-          <button type="button" className="fc-sched-hint" onClick={openEditor}
-                  title="Редактировать смену">
-            <span className="material-symbols-outlined">edit_calendar</span>
-            <em>график</em>
-            {schedHint}
-          </button>
         </span>
         <span className="fc-total">
           {closed ? '— не отработано' : window.Data.formatDuration(totalMin)}
@@ -1123,7 +1117,7 @@ function SessionRow({ session, facilityId, nowMins, onToday, onLaneClick }) {
   return (
     <div className={'fc-sess' + (isNow ? ' is-now' : '') + (isPast ? ' is-past' : '')}
          title={session.activity || undefined}>
-      <span className="fc-tm">{session.start} — {session.end}</span>
+      <span className="fc-tm">{session.start}–{session.end}</span>
       {ind && (
         <span className="fc-ind">
           <SessionIndicator ind={ind} onLaneClick={handleLane}/>
@@ -1182,7 +1176,6 @@ function SessionIndicator({ ind, onLaneClick }) {
       <span className={'fc-lanes' + (allFree ? ' is-full' : '')}
             title={`${free} свободно из ${total}`}>
         <span className="lanes-row">{tiles}</span>
-        <span className="count">{free}/{total}</span>
       </span>
     );
   }

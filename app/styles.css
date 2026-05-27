@@ -1519,62 +1519,80 @@ html.light .add-shift-link:hover .plus { color: #fffaf3; }
    ────────────────────────────────────────────────────────────────── */
 .changes-screen .hero-title { font-size: 36px; }
 
-.affected { padding: 0 24px 4px; }
+.affected { padding: 0 24px 4px; display: flex; flex-direction: column; gap: 10px; }
 .aff-card {
-  display: grid;
-  grid-template-columns: 70px 1fr;
-  gap: 14px;
-  background: linear-gradient(180deg, var(--accent-soft) 0%, var(--bg-elevated) 70%);
-  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  border: 1px solid var(--hairline-strong);
   border-radius: 16px;
-  padding: 14px;
-  box-shadow: inset 3px 0 0 0 var(--accent);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
-.aff-card .time { padding-top: 1px; }
-.aff-card .time .from {
+.aff-card .aff-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+.aff-card .aff-place {
+  margin: 0;
   font-family: "Newsreader", Georgia, serif;
   font-weight: 500;
-  font-size: 20px;
-  color: var(--accent);
-  letter-spacing: -0.02em;
-  line-height: 1;
-  display: block;
-  font-variant-numeric: tabular-nums;
-}
-.aff-card .time .to {
-  font-size: 12px; color: var(--text-subtle);
-  margin-top: 5px; display: block;
-  font-variant-numeric: tabular-nums;
-}
-.aff-card .body { min-width: 0; }
-.aff-card .place {
-  font-family: "Newsreader", Georgia, serif;
-  font-weight: 500;
-  font-size: 17px;
+  font-size: 18px;
   color: var(--text-strong);
   letter-spacing: -0.01em;
-  line-height: 1.2;
-  margin: 0 0 4px;
+  line-height: 1.15;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.aff-card .when {
-  font-size: 11px;
-  color: var(--text-muted);
-  letter-spacing: 0.04em;
+.aff-card .aff-meta {
+  flex-shrink: 0;
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  margin: 0 0 10px;
+  font-weight: 600;
+  color: var(--text-subtle);
 }
-.aff-card .conflict {
-  margin-top: 8px;
-  padding-top: 10px;
-  border-top: 1px dashed var(--border);
+.aff-card .aff-time-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.aff-card .aff-time {
+  font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  font-size: 17px;
+  font-weight: 500;
+  color: var(--accent);
+  letter-spacing: 0.01em;
+  font-variant-numeric: tabular-nums;
+}
+.aff-card .aff-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  border: 1px solid var(--border);
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.aff-card .aff-conflict {
+  margin: 0;
   font-family: "Newsreader", Georgia, serif;
   font-style: italic;
   font-size: 13.5px;
-  color: var(--text);
+  color: var(--text-muted);
   line-height: 1.45;
-  margin-bottom: 0;
 }
-.aff-card .conflict-glyph {
+.aff-card .aff-arrow {
   color: var(--accent);
   font-style: normal;
   margin-right: 6px;
@@ -3231,8 +3249,7 @@ html.light .about-sheet {
   grid-template-columns: 1fr auto;
   gap: 12px;
   align-items: center;
-  /* Подняли вертикальный padding под крупный .fc-lanes (30px polosa) */
-  padding: 16px 0;
+  padding: 12px 0;
   font-size: 13px;
 }
 .fc-card .fc-sess + .fc-sess { border-top: 1px solid var(--hairline); }
@@ -3248,6 +3265,7 @@ html.light .about-sheet {
   align-items: center;
   gap: 8px;
   flex-shrink: 0;
+  white-space: nowrap;
 }
 .fc-card .fc-sess .fc-tm::before {
   content: '';
@@ -3493,16 +3511,14 @@ html.light .about-sheet {
    дорожка (можно занять для свободного плавания), muted = ЗАНЯТАЯ
    (тренировкой/закрытая). Позиционно: для «кроме крайних» крайние
    muted, средние bright. */
-/* .fc-lanes — индикатор дорожек на карточке в стиле LaneDetailSheet.
-   Сетка из крупных плиток с номерами дорожек: свободная — серая, занятая
-   — оранжевый --lane-occ. Place: .fc-sess это grid 1fr auto, time моно-
-   ширинный фиксированной длины, справа от него — этот блок. */
+/* .fc-lanes — компактный индикатор дорожек на карточке в стиле LaneDetailSheet.
+   Пилюля из плиток без счётчика: свободная — серая, занятая — оранжевый
+   --lane-occ. Полная развёртка с номерами и счётчиком — в .ln-vis. */
 .fc-lanes {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  border-radius: 14px;
+  padding: 5px 6px;
+  border-radius: 10px;
   background: var(--bg-sunken);
   border: 1px solid var(--hairline);
   transition: border-color 160ms ease, background 160ms ease, box-shadow 200ms ease;
@@ -3511,20 +3527,18 @@ html.light .about-sheet {
   border-color: var(--border);
   box-shadow: 0 6px 18px -10px rgba(0, 0, 0, 0.4);
 }
-/* Контейнер 10 плиток-дорожек — flex с фиксированной шириной плитки.
-   Grid с 1fr из-за inline-flex родителя коллапсировал плитки в 0px. */
 .fc-lanes .lanes-row {
   display: flex;
-  gap: 3px;
+  gap: 2px;
   flex-shrink: 0;
 }
 .fc-lanes .l {
   appearance: none;
   border: 0;
-  padding: 0;
-  width: 11px;
-  height: 32px;
-  border-radius: 4px;
+  padding: 0 0 2px;
+  width: 14px;
+  height: 26px;
+  border-radius: 3px;
   background: var(--lane-empty);
   display: flex; align-items: flex-end; justify-content: center;
   cursor: pointer;
@@ -3539,39 +3553,17 @@ html.light .about-sheet {
   outline: 1.5px solid var(--accent);
   outline-offset: 2px;
 }
-/* Номер плитки оставляем в DOM (для скринридеров), визуально скрываем —
-   при 10 плитках на ~200px ширина каждой ~14px, цифра нечитаема. Полная
-   нумерация показывается в LaneDetailSheet (.ln-vis), где плитки крупнее. */
 .fc-lanes .l .num {
-  position: absolute;
-  width: 1px; height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
-/* :where() — обнуляет специфичность темы, чтобы базовое .l.occ
-   (написанное ниже) перебило light-вариант без !important. Иначе
-   `html.light .fc-lanes .l` = (0,3,2) тяжелее, чем `.fc-lanes .l.occ`
-   = (0,2,1), и занятая дорожка остаётся серой в светлой теме. */
-/* Занятая дорожка — единый яркий orange в обеих темах. */
-.fc-lanes .l.occ { background: var(--lane-occ); }
-.fc-lanes .l.occ:hover { background: var(--lane-occ); filter: brightness(1.06); }
-/* Счётчик справа: «6 / 10» с моноширинным шрифтом. */
-.fc-lanes .count {
   font-family: "JetBrains Mono", ui-monospace, Menlo, monospace;
-  font-size: 12px;
-  color: var(--text-muted);
+  font-size: 8px;
   font-weight: 500;
-  padding-left: 8px;
-  border-left: 1px solid var(--hairline);
+  color: var(--text-subtle);
   letter-spacing: 0.02em;
-  white-space: nowrap;
-  align-self: stretch;
-  display: flex; align-items: center;
+  line-height: 1;
 }
-.fc-lanes.is-full .count { color: var(--fac-color); }
-.fc-card.is-fac-sports_pool .fc-lanes.is-full .count { color: var(--lane-occ); }
+.fc-lanes .l.occ { background: var(--lane-occ); }
+.fc-lanes .l.occ .num { color: rgba(255, 255, 255, 0.72); }
+.fc-lanes .l.occ:hover { background: var(--lane-occ); filter: brightness(1.06); }
 
 
 /* ──────────────────────────────────────────────────────────────────

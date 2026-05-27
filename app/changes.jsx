@@ -260,18 +260,18 @@ function AffectedCard({ shift, event }) {
   const kindWord = event.kind === 'add' ? 'добавлен' : event.kind === 'rem' ? 'снят' : 'перенесён';
   return (
     <article className="aff-card">
-      <div className="time">
-        <span className="from">{shift.start}</span>
-        <span className="to">— {shift.end}</span>
+      <header className="aff-head">
+        <p className="aff-place">{fac?.name}</p>
+        <span className="aff-meta">{window.Data.formatDayHeading(shift.date)}</span>
+      </header>
+      <div className="aff-time-row">
+        <span className="aff-time">{shift.start}–{shift.end}</span>
+        <span className="aff-chip">ваша смена</span>
       </div>
-      <div className="body">
-        <p className="place">{fac?.name}</p>
-        <p className="when">{window.Data.formatDayHeading(shift.date)} · по сайту</p>
-        <p className="conflict">
-          <span className="conflict-glyph">↳</span>
-          сеанс «{event.activity || 'без названия'}» {kindWord} в {event.start}&nbsp;— {event.end}.
-        </p>
-      </div>
+      <p className="aff-conflict">
+        <span className="aff-arrow">↳</span>
+        сеанс «{event.activity || 'без названия'}» {kindWord} в {event.start}–{event.end}.
+      </p>
     </article>
   );
 }
