@@ -3238,6 +3238,31 @@ html.light .about-sheet {
 }
 .fc-card .fc-range .arr { color: var(--text-subtle); }
 
+/* «С кем работаю» — минималистичная строка: «с X · Y · Z». Без чипов,
+   без аватаров, никакой подсветки фоном. Italic Newsreader в --text-muted,
+   слово «с» — kicker послабее. */
+.fc-card .fc-with {
+  margin: 2px 0 8px;
+  position: relative; z-index: 1;
+  font-family: "Newsreader", Georgia, serif;
+  font-style: italic;
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+.fc-card .fc-with-kicker {
+  color: var(--text-subtle);
+  margin-right: 6px;
+}
+.fc-card .fc-with-name {
+  color: var(--text-muted);
+}
+.fc-card .fc-with-sep {
+  color: var(--text-subtle);
+  margin: 0 6px;
+  font-style: normal;
+}
+
 /* Sessions list */
 .fc-card .fc-sess-list {
   display: flex;

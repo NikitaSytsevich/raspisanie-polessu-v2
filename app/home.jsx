@@ -770,10 +770,15 @@ function FacilityList({ shifts, today, date, nowMins, onPushEditor }) {
 function FacilityCard({ facilityId, shifts, today, date, nowMins, idx, onPushEditor }) {
   const fac = window.Data.getFacility(facilityId);
   const cached = window.Data.getCachedFacility(facilityId);
-  const siteSessions = _hm(
-    () => window.Data.getSiteSessionsForDay(facilityId, date),
-    [facilityId, date]
-  );
+  // Малый бассейн: на сайте смешаны «сеанс/родительский сеанс», «платные
+  // занятия», «обучение плаванию». В карточку забираем ТОЛЬКО первый
+  // тип — инструктор работает только с сеансами; платные и обучение
+  // ведёт другой персонал и в эту смену не считается.
+  const siteSessions = _hm(() => {
+    const raw = window.Data.getSiteSessionsForDay(facilityId, date);
+    if (facilityId !== 'small_pool') return raw;
+    return raw.filter(s => /сеанс/i.test(s.activity || ''));
+  }, [facilityId, date]);
 
   // Состояние объекта на эту дату
   let closed = false;
@@ -867,6 +872,16 @@ function FacilityCard({ facilityId, shifts, today, date, nowMins, idx, onPushEdi
     setLaneSheet({ session, laneIdx, indicator });
   };
 
+  // Уникальные инструкторы по всем сменам в карточке (порядок — как
+  // встретили в shifts.flatMap, без дублей). Раскрываем в Data.getInstructor
+  // на месте рендера, чтобы реагировать на обновления каталога.
+  const instructorIds = Array.from(new Set(
+    shifts.flatMap(s => Array.isArray(s.instructors) ? s.instructors : [])
+  ));
+  const instructors = instructorIds
+    .map(id => window.Data.getInstructor(id))
+    .filter(Boolean);
+
   const cls = ['fc-card', `is-fac-${facilityId}`, `idx-${idx}`,
                closed ? 'is-closed' : ''].filter(Boolean).join(' ');
 
@@ -901,6 +916,18 @@ function FacilityCard({ facilityId, shifts, today, date, nowMins, idx, onPushEdi
             <span className="arr">→</span>
             <span className="big">{window.Data.minutesToHHMM(winEnd)}</span>
           </div>
+
+          {instructors.length > 0 && (
+            <p className="fc-with" aria-label="С кем работаю">
+              <span className="fc-with-kicker">с</span>
+              {instructors.map((inst, i) => (
+                <span key={inst.id} className="fc-with-name">
+                  {i > 0 && <span className="fc-with-sep">·</span>}
+                  {inst.name}
+                </span>
+              ))}
+            </p>
+          )}
 
           {overlapSessions.length ? (
             <div className="fc-sess-list">
@@ -1110,7 +1137,12 @@ function SessionRow({ session, facilityId, nowMins, onToday, onLaneClick }) {
   const end = window.Data.toMinutes(session.end);
   const isNow = onToday && start <= nowMins && end > nowMins;
   const isPast = onToday && end <= nowMins;
-  const ind = window.Data.inferSessionIndicator(facilityId, session.activity);
+  // На малом бассейне все сессии — один и тот же тип («сеанс/родительский
+  // сеанс», см. фильтр в FacilityCard). Чип «группа» справа — шум, его
+  // не рисуем.
+  const ind = facilityId === 'small_pool'
+    ? null
+    : window.Data.inferSessionIndicator(facilityId, session.activity);
   // Дорожки кликабельны: тап по любой полоске → LaneDetailSheet про
   // конкретную дорожку. Прокидываем сессию + indicator для контекста.
   const handleLane = (laneIdx) => onLaneClick?.(session, laneIdx, ind);
