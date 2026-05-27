@@ -5,7 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="theme-color" content="#181513" />
+  <!-- iOS standalone PWA красит зону home-indicator цветом theme-color.
+       Два media-attr varianta для системной светлой/тёмной темы; JS в
+       main.jsx ещё и динамически переустанавливает content под выбранную
+       пользователем тему. -->
+  <meta name="theme-color" content="#181513" media="(prefers-color-scheme: dark)" />
+  <meta name="theme-color" content="#f5f1eb" media="(prefers-color-scheme: light)" />
   <title>Расписание</title>
 
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />

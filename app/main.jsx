@@ -19,8 +19,13 @@ function App() {
     setIntroDone(true);
   }
 
-  // Resolve "system" theme to dark/light
+  // Resolve "system" theme to dark/light + sync iOS home-indicator color.
+  // На iOS standalone PWA <meta name="theme-color"> определяет, чем красится
+  // зона home-bar внизу. Если оставить статический dark, в светлой теме
+  // под home-bar видна тёмная непрозрачная полоса. Поэтому при каждом
+  // переключении темы переписываем content всех theme-color мета-тегов.
   _me(() => {
+    const THEME_BG = { dark: '#181513', light: '#f5f1eb' };
     const apply = () => {
       let theme = settings.theme;
       if (theme === 'system') {
@@ -28,6 +33,9 @@ function App() {
       }
       document.documentElement.classList.remove('dark', 'light');
       document.documentElement.classList.add(theme);
+      const bg = THEME_BG[theme] || THEME_BG.dark;
+      document.querySelectorAll('meta[name="theme-color"]')
+        .forEach(m => m.setAttribute('content', bg));
     };
     apply();
     if (settings.theme === 'system') {
