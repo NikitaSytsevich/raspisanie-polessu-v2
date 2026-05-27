@@ -18,7 +18,7 @@
   // ── Геометрия / тайминги ───────────────────────────────────────
   const W = 540;
   const H = 1170;
-  const DURATION = 5.0;        // длительность анимации (с)
+  const DURATION = 3.0;        // длительность анимации (с) — всё параллельно
   const FADE_OUT_MS = 280;     // CSS fade overlay перед unmount
 
   // ── Палитра в зависимости от темы ──────────────────────────────
@@ -165,14 +165,14 @@
   // pal.POOL для tint, pal.LANE_OCC (orange) для занятых дорожек.
   function PoolCard({ t, pal }) {
     const s = {
-      cardIn:  { at: 0.10, dur: 0.70 },
-      title:   { at: 0.60, dur: 0.45 },
-      range:   { at: 0.85, dur: 0.40 },
-      inst:    { at: 1.10, dur: 0.32 },
-      sess1:   { at: 1.32, dur: 0.36 },
-      sess2:   { at: 1.65, dur: 0.36 },
-      lanes:   { at: 1.95, dur: 0.95 },
-      footer:  { at: 2.70, dur: 0.45 },
+      cardIn:  { at: 0.10, dur: 0.55 },
+      title:   { at: 0.30, dur: 0.40 },
+      range:   { at: 0.45, dur: 0.40 },
+      inst:    { at: 0.65, dur: 0.32 },
+      sess1:   { at: 0.80, dur: 0.36 },
+      sess2:   { at: 1.05, dur: 0.36 },
+      lanes:   { at: 1.30, dur: 0.85 },
+      footer:  { at: 1.95, dur: 0.40 },
     };
     const reveal = (st) => clamp((t - st.at) / st.dur, 0, 1);
 
@@ -185,13 +185,13 @@
     const sess2E  = easeOutBack(reveal(s.sess2));
     const footerE = easeOutCubic(reveal(s.footer));
 
-    const outroT = clamp((t - 4.55) / (DURATION - 4.55), 0, 1);
+    const outroT = clamp((t - 2.55) / (DURATION - 2.55), 0, 1);
     const outroY = -easeInOutCubic(outroT) * 10;
     const outroFade = 1 - outroT * 0.25;
 
     const cardW = 460;
     const cx = W / 2;
-    const topY = 180;          // карточка занимает верх стейджа, wordmark/loading — под ней
+    const topY = 380;          // карточка по центру; wordmark сверху, loading снизу
     const cardSlideY = (1 - cardE) * 80;
 
     // Паттерн «6 свободно, без 2 крайних» из парсера sports_pool:
@@ -408,24 +408,24 @@
   }
 
   // ── Wordmark «Расписание» ──────────────────────────────────────
-  // Появляется ПОД карточкой, после того как footer карточки уже на месте.
+  // Появляется НАД карточкой, проигрывается параллельно с её reveal'ом.
   function Wordmark({ t, pal }) {
-    const titleStart = 3.00, titleDur = 0.7;
+    const titleStart = 0.10, titleDur = 0.55;
     const titleT = clamp((t - titleStart) / titleDur, 0, 1);
     const titleEased = easeOutCubic(titleT);
 
-    const accentStart = 3.35;
-    const accentT = clamp((t - accentStart) / 0.5, 0, 1);
+    const accentStart = 0.45;
+    const accentT = clamp((t - accentStart) / 0.45, 0, 1);
 
-    const tagStart = 3.55, tagDur = 0.6;
+    const tagStart = 0.55, tagDur = 0.50;
     const tagT = clamp((t - tagStart) / tagDur, 0, 1);
     const tagEased = easeOutCubic(tagT);
 
     const title = 'Расписание';
-    const letterStagger = 0.05;
-    // Хардкод y: чтобы лежал под карточкой (которая занимает y=180..~530).
-    const titleY = 600;
-    const tagY = 692;
+    const letterStagger = 0.035;
+    // Wordmark в верхней половине, над карточкой (карточка start y=380).
+    const titleY = 220;
+    const tagY = 312;
 
     return (
       <>
@@ -507,12 +507,12 @@
 
   // ── Loading hint снизу ─────────────────────────────────────────
   function LoadingHint({ t, pal }) {
-    // Сдвинут вслед за wordmark'ом: появляется после tag'а, заполняется
-    // к концу DURATION (5.0s), коротко фейдится перед уходом overlay'я.
-    const start = 3.70, dur = 1.10;
+    // Параллельно с wordmark и карточкой: появляется в начале, прогресс-бар
+    // наполняется к концу DURATION (3.0s), коротко фейдится перед уходом.
+    const start = 0.40, dur = 2.00;
     const localT = clamp((t - start) / dur, 0, 1);
     const eased = easeInOutCubic(localT);
-    const opacity = clamp((t - start) / 0.4, 0, 1) * (1 - clamp((t - 4.85) / 0.15, 0, 1));
+    const opacity = clamp((t - start) / 0.4, 0, 1) * (1 - clamp((t - 2.85) / 0.15, 0, 1));
 
     return (
       <div style={{
