@@ -128,11 +128,12 @@ html { height: 100%; }
 body {
   font-family: "Inter", system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
-  min-height: 100dvh;
-  /* На iOS-PWA 100dvh иногда не включает зону под home-indicator —
-     -webkit-fill-available гарантирует, что body растягивается на весь
-     экран, включая safe-area-inset-bottom. */
-  min-height: -webkit-fill-available;
+  /* В iOS standalone PWA 100dvh на cold-start даёт wrong value (баг
+     известен, фиксится только после rotate-в-rotate). 100vh в PWA-режиме
+     равен реальному viewport (нет адресной строки, чтобы создавать
+     classic 100vh discrepancy), поэтому это самое надёжное значение
+     именно для standalone. */
+  min-height: 100vh;
   overflow: hidden;
   background: var(--bg);
   display: flex;
@@ -169,12 +170,13 @@ body::after {
 #app-root {
   width: 100%;
   max-width: 520px;
-  /* height: 100dvh — ОБЯЗАТЕЛЬНО explicit, иначе .router-stack/.screen
-     с height:100% превращаются в auto и контент схлопывается в пустой
-     экран (баг «после интро белый экран»). Если на iOS PWA dvh короче
-     реального вьюпорта, низ закрывают body::before (fixed, inset:0) +
-     body bg — цвет не разрывается. */
-  height: 100dvh;
+  /* 100vh, не 100dvh — в iOS PWA standalone dvh даёт wrong value на
+     cold-start (известный баг, исправляется только после rotate'a).
+     В PWA нет адресной строки, поэтому classic 100vh-проблема не
+     возникает: 100vh == полный viewport == надёжно. Должен быть
+     explicit, иначе дочерние height:100% превращаются в auto и контент
+     схлопывается. */
+  height: 100vh;
   position: relative;
   background: var(--bg);
 }
