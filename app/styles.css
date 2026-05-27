@@ -150,6 +150,21 @@ body::before {
   background: var(--bg);
   pointer-events: none;
 }
+/* iOS standalone-PWA bug: даже при правильных color-scheme/theme-color
+   зона safe-area-inset-bottom (home-indicator) иногда рисуется системным
+   тёмным/светлым тинтом мимо bg документа. Кладём СВЕРХУ фиксированную
+   полосу нашего цвета — iOS поверх неё рисует только сам индикатор-pill,
+   фон остаётся var(--bg). z-index выше любого роутер-экрана, но ниже
+   модалок (.ln-sheet, .about-sheet — z-index 200). */
+body::after {
+  content: '';
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  height: env(safe-area-inset-bottom, 0px);
+  background: var(--bg);
+  z-index: 50;
+  pointer-events: none;
+}
 
 #app-root {
   width: 100%;
