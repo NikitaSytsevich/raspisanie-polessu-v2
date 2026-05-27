@@ -6,11 +6,10 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <!-- iOS standalone PWA красит зону home-indicator цветом theme-color.
-       Два media-attr varianta для системной светлой/тёмной темы; JS в
-       main.jsx ещё и динамически переустанавливает content под выбранную
-       пользователем тему. -->
-  <meta name="theme-color" content="#181513" media="(prefers-color-scheme: dark)" />
-  <meta name="theme-color" content="#f5f1eb" media="(prefers-color-scheme: light)" />
+       Стартовое значение = #181513 (dark), но early-load <script> ниже
+       синхронно перепишет content до первого paint, исходя из сохранённой
+       пользовательской темы. Так safe-area сразу будет правильного цвета. -->
+  <meta name="theme-color" content="#181513" />
   <title>Расписание</title>
 
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
@@ -33,7 +32,11 @@
   <link rel="stylesheet" href="app/styles.min.css" />
 
   <script>
-    // Apply persisted theme as early as possible to avoid flash
+    // Apply persisted theme + sync iOS theme-color BEFORE first paint.
+    // На iOS standalone-PWA theme-color красит зону home-indicator и
+    // выставляется ОДИН РАЗ при первом paint — поздние обновления через
+    // JS из main.jsx после mount React'а не перерисовывают полосу.
+    // Поэтому правим content meta синхронно прямо в <head>.
     try {
       const settings = JSON.parse(localStorage.getItem('rpgu_settings_v1') || '{}');
       let theme = settings.theme || 'dark';
@@ -42,6 +45,9 @@
       }
       document.documentElement.classList.remove('dark', 'light');
       document.documentElement.classList.add(theme);
+      const bg = theme === 'light' ? '#f5f1eb' : '#181513';
+      document.querySelectorAll('meta[name="theme-color"]')
+        .forEach(m => m.setAttribute('content', bg));
     } catch {}
   </script>
 </head>
