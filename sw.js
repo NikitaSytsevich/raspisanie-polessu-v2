@@ -12,7 +12,7 @@
 //      инвалидируем явно — раз скачали, дальше офлайн).
 //   4. Прочее → network-only.
 
-const VERSION = 'v4-2026-05-27-theme-color-sync';
+const VERSION = 'v5-2026-05-27-html-network-first';
 const SHELL_CACHE = `rpgu-shell-${VERSION}`;
 const API_CACHE   = `rpgu-api-${VERSION}`;
 const FONT_CACHE  = `rpgu-fonts-${VERSION}`;
@@ -97,12 +97,39 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 4. Прочие same-origin GET — cache-first с network fallback
+  // 4. HTML (навигация по '/' или /index.html) — network-FIRST.
+  // index.html содержит inline-скрипт, выставляющий theme-color по
+  // localStorage темы пользователя ДО первого paint. Если SW отдаёт
+  // устаревший index.html, в iOS PWA возвращается баг с непрозрачной
+  // полосой под home-indicator. Поэтому идём в сеть, а кэш — только
+  // офлайн-фолбэк.
+  const isNavigation = req.mode === 'navigate';
+  const isHtmlPath = url.origin === self.location.origin
+    && (url.pathname === '/' || url.pathname === '/index.html');
+  if (isNavigation || isHtmlPath) {
+    event.respondWith(networkFirst(req, SHELL_CACHE));
+    return;
+  }
+
+  // 5. Прочие same-origin GET — cache-first с network fallback
   if (url.origin === self.location.origin) {
     event.respondWith(cacheFirst(req, SHELL_CACHE));
     return;
   }
 });
+
+async function networkFirst(req, cacheName) {
+  const cache = await caches.open(cacheName);
+  try {
+    // cache: 'reload' заставляет браузер бить мимо HTTP-кэша и идти в сеть.
+    const res = await fetch(req, { cache: 'reload' });
+    if (res && res.ok) cache.put(req, res.clone()).catch(() => {});
+    return res;
+  } catch {
+    const cached = await cache.match(req) || await cache.match('/index.html') || await cache.match('/');
+    return cached || new Response('Offline', { status: 504 });
+  }
+}
 
 async function swrFetch(req, cacheName) {
   const cache = await caches.open(cacheName);
@@ -122,8 +149,11 @@ async function cacheFirst(req, cacheName) {
   const cache = await caches.open(cacheName);
   const cached = await cache.match(req);
   if (cached) {
-    // Опционально освежим из сети «в фоне», не блокируя.
-    fetch(req).then((res) => {
+    // Освежаем из сети «в фоне» с cache:'reload', чтобы бить мимо
+    // HTTP-кэша браузера / устаревшего CDN-edge. Иначе background-fetch
+    // мог затащить в SHELL_CACHE stale-ответ, и баг возвращался «спустя
+    // время» после успешного фикса.
+    fetch(req, { cache: 'reload' }).then((res) => {
       if (res && res.ok) cache.put(req, res.clone()).catch(() => {});
     }).catch(() => {});
     return cached;
