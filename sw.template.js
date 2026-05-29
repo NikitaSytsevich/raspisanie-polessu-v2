@@ -1,42 +1,26 @@
-// sw.js — service worker для офлайна и SWR-кеша /api/schedule.
+// sw.template.js — ШАБЛОН service worker'а.
+//
+// Реальный sw.js генерируется из него scripts/build.js: подставляются
+// плейсхолдеры версии сборки и списка precache-ассетов (с хэшированными
+// именами). Правьте этот файл, а не сгенерированный sw.js.
 //
 // Стратегии:
-//   1. App-shell (HTML, bundle.js, CSS, иконки, шрифты, manifest)
-//      → cache-first. Precache на install для гарантированного
-//        старта офлайн. Кеш версионируется, старые версии чистим
-//        на activate.
-//   2. /api/schedule → stale-while-revalidate. Возвращаем последний
-//      кешированный ответ мгновенно, параллельно идём в сеть и
-//      обновляем кеш для следующего вызова.
-//   3. Внешние шрифты Google → cache-first с TTL по факту (не
-//      инвалидируем явно — раз скачали, дальше офлайн).
-//   4. Прочее → network-only.
+//   1. App-shell (HTML, bundle, CSS, React-vendor, иконки, manifest)
+//      → precache на install. Хэшированные /app/* — cache-first БЕЗ
+//        фоновой ревалидации (имена immutable, содержимое не меняется).
+//   2. /api/schedule → stale-while-revalidate.
+//   3. Внешние шрифты Google → cache-first с фоновым обновлением.
+//   4. HTML (навигация) → network-first (нужен свежий inline theme-color
+//      для iOS PWA), кэш — офлайн-фолбэк.
+//   5. Прочее same-origin → cache-first.
 
-const VERSION = 'v8-2026-05-27-100vh';
+const VERSION = '__VERSION__';
 const SHELL_CACHE = `rpgu-shell-${VERSION}`;
 const API_CACHE   = `rpgu-api-${VERSION}`;
 const FONT_CACHE  = `rpgu-fonts-${VERSION}`;
-const CDN_CACHE   = `rpgu-cdn-${VERSION}`;
 
-const SHELL_ASSETS = [
-  '/',
-  '/index.html',
-  '/app/bundle.js',
-  '/app/styles.min.css',
-  '/manifest.webmanifest',
-  '/icon-192.png',
-  '/icon-512.png',
-  '/apple-touch-icon.png',
-  '/favicon-32.png',
-];
-
-// React UMD грузится с unpkg в index.html. Раньше SW его не кешировал —
-// первый офлайн-старт после deploy ронял приложение. Прекеш на install
-// + cache-first в fetch-handler фиксит это.
-const CDN_ASSETS = [
-  'https://unpkg.com/react@18.3.1/umd/react.production.min.js',
-  'https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js',
-];
+// Список генерируется сборкой и включает хэшированные bundle/styles/react.
+const SHELL_ASSETS = __PRECACHE_ASSETS__;
 
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
@@ -50,14 +34,6 @@ self.addEventListener('install', (event) => {
         if (res.ok) await shell.put(url, res);
       } catch {}
     }));
-    // CDN-ассеты в отдельный кеш с opaque-fallback (cross-origin без CORS).
-    const cdn = await caches.open(CDN_CACHE);
-    await Promise.all(CDN_ASSETS.map(async (url) => {
-      try {
-        const res = await fetch(url, { cache: 'reload', mode: 'no-cors' });
-        await cdn.put(url, res);
-      } catch {}
-    }));
     self.skipWaiting();
   })());
 });
@@ -66,7 +42,7 @@ self.addEventListener('activate', (event) => {
   event.waitUntil((async () => {
     const names = await caches.keys();
     await Promise.all(names.map(n => {
-      if (n !== SHELL_CACHE && n !== API_CACHE && n !== FONT_CACHE && n !== CDN_CACHE) {
+      if (n !== SHELL_CACHE && n !== API_CACHE && n !== FONT_CACHE) {
         return caches.delete(n);
       }
     }));
@@ -85,19 +61,13 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 2. Google fonts — cache-first
+  // 2. Google fonts — cache-first (с фоновым обновлением)
   if (url.host === 'fonts.googleapis.com' || url.host === 'fonts.gstatic.com') {
     event.respondWith(cacheFirst(req, FONT_CACHE));
     return;
   }
 
-  // 3. unpkg — React UMD, cache-first (с opaque-ответом тоже работает).
-  if (url.host === 'unpkg.com') {
-    event.respondWith(cacheFirst(req, CDN_CACHE));
-    return;
-  }
-
-  // 4. HTML (навигация по '/' или /index.html) — network-FIRST.
+  // 3. HTML (навигация по '/' или /index.html) — network-FIRST.
   // index.html содержит inline-скрипт, выставляющий theme-color по
   // localStorage темы пользователя ДО первого paint. Если SW отдаёт
   // устаревший index.html, в iOS PWA возвращается баг с непрозрачной
@@ -111,7 +81,15 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 5. Прочие same-origin GET — cache-first с network fallback
+  // 4. Хэшированные ассеты /app/* — cache-first БЕЗ ревалидации.
+  // Имена содержат content-hash → содержимое неизменно. Нет смысла
+  // ходить в сеть в фоне (это раньше жгло трафик на каждый hit).
+  if (url.origin === self.location.origin && url.pathname.startsWith('/app/')) {
+    event.respondWith(cacheFirstImmutable(req, SHELL_CACHE));
+    return;
+  }
+
+  // 5. Прочие same-origin GET — cache-first с фоновым обновлением.
   if (url.origin === self.location.origin) {
     event.respondWith(cacheFirst(req, SHELL_CACHE));
     return;
@@ -145,14 +123,28 @@ async function swrFetch(req, cacheName) {
   );
 }
 
+// Immutable-ассеты: вернуть из кэша без фонового запроса. В кэше нет —
+// тащим из сети и кладём.
+async function cacheFirstImmutable(req, cacheName) {
+  const cache = await caches.open(cacheName);
+  const cached = await cache.match(req);
+  if (cached) return cached;
+  try {
+    const res = await fetch(req);
+    if (res && res.ok) cache.put(req, res.clone()).catch(() => {});
+    return res;
+  } catch {
+    const offline = await cache.match('/index.html');
+    return offline || new Response('Offline', { status: 504 });
+  }
+}
+
 async function cacheFirst(req, cacheName) {
   const cache = await caches.open(cacheName);
   const cached = await cache.match(req);
   if (cached) {
     // Освежаем из сети «в фоне» с cache:'reload', чтобы бить мимо
-    // HTTP-кэша браузера / устаревшего CDN-edge. Иначе background-fetch
-    // мог затащить в SHELL_CACHE stale-ответ, и баг возвращался «спустя
-    // время» после успешного фикса.
+    // HTTP-кэша браузера / устаревшего CDN-edge.
     fetch(req, { cache: 'reload' }).then((res) => {
       if (res && res.ok) cache.put(req, res.clone()).catch(() => {});
     }).catch(() => {});

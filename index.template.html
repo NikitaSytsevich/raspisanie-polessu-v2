@@ -1,4 +1,10 @@
 <!DOCTYPE html>
+<!--
+  ВНИМАНИЕ: это ШАБЛОН. Реальный index.html генерируется из него скриптом
+  scripts/build.js — он подставляет хэшированные имена ассетов (bundle, CSS,
+  React) вместо плейсхолдеров. Правьте этот файл, а не сгенерированный
+  index.html (он в .gitignore).
+-->
 <html lang="ru" class="dark">
 <head>
   <meta charset="utf-8" />
@@ -18,18 +24,27 @@
   <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
   <link rel="manifest" href="/manifest.webmanifest" />
 
+  <!-- Ранний старт критичных загрузок: React и бандл лежат на своём origin
+       (self-host, не unpkg), поэтому их можно начать качать сразу из <head>,
+       параллельно с парсингом, а не в конце <body>. -->
+  <link rel="preload" as="script" href="__REACT_JS__" />
+  <link rel="preload" as="script" href="__REACT_DOM_JS__" />
+  <link rel="preload" as="script" href="__BUNDLE_JS__" />
+
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link
     href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400;1,6..72,500&family=Inter:wght@400;500;600;700&display=swap"
     rel="stylesheet"
   />
+  <!-- Material Symbols: display=swap, чтобы иконки не «висели» невидимыми
+       до 3 с пока грузится icon-шрифт (раньше было display=block). -->
   <link
-    href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,200,0,0&display=block"
+    href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,200,0,0&display=swap"
     rel="stylesheet"
   />
 
-  <link rel="stylesheet" href="app/styles.min.css" />
+  <link rel="stylesheet" href="__STYLES_CSS__" />
 
   <script>
     // Apply persisted theme + sync iOS theme-color BEFORE first paint.
@@ -49,19 +64,35 @@
       document.querySelectorAll('meta[name="theme-color"]')
         .forEach(m => m.setAttribute('content', bg));
     } catch {}
+
+    // Ранний prefetch расписания: запускаем /api/schedule ДО загрузки React и
+    // бандла, чтобы сетевой round-trip API перекрылся со скачиванием JS.
+    // Data.fetchSchedule() позже подхватит этот промис вместо нового fetch
+    // (см. app/data.jsx). Не стреляем, если в localStorage свежий (<5 мин) кэш —
+    // тогда fetchSchedule вернёт его без сети.
+    try {
+      const raw = localStorage.getItem('rpgu_cache_v1');
+      const c = raw ? JSON.parse(raw) : null;
+      const fresh = c && c.payload && (Date.now() - new Date(c.at).getTime() < 300000);
+      if (!fresh) {
+        window.__rpguSchedulePrefetch = fetch('/api/schedule', { headers: { Accept: 'application/json' } })
+          .then(r => (r.ok ? r.json() : null))
+          .catch(() => null);
+      }
+    } catch {}
   </script>
 </head>
 <body>
 
   <div id="app-root"></div>
 
-  <!-- React 18 production builds. JSX из app/*.jsx собирается в app/bundle.js
-       через esbuild (см. scripts/build.js). Никаких babel-standalone в проде. -->
-  <script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js" crossorigin="anonymous"></script>
-  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js" crossorigin="anonymous"></script>
-
-  <!-- Сборка приложения -->
-  <script src="/app/bundle.js" defer></script>
+  <!-- React 18 production (self-host из /app/vendor, не unpkg) + сборка приложения.
+       JSX из app/*.jsx собирается в bundle через esbuild (см. scripts/build.js).
+       Все три — defer: качаются параллельно (с preload выше — ещё раньше),
+       исполняются по порядку и не блокируют парсинг HTML. -->
+  <script defer src="__REACT_JS__"></script>
+  <script defer src="__REACT_DOM_JS__"></script>
+  <script defer src="__BUNDLE_JS__"></script>
 
   <!-- Регистрация service worker для offline и SWR кеширования /api/schedule -->
   <script>

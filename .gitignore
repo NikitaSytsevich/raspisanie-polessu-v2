@@ -8,6 +8,16 @@ node_modules/
 # Временные файлы разведки (на случай повторного скачивания)
 polessu_*.tmp.html
 
-# Сборка esbuild (генерируется npm run build)
+# Артефакты сборки (генерируются `npm run build` из *.template.* и исходников).
+# Исходники, которые НУЖНО коммитить: index.template.html, sw.template.js,
+# app/styles.css, app/*.jsx, app/vendor/react.js, app/vendor/react-dom.js.
+index.html
+sw.js
 app/bundle.js
 app/bundle.js.map
+app/bundle.*.js
+app/bundle.*.js.map
+app/styles.min.css
+app/styles.*.css
+app/vendor/react.*.js
+app/vendor/react-dom.*.js

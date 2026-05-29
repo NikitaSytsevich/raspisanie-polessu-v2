@@ -550,11 +550,25 @@ const Data = {
     const prevPayload = cached?.payload || null;
     let payload, isMock = false;
     try {
-      const r = await fetch('/api/schedule' + (force ? '?refresh=1' : ''), {
-        headers: { Accept: 'application/json' },
-      });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      payload = await r.json();
+      // Ранний prefetch из index.html (window.__rpguSchedulePrefetch) стартует
+      // /api/schedule ещё до загрузки React — перекрывает сетевой round-trip
+      // со скачиванием бандла. Подхватываем его вместо нового fetch (один раз,
+      // только для не-force запроса). force всегда идёт в сеть с ?refresh=1.
+      let pre = null;
+      if (!force && typeof window !== 'undefined' && window.__rpguSchedulePrefetch) {
+        pre = window.__rpguSchedulePrefetch;
+        window.__rpguSchedulePrefetch = null;
+      }
+      if (pre) {
+        payload = await pre;
+        if (!payload) throw new Error('prefetch failed');
+      } else {
+        const r = await fetch('/api/schedule' + (force ? '?refresh=1' : ''), {
+          headers: { Accept: 'application/json' },
+        });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        payload = await r.json();
+      }
     } catch (err) {
       // Фолбэк для статичного превью без бекенда
       payload = { ...MOCK_SCHEDULE, generatedAt: new Date().toISOString() };
