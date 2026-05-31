@@ -6,6 +6,21 @@
 // (shifts, site-changes history, settings) lives in localStorage.
 // ──────────────────────────────────────────────────────────────────
 
+// Чистая логика (diff, дорожки, время) вынесена в _logic.js — её
+// покрывают node-тесты (app/_logic.test.js). Здесь только обёртка стора:
+// localStorage, TZ, сетевой fetch. esbuild инлайнит require в бандл.
+const {
+  toMinutes,
+  minutesToHHMM,
+  formatDuration,
+  classifyBreak,
+  inferSessionIndicator,
+  buildTimelineForDate,
+  computeScheduleDiff,
+  eventOverlapsShift,
+  annotateAffectedShifts,
+} = require('./_logic.js');
+
 const STORAGE = {
   shifts: 'rpgu_shifts_v1',
   settings: 'rpgu_settings_v1',
@@ -112,204 +127,6 @@ function notifyAsync(eventName) {
   } catch {}
 }
 
-function classifyBreak(minutes, facilityId) {
-  if (facilityId === 'ice_arena' && minutes >= 20 && minutes <= 90) return 'заливка льда';
-  if (minutes >= 120) return 'перерыв';
-  if (minutes >= 45) return 'пауза';
-  return 'перерыв';
-}
-
-// ── Эвристика для end-indicator у сессии ────────────────────────
-// Парсер отдаёт только activity-строку; макет хочет «дорожки / группа /
-// зона / бескрайний». Цифры (3/10, 4 группы) парсером НЕ извлекаются —
-// если activity их содержит, достаём; иначе рендерим индикатор без числа.
-//
-// Возвращает: { type: 'lanes'|'lanes-free'|'group'|'zone'|null, ... }
-//   lanes      → { type:'lanes', count?: int, total?: int }   — большой бассейн
-//   lanes-free → { type:'lanes-free' }                         — «бескрайний»
-//   group      → { type:'group', label }                       — лёд/малый
-//   zone       → { type:'zone', label, icon }                  — гребная база
-//   null       → нет индикатора (fallback: пустая ячейка)
-function inferSessionIndicator(facilityId, activity) {
-  const a = String(activity || '').toLowerCase();
-  if (!a.trim() && !facilityId) return null;
-
-  // «бескрайний» / «без разделения» — приоритет, потому что «дорожки»
-  // ниже подхватили бы общий случай.
-  if (/бескрайн|без\s+раздел|свободн\w*\s+вод/.test(a)) {
-    return { type: 'lanes-free' };
-  }
-
-  // Большой бассейн: визуальные дорожки. Модель — какие дорожки СВОБОДНЫ
-  // (доступны посетителю) vs ЗАНЯТЫ (тренировкой/группой/закрыты).
-  //
-  // Семантика реальных активностей с polessu:
-  //   «N дорожек»                   — N свободных, остальные ?
-  //   «кроме крайних / без крайних» — 2 края закрыты
-  //   «кроме крайней / без крайней» — 1 край закрыт
-  //   «без N крайних»               — явное число краёв закрыто
-  //   «свободно N дорожек, без M крайних» — комбинация: N свободны в
-  //                                  середине, M краёв закрыты, total=N+M
-  //
-  // Возврат: { type:'lanes', occupied: int[], free: int, total }
-  //   occupied — индексы закрытых дорожек (для позиционного рендера)
-  //   free     — кол-во свободных
-  //   total    — переменный: 8 или 10 в зависимости от данных
-  //
-  // Морфология: корень /дорож/ (не /дорожк/) — иначе «дорожек» (после 5+
-  // с вставочным «е») не матчит.
-  if (facilityId === 'sports_pool' || /дорож/.test(a)) {
-    const baseTotal = 10;
-    // У большого бассейна total дорожек ФИКСИРОВАН — всегда 10. Сайт
-    // обычно пишет только «N свободно» и/или «без M крайних»; остаток
-    // (если меньше 10) — занят тренировкой. Раньше total собирался как
-    // freeCount+edgeOcc и в карточке появлялись «короткие» бассейны на
-    // 7-8 дорожек, которых физически не существует.
-    const isPool = facilityId === 'sports_pool';
-
-    // Парсим маркер крайних: «(без|кроме) [N] крайн…».
-    // ВАЖНО: \w в JS-regex не матчит кириллицу — поэтому захват формы
-    // через (\w*) не работает. Вместо этого проверяем плюрализм
-    // отдельным regex на исходной строке.
-    let edgeOcc = 0;
-    const edgeMatch = a.match(/(?:без|кроме)\s+(?:(\d+)\s+)?крайн/);
-    if (edgeMatch) {
-      if (edgeMatch[1]) {
-        edgeOcc = Number(edgeMatch[1]);
-      } else {
-        // Без явного числа: множественное → 2, единственное → 1.
-        // Плюрал: «крайних», «крайние», «крайними», «крайним».
-        // Сингуляр: «крайней», «крайнюю», «крайняя».
-        // ВАЖНО: без \b — в JS regex \b работает по ASCII, конец
-        // кириллического слова не считается word-boundary.
-        const isPlural = /крайн(?:их|ие|ими|им)/.test(a);
-        edgeOcc = isPlural ? 2 : 1;
-      }
-      edgeOcc = Math.min(edgeOcc, 2);
-    }
-
-    // Парсим количество свободных: «N дорожек/дорожки/дорожка»
-    let freeCount = null;
-    const mCount = a.match(/(\d+)\s*дорож/);
-    if (mCount) freeCount = Number(mCount[1]);
-
-    // Парсим явную фракцию «N/M» — переопределяет всё
-    const mFraction = a.match(/(\d+)\s*(?:\/|из)\s*(\d+)/);
-    if (mFraction) {
-      const free = Number(mFraction[1]);
-      const tot = Number(mFraction[2]);
-      if (free > 0 && tot > 0 && free <= tot) {
-        const total = isPool ? baseTotal : tot;
-        const cappedFree = Math.min(free, total);
-        return { type: 'lanes', occupied: buildLanes(total, cappedFree, 0), free: cappedFree, total };
-      }
-    }
-
-    // Раскладка дорожек.
-    // Нумерация: lane 0 — правый край (физически дорожка №1 в бассейне),
-    //            lane total-1 — левый край.
-    // UI рисует bars в reverse-order (n=total-1..0), визуально слева
-    // направо: lane 9, 8, ..., 1, 0.
-    //
-    // Логика заполнения с учётом «крайних»:
-    //   1) Если edgeOcc≥1 — занят lane 0 (правый край).
-    //   2) Если edgeOcc≥2 — также занят lane total-1 (левый край).
-    //   3) Оставшиеся занятые тянутся ОТ ЛЕВОГО края к центру
-    //      (lane total-1, total-2, …), пропуская уже занятый край.
-    //   4) Свободные остаются справа (малые номера) — визуально на экране
-    //      выглядит как «занятые слева, свободные справа».
-    //
-    // Так «6 свободно, без 2 крайних» даёт occupied={0, 7, 8, 9}
-    // (визуально: orange×3 | grey×6 | orange) — крайний правый + три
-    // занятых слева к центру + шесть свободных справа.
-    function buildLanes(total, free, edgeOcc) {
-      const occupied = new Set();
-      if (edgeOcc >= 1) occupied.add(0);
-      if (edgeOcc >= 2) occupied.add(total - 1);
-      const remainingOcc = Math.max(0, (total - free) - occupied.size);
-      let n = total - 1, placed = 0;
-      while (placed < remainingOcc && n >= 0) {
-        if (!occupied.has(n)) { occupied.add(n); placed++; }
-        n--;
-      }
-      return Array.from(occupied).sort((a, b) => a - b);
-    }
-
-    if (edgeOcc > 0 && freeCount && freeCount > 0) {
-      const total = isPool ? baseTotal : (freeCount + edgeOcc);
-      const cappedFree = Math.min(freeCount, total - edgeOcc);
-      return { type: 'lanes', occupied: buildLanes(total, cappedFree, edgeOcc), free: cappedFree, total };
-    }
-    if (edgeOcc > 0) {
-      const total = baseTotal;
-      const cappedFree = Math.max(0, total - edgeOcc);
-      return { type: 'lanes', occupied: buildLanes(total, cappedFree, edgeOcc), free: cappedFree, total };
-    }
-    if (freeCount && freeCount > 0) {
-      const total = isPool ? baseTotal : Math.max(freeCount, baseTotal);
-      const cappedFree = Math.min(freeCount, total);
-      return { type: 'lanes', occupied: buildLanes(total, cappedFree, 0), free: cappedFree, total };
-    }
-
-    // Просто «дорож» без числа — весь бассейн свободен
-    if (/дорож/.test(a)) {
-      return { type: 'lanes', occupied: [], free: baseTotal, total: baseTotal };
-    }
-    // Для большого бассейна: если на сайте нет НИКАКОГО ограничения
-    // (пустое описание / просто «Свободное плавание» / любой текст без
-    // явных маркеров «N дорожек», «N крайних», «бескрайн») — считаем,
-    // что весь бассейн свободен посетителю. Раньше тут возвращался null
-    // и индикатор не рисовался вовсе, хотя дефолт «всё открыто» — то,
-    // что на самом деле происходит на стороне бассейна.
-    if (isPool) {
-      return { type: 'lanes', occupied: [], free: baseTotal, total: baseTotal };
-    }
-  }
-
-  // Гребная база: тренажёрный / штанга / силовая.
-  if (facilityId === 'rowing_base' || /тренажёр|тренажер|штанг|силов/.test(a)) {
-    if (/штанг|силов/.test(a)) return { type: 'zone', label: 'штанга', icon: 'exercise' };
-    if (/тренажёр|тренажер/.test(a)) return { type: 'zone', label: 'тренажёрный', icon: 'fitness_center' };
-    if (facilityId === 'rowing_base') return { type: 'zone', label: 'зал', icon: 'fitness_center' };
-  }
-
-  // Лёд / малый бассейн: массовое / группы / дети / индивидуальное.
-  if (/индивидуальн/.test(a)) {
-    return { type: 'group', label: 'индивидуально', icon: 'person' };
-  }
-  if (/дет(и|ск)/.test(a)) {
-    return { type: 'group', label: 'дети', icon: 'child_care' };
-  }
-  if (/массов|катан/.test(a)) {
-    return { type: 'group', label: 'массовое', icon: 'groups' };
-  }
-  if (/групп/.test(a) || facilityId === 'ice_arena' || facilityId === 'small_pool') {
-    return { type: 'group', label: 'группа', icon: 'groups' };
-  }
-
-  return null;
-}
-
-function toMinutes(time) {
-  const [h, m] = String(time).split(':').map(Number);
-  return (h || 0) * 60 + (m || 0);
-}
-
-function formatDuration(mins) {
-  const h = Math.floor(mins / 60);
-  const m = mins % 60;
-  if (h && m) return `${h} ч ${String(m).padStart(2, '0')} м`;
-  if (h) return `${h} ч`;
-  return `${m} м`;
-}
-
-// 750 → "12:30"
-function minutesToHHMM(mins) {
-  const h = Math.floor(mins / 60);
-  const m = mins % 60;
-  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-}
-
 function formatRelativeMinutes(iso) {
   if (!iso) return '—';
   const t = new Date(iso).getTime();
@@ -336,109 +153,36 @@ function formatDayHeading(iso) {
   return `${RU_WEEKDAYS_SHORT[d.getDay()]}, ${d.getDate()} ${RU_MONTHS[d.getMonth()]}`;
 }
 
-function buildTimelineForDate(shifts, date) {
-  const list = shifts
-    .filter(s => s.date === date)
-    .sort((a, b) => toMinutes(a.start) - toMinutes(b.start));
-  const rows = [];
-  let prev = null;
-  for (const s of list) {
-    if (prev) {
-      const gap = toMinutes(s.start) - toMinutes(prev.end);
-      if (gap > 0) {
-        const crossFacility = prev.facilityId !== s.facilityId;
-        const label = crossFacility ? 'переход между объектами' : classifyBreak(gap, prev.facilityId);
-        rows.push({ kind: 'break', minutes: gap, label, crossFacility, from: prev.end, to: s.start, prevFacility: prev.facilityId, nextFacility: s.facilityId });
-      }
-    }
-    rows.push({ kind: 'shift', shift: s });
-    prev = s;
-  }
-  return rows;
-}
-
-// ── Schedule diff (client-side) ─────────────────────────────────
-// Сравнивает два снапшота /api/schedule по парам (facilityId, date)
-// и возвращает массив событий { kind: 'add'|'rem'|'mod', ... }.
-function indexSessionsByFacDate(payload) {
-  const map = new Map();
-  for (const fac of payload?.facilities || []) {
-    for (const s of fac.sessions || []) {
-      const key = `${fac.id}::${s.date}`;
-      if (!map.has(key)) map.set(key, []);
-      map.get(key).push(s);
-    }
-  }
-  return map;
-}
-
-function computeScheduleDiff(prev, next) {
-  const before = indexSessionsByFacDate(prev);
-  const after  = indexSessionsByFacDate(next);
-  const keys = new Set([...before.keys(), ...after.keys()]);
-  const events = [];
-  let eid = 1;
-  for (const key of keys) {
-    const [facilityId, date] = key.split('::');
-    const a = before.get(key) || [];
-    const b = after.get(key) || [];
-    // Сопоставление: ключ по (start,end) — тогда изменение activity = 'mod';
-    // отсутствие пары — 'add'/'rem'.
-    const aByTime = new Map(a.map(s => [`${s.start}|${s.end}`, s]));
-    const bByTime = new Map(b.map(s => [`${s.start}|${s.end}`, s]));
-    for (const [k, sB] of bByTime) {
-      const sA = aByTime.get(k);
-      if (!sA) {
-        events.push({ id: `e${eid++}`, kind: 'add', facilityId, date, start: sB.start, end: sB.end, activity: sB.activity });
-      } else if ((sA.activity || '') !== (sB.activity || '')) {
-        events.push({ id: `e${eid++}`, kind: 'mod', facilityId, date, start: sB.start, end: sB.end, activity: sB.activity, wasActivity: sA.activity });
-      }
-      aByTime.delete(k);
-    }
-    for (const [, sA] of aByTime) {
-      events.push({ id: `e${eid++}`, kind: 'rem', facilityId, date, start: sA.start, end: sA.end, activity: sA.activity });
-    }
-  }
-  // Стабильная сортировка: по дате, потом по времени старта
-  events.sort((x, y) => x.date.localeCompare(y.date) || x.start.localeCompare(y.start));
-  return events;
-}
-
-// Пересечение события сайта с конкретной сменой пользователя. Базовая
-// единица для аннотации журнала И для on-the-fly валидации в UI:
-// UI не может доверять записанному affectsShiftId, потому что смена могла
-// быть удалена/перенесена после recordSiteCheck (orphan-ссылка), либо
-// наоборот — добавлена ПОСЛЕ (тогда affectsShiftId пуст, но overlap есть).
-function eventOverlapsShift(ev, shift) {
-  return shift.facilityId === ev.facilityId
-    && shift.date === ev.date
-    && toMinutes(shift.start) < toMinutes(ev.end)
-    && toMinutes(shift.end)   > toMinutes(ev.start);
-}
-
-// Помечает события, пересекающиеся с пользовательскими сменами. Аннотация
-// «снимок на момент сверки» — для журнала и для wasStart/wasEnd.
-// UI должен валидировать affectsShiftId через eventOverlapsShift, а не
-// полагаться на сохранённое значение.
-function annotateAffectedShifts(events, shifts) {
-  for (const ev of events) {
-    const overlap = shifts.find(s => eventOverlapsShift(ev, s));
-    if (overlap) {
-      ev.affectsShiftId = overlap.id;
-      if (ev.kind === 'mod' && overlap.start !== ev.start) {
-        ev.wasStart = overlap.start;
-        ev.wasEnd   = overlap.end;
-      }
-    }
-  }
-}
-
 // ── Store API ───────────────────────────────────────────────────
 function loadJSON(key, fallback) {
   try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; }
 }
 function saveJSON(key, value) {
   try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
+}
+
+// Клиентский /api/schedule раньше шёл без таймаута: при зависшей сети
+// await не разрешался никогда, и спиннер refreshing в Home крутился
+// вечно. Серверный fetcher жёстко обрывается на 8с — здесь даём ~10с
+// и по таймауту падаем в catch → mock-фолбэк + честный toast.
+const FETCH_TIMEOUT_MS = 10_000;
+
+function fetchWithTimeout(url, opts = {}, ms = FETCH_TIMEOUT_MS) {
+  if (typeof AbortController === 'undefined') return fetch(url, opts);
+  const ac = new AbortController();
+  const t = setTimeout(() => ac.abort(), ms);
+  return fetch(url, { ...opts, signal: ac.signal }).finally(() => clearTimeout(t));
+}
+
+// Prefetch из index.html — уже запущенный промис, его fetch отсюда не
+// прервать (AbortController остался в index.html). Поэтому просто
+// гонку с таймаутом: если не успел — бросаем, ловим в общем catch.
+function withTimeout(promise, ms = FETCH_TIMEOUT_MS) {
+  let t;
+  const timeout = new Promise((_, reject) => {
+    t = setTimeout(() => reject(new Error('timeout')), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(t));
 }
 
 // In-memory кэш распарсенного /api/schedule snapshot. Раньше каждый вызов
@@ -560,10 +304,10 @@ const Data = {
         window.__rpguSchedulePrefetch = null;
       }
       if (pre) {
-        payload = await pre;
+        payload = await withTimeout(pre);
         if (!payload) throw new Error('prefetch failed');
       } else {
-        const r = await fetch('/api/schedule' + (force ? '?refresh=1' : ''), {
+        const r = await fetchWithTimeout('/api/schedule' + (force ? '?refresh=1' : ''), {
           headers: { Accept: 'application/json' },
         });
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -856,9 +600,31 @@ const Data = {
       this.saveShifts(clean);
       importedShifts = clean.length;
     }
+    // Журнал сверок: раньше history сохранялась как есть — битый или чужой
+    // JSON мог уронить рендер SiteCard/ChangesScreen (обращения к
+    // ev.kind/date/start без проверок). Теперь валидируем форму записи,
+    // фильтруем её события и режем историю до 50 (как recordSiteCheck).
     if (Array.isArray(obj.siteChanges?.history)) {
-      this.saveSiteChanges(obj.siteChanges.history);
-      importedChanges = obj.siteChanges.history.length;
+      const EVENT_KINDS = new Set(['add', 'mod', 'rem']);
+      const isValidEvent = (e) => e
+        && typeof e === 'object'
+        && EVENT_KINDS.has(e.kind)
+        && typeof e.facilityId === 'string' && facIds.has(e.facilityId)
+        && typeof e.date === 'string' && ISO_DATE.test(e.date)
+        && typeof e.start === 'string' && HHMM.test(e.start)
+        && typeof e.end === 'string'   && HHMM.test(e.end);
+      const clean = [];
+      for (const c of obj.siteChanges.history) {
+        if (!c || typeof c !== 'object') continue;
+        if (typeof c.id !== 'string' || typeof c.checkedAt !== 'string') continue;
+        const events = Array.isArray(c.events) ? c.events.filter(isValidEvent) : [];
+        // baseline валиден без событий; обычная запись без валидных событий
+        // и без флага проблем источника — мусор, пропускаем.
+        if (!c.baseline && !events.length && !c.hasSourceIssues) continue;
+        clean.push({ ...c, events, hasChanges: events.length > 0 });
+      }
+      this.saveSiteChanges(clean.slice(0, 50));
+      importedChanges = Math.min(clean.length, 50);
     }
     return { importedShifts, skippedShifts, importedChanges };
   },

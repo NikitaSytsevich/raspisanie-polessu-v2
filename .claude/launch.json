@@ -4,7 +4,7 @@
     {
       "name": "raspisanie",
       "runtimeExecutable": "node",
-      "runtimeArgs": ["dev-server.js"],
+      "runtimeArgs": ["dev-server.js", "3737"],
       "port": 3737
     }
   ]

@@ -5,7 +5,7 @@
 // Параметры:
 //   ?refresh=1 → отключить CDN-кеш (Cache-Control: no-store)
 //
-// Ответ соответствует schemaVersion 3, ожидаемой фронтендом
+// Ответ соответствует schemaVersion 4, ожидаемой фронтендом
 // (см. MOCK_SCHEDULE в app/data.jsx).
 
 const { FACILITIES } = require('./_parsers');

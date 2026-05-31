@@ -16,11 +16,29 @@ function HomeScreen() {
   const [_, force]            = _hs(0);
   const scrollRef             = _hr(null);
 
-  // Re-render every minute so "now" status stays accurate. Таймер ставим на
-  // паузу когда вкладка/PWA свёрнуты — не сжигаем CPU в фоне.
+  // Подтягиваем свежее расписание, пока вкладка открыта. fetchSchedule сам
+  // уважает 5-мин TTL (force:false вернёт кэш и в сеть не пойдёт, если он
+  // свежий), но чтобы зря не пересоздавать массивы и не ре-рендерить —
+  // ходим только когда снапшот реально устарел. Без этого PWA, открытый
+  // с утра, весь день показывал снапшот на момент запуска и не замечал
+  // изменений сайта без ручного рефреша (хотя README обещает «каждые 5 мин»).
+  const syncSchedule = _hcb(async () => {
+    const at = window.Data.loadCachedAt();
+    const stale = !at || (Date.now() - new Date(at).getTime() >= 5 * 60_000);
+    if (!stale) return;
+    try {
+      await window.Data.fetchSchedule();
+      setShifts(window.Data.loadShifts());
+      setChanges(window.Data.loadSiteChanges());
+    } catch {}
+  }, []);
+
+  // Re-render every minute so "now" status stays accurate, и заодно
+  // (через syncSchedule) проверяем не устарело ли расписание. Таймер
+  // ставим на паузу когда вкладка/PWA свёрнуты — не сжигаем CPU в фоне.
   _he(() => {
     let t = null;
-    const tick = () => force(x => x + 1);
+    const tick = () => { force(x => x + 1); syncSchedule(); };
     const start = () => { if (!t) t = setInterval(tick, 60_000); };
     const stop  = () => { if (t) { clearInterval(t); t = null; } };
     const onVis = () => {
@@ -30,7 +48,7 @@ function HomeScreen() {
     document.addEventListener('visibilitychange', onVis);
     if (!document.hidden) start();
     return () => { stop(); document.removeEventListener('visibilitychange', onVis); };
-  }, []);
+  }, [syncSchedule]);
 
   // Refresh shifts when:
   //   • окно снова получает фокус (вернулись из вкладки),
@@ -41,7 +59,9 @@ function HomeScreen() {
   _he(() => {
     function reloadShifts() { setShifts(window.Data.loadShifts()); }
     function reloadChanges() { setChanges(window.Data.loadSiteChanges()); }
-    function onFocus() { reloadShifts(); reloadChanges(); }
+    // Вернулись на вкладку — перечитываем localStorage И проверяем, не
+    // устарело ли расписание (syncSchedule сходит в сеть только если так).
+    function onFocus() { reloadShifts(); reloadChanges(); syncSchedule(); }
     window.addEventListener('focus', onFocus);
     window.addEventListener('rpgu:shifts-changed', reloadShifts);
     window.addEventListener('rpgu:site-changes-changed', reloadChanges);
@@ -50,7 +70,7 @@ function HomeScreen() {
       window.removeEventListener('rpgu:shifts-changed', reloadShifts);
       window.removeEventListener('rpgu:site-changes-changed', reloadChanges);
     };
-  }, []);
+  }, [syncSchedule]);
 
   // Автозагрузка расписания при первом запуске — чтобы карточки смен сразу
   // могли показать сопоставление «по графику vs по сайту».
