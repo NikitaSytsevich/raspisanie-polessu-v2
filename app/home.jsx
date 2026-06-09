@@ -13,6 +13,11 @@ function HomeScreen() {
   const [aboutOpen, setAboutOpen] = _hs(false);
   const [refreshing, setRefreshing] = _hs(false);
   const [weekOffset, setWeekOffset] = _hs(0); // 0 — текущая неделя, ±1 — соседние
+  // true, пока идёт САМЫЙ ПЕРВЫЙ fetch без какого-либо кэша — рисуем
+  // skeleton-карточки вместо «оживающих» (см. SkeletonCards ниже).
+  const [booting, setBooting] = _hs(() => !window.Data.loadCachedAt());
+  // Офлайн-плашка: navigator.onLine + события online/offline.
+  const [online, setOnline] = _hs(() => typeof navigator === 'undefined' || navigator.onLine !== false);
   const [_, force]            = _hs(0);
   const scrollRef             = _hr(null);
 
@@ -49,6 +54,17 @@ function HomeScreen() {
     if (!document.hidden) start();
     return () => { stop(); document.removeEventListener('visibilitychange', onVis); };
   }, [syncSchedule]);
+
+  _he(() => {
+    const on = () => setOnline(true);
+    const off = () => setOnline(false);
+    window.addEventListener('online', on);
+    window.addEventListener('offline', off);
+    return () => {
+      window.removeEventListener('online', on);
+      window.removeEventListener('offline', off);
+    };
+  }, []);
 
   // Refresh shifts when:
   //   • окно снова получает фокус (вернулись из вкладки),
@@ -91,7 +107,9 @@ function HomeScreen() {
         setShifts(window.Data.loadShifts());
         setChanges(window.Data.loadSiteChanges());
       }
-    }).catch(() => {});
+    }).catch(() => {}).finally(() => {
+      if (!cancelled) setBooting(false);
+    });
     return () => { cancelled = true; };
   }, []);
 
@@ -252,6 +270,13 @@ function HomeScreen() {
         }
       />
 
+      {!online && (
+        <div className="offline-banner" role="status">
+          <span className="material-symbols-outlined">wifi_off</span>
+          <span>офлайн — показываем последнее сохранённое</span>
+        </div>
+      )}
+
       <div ref={scrollRef} className="screen-scroll">
         <window.UI.PullToRefresh onRefresh={handleRefresh} scrollRef={scrollRef}>
 
@@ -285,13 +310,17 @@ function HomeScreen() {
                 }}
                 onPick={(date) => date && setSelectedDate(date)}
               />
-              <FacilityList
-                shifts={dayShifts}
-                today={today}
-                date={selectedDate}
-                nowMins={nowMins}
-                onPushEditor={(shift) => router.push('editor', shift ? { shiftId: shift.id } : { date: selectedDate })}
-              />
+              {booting && dayShifts.length > 0 ? (
+                <SkeletonCards count={new Set(dayShifts.map(s => s.facilityId)).size}/>
+              ) : (
+                <FacilityList
+                  shifts={dayShifts}
+                  today={today}
+                  date={selectedDate}
+                  nowMins={nowMins}
+                  onPushEditor={(shift) => router.push('editor', shift ? { shiftId: shift.id } : { date: selectedDate })}
+                />
+              )}
               {dayShifts.length > 0 && (
                 <AddShiftInlineLink date={selectedDate} onPush={() => router.push('editor', { date: selectedDate })}/>
               )}
@@ -1246,6 +1275,25 @@ function SessionIndicator({ ind, onLaneClick }) {
     );
   }
   return null;
+}
+
+// Shimmer-заглушки карточек для САМОГО первого запуска (кэша нет, идёт
+// первый fetch). Раньше карточки рождались с badge «по графику» и через
+// секунду перерисовывались с данными сайта — контент прыгал. Скелет честно
+// говорит «грузим» и держит примерную высоту будущих карточек.
+function SkeletonCards({ count = 1 }) {
+  return (
+    <section className="fc-list is-skeleton" aria-hidden="true">
+      {Array.from({ length: Math.max(1, count) }).map((_, i) => (
+        <div key={i} className="fc-card sk-card">
+          <div className="sk-line w40"/>
+          <div className="sk-line w70 is-tall"/>
+          <div className="sk-line w55"/>
+          <div className="sk-line w35"/>
+        </div>
+      ))}
+    </section>
+  );
 }
 
 function AddShiftInlineLink({ date, onPush }) {

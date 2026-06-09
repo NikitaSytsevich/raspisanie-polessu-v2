@@ -41,6 +41,7 @@ const MIME = {
 };
 
 const scheduleHandler = require('./api/schedule');
+const notifyHandler = require('./api/notify');
 
 function safePath(reqPath) {
   let p = decodeURIComponent(reqPath.split('?')[0]);
@@ -55,14 +56,15 @@ const server = http.createServer(async (req, res) => {
     const parsed = url.parse(req.url, true);
     req.query = parsed.query;
 
-    if (parsed.pathname === '/api/schedule') {
+    if (parsed.pathname === '/api/schedule' || parsed.pathname === '/api/notify') {
       console.log(`[api] ${req.method} ${req.url}`);
+      const handler = parsed.pathname === '/api/notify' ? notifyHandler : scheduleHandler;
       // Адаптируем Node http.ServerResponse под мини-API Vercel
       const origStatus = res.statusCode;
       const wrapped = Object.assign(res, {
         status(code) { res.statusCode = code; return wrapped; },
       });
-      await scheduleHandler(req, wrapped);
+      await handler(req, wrapped);
       return;
     }
 

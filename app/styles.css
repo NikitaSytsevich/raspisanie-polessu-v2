@@ -3921,3 +3921,269 @@ html.light .ln-status-pill.is-free { background: rgba(63, 130, 118, 0.18); color
 /* Past session — sheet чуть приглушён */
 .ln-sheet.is-past .ln-title { color: var(--text-muted); }
 .ln-sheet.is-past .ln-vis { opacity: 0.7; }
+
+/* ════════════════════════════════════════════════════════════════
+   v1.5 — новые блоки: офлайн-плашка, toast-action, skeleton-карточки,
+   view-transitions, управление инструкторами, экран статистики.
+   ════════════════════════════════════════════════════════════════ */
+
+/* ── View Transitions: быстрый кроссфейд экранов роутера ── */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 0.18s;
+  animation-timing-function: ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) { animation: none; }
+}
+
+/* ── Офлайн-плашка под шапкой ── */
+.offline-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 16px 4px;
+  padding: 8px 14px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent, #fc8501) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent, #fc8501) 28%, transparent);
+  color: var(--text-secondary, inherit);
+  font-size: 13px;
+  line-height: 1.3;
+}
+.offline-banner .material-symbols-outlined { font-size: 18px; opacity: 0.8; }
+
+/* ── Toast с action-кнопкой («Отменить» после удаления) ── */
+.toast.has-action { gap: 12px; }
+.toast-action {
+  margin-left: 4px;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent, #fc8501) 22%, transparent);
+  color: var(--accent, #fc8501);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.toast-action:active { transform: scale(0.96); }
+
+/* ── Skeleton-карточки первой загрузки ── */
+.fc-list.is-skeleton { pointer-events: none; }
+.sk-card { min-height: 132px; }
+.sk-line {
+  height: 14px;
+  border-radius: 7px;
+  margin: 12px 0;
+  background: linear-gradient(
+    100deg,
+    color-mix(in srgb, currentColor 7%, transparent) 40%,
+    color-mix(in srgb, currentColor 14%, transparent) 50%,
+    color-mix(in srgb, currentColor 7%, transparent) 60%
+  );
+  background-size: 200% 100%;
+  animation: skShimmer 1.4s ease-in-out infinite;
+}
+.sk-line.is-tall { height: 28px; border-radius: 10px; }
+.sk-line.w40 { width: 40%; }
+.sk-line.w55 { width: 55%; }
+.sk-line.w70 { width: 70%; }
+.sk-line.w35 { width: 35%; }
+@keyframes skShimmer {
+  0% { background-position: 120% 0; }
+  100% { background-position: -80% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sk-line { animation: none; }
+}
+
+/* ── Настройки: управление инструкторами ── */
+.insts-manage .row.is-static { cursor: default; }
+.insts-manage .inst-av {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent, #fc8501) 16%, transparent);
+  color: var(--accent, #fc8501);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.insts-manage .inst-del {
+  border: 0;
+  background: none;
+  padding: 6px;
+  margin: -6px 0;
+  border-radius: 50%;
+  color: inherit;
+  opacity: 0.45;
+  cursor: pointer;
+}
+.insts-manage .inst-del:hover { opacity: 1; }
+.insts-manage .inst-del .material-symbols-outlined { font-size: 18px; }
+.inst-add-row { gap: 10px; }
+.inst-add-input {
+  flex: 1;
+  min-width: 0;
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+  background: color-mix(in srgb, currentColor 5%, transparent);
+  color: inherit;
+  font: inherit;
+  font-size: 14px;
+}
+.inst-add-input:focus {
+  outline: none;
+  border-color: var(--accent, #fc8501);
+}
+.inst-add-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 14px;
+  border: 0;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent, #fc8501) 18%, transparent);
+  color: var(--accent, #fc8501);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.inst-add-btn:disabled { opacity: 0.4; cursor: default; }
+.inst-add-btn .material-symbols-outlined { font-size: 18px; }
+
+/* ── Экран статистики ── */
+.stats-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 4px 16px 8px;
+}
+.stats-seg {
+  display: inline-flex;
+  padding: 3px;
+  border-radius: 12px;
+  background: color-mix(in srgb, currentColor 7%, transparent);
+}
+.stats-seg .seg-btn {
+  border: 0;
+  background: none;
+  padding: 7px 16px;
+  border-radius: 9px;
+  color: inherit;
+  opacity: 0.6;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.stats-seg .seg-btn.is-active {
+  opacity: 1;
+  background: color-mix(in srgb, var(--accent, #fc8501) 18%, transparent);
+  color: var(--accent, #fc8501);
+}
+.stats-nav { display: inline-flex; align-items: center; gap: 6px; }
+
+.stats-facs { margin: 0 16px 8px; display: grid; gap: 10px; }
+.stats-fac-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: color-mix(in srgb, currentColor 5%, transparent);
+}
+.stats-fac-row .ic .material-symbols-outlined { font-size: 20px; opacity: 0.75; }
+.stats-fac-row .body { flex: 1; min-width: 0; }
+.stats-fac-row .top {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.stats-fac-row .val { white-space: nowrap; }
+.stats-fac-row .bar {
+  position: relative;
+  height: 6px;
+  margin: 7px 0 5px;
+  border-radius: 3px;
+  background: color-mix(in srgb, currentColor 10%, transparent);
+  overflow: hidden;
+}
+.stats-fac-row .fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--accent, #fc8501) 32%, transparent);
+  overflow: hidden;
+}
+.stats-fac-row .conf {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--accent, #fc8501);
+  border-radius: 3px;
+}
+.stats-fac-row .sub { font-size: 12px; opacity: 0.6; }
+
+.stats-days { margin: 0 16px; display: grid; gap: 6px; }
+.stats-shift-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 12px;
+  border-radius: 12px;
+  background: color-mix(in srgb, currentColor 4%, transparent);
+}
+.stats-shift-row .when {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 34px;
+}
+.stats-shift-row .when .num { font-size: 16px; font-weight: 700; line-height: 1.1; }
+.stats-shift-row .when .wd { font-size: 10px; opacity: 0.55; text-transform: lowercase; }
+.stats-shift-row .body { flex: 1; min-width: 0; }
+.stats-shift-row .place {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.stats-shift-row .time { font-size: 12px; opacity: 0.6; }
+.stats-shift-row .mins { font-size: 13px; font-weight: 600; white-space: nowrap; }
+.stats-shift-row.is-confirmed .mins { color: var(--accent, #fc8501); }
+.stats-shift-row.is-closed { opacity: 0.55; }
+.stats-shift-row .closed { font-size: 12px; }
+
+.stats-csv-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 14px 16px 8px;
+  width: calc(100% - 32px);
+  padding: 12px;
+  border: 1px dashed color-mix(in srgb, currentColor 25%, transparent);
+  border-radius: 14px;
+  background: none;
+  color: inherit;
+  opacity: 0.75;
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+.stats-csv-btn:hover { opacity: 1; }
+.stats-csv-btn .material-symbols-outlined { font-size: 18px; }

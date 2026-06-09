@@ -77,13 +77,28 @@ function ToastHost({ children }) {
   const show = React.useCallback((text, opts = {}) => {
     if (timer.current) clearTimeout(timer.current);
     setMsg({ text, ...opts });
-    timer.current = setTimeout(() => setMsg(null), opts.duration || 2400);
+    // С action-кнопкой (например «Отменить» после удаления) держим дольше —
+    // пользователь должен успеть передумать.
+    timer.current = setTimeout(() => setMsg(null), opts.duration || (opts.actionLabel ? 6000 : 2400));
   }, []);
+  // onAction зовём ПОСЛЕ скрытия тоста — экшен (undo) может дёргать
+  // setState в других компонентах, не хотим конкурировать с анимацией.
+  function runAction() {
+    if (timer.current) clearTimeout(timer.current);
+    const m = msg;
+    setMsg(null);
+    try { m?.onAction?.(); } catch {}
+  }
   return (
     <ToastCtx.Provider value={{ show }}>
       {children}
-      <div className={`toast ${msg ? 'is-on' : ''}`} role="status" aria-live="polite">
+      <div className={`toast ${msg ? 'is-on' : ''} ${msg?.actionLabel ? 'has-action' : ''}`} role="status" aria-live="polite">
         {msg && <span className="toast-text">{msg.text}</span>}
+        {msg?.actionLabel && (
+          <button type="button" className="toast-action" onClick={runAction}>
+            {msg.actionLabel}
+          </button>
+        )}
       </div>
     </ToastCtx.Provider>
   );

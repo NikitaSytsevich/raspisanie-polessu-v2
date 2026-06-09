@@ -1,6 +1,7 @@
 // GET /api/schedule
-// Vercel serverless function. Параллельно тянет 4 страницы ПолесГУ,
-// гонит через per-facility парсер и возвращает сводный snapshot.
+// Vercel serverless function. Сборка снапшота — в _lib/snapshot.js
+// (общая с /api/notify): параллельный фетч 4 страниц, парсеры,
+// last-known-good подмена упавших источников.
 //
 // Параметры:
 //   ?refresh=1 → отключить CDN-кеш (Cache-Control: no-store)
@@ -8,121 +9,39 @@
 // Ответ соответствует schemaVersion 4, ожидаемой фронтендом
 // (см. MOCK_SCHEDULE в app/data.jsx).
 
-const { FACILITIES } = require('./_parsers');
-const { fetchHtml } = require('./_lib/fetcher');
-const { todayIsoMinsk } = require('./_lib/timeParse');
-
-const TZ = 'Europe/Minsk';
-
-async function loadFacility(f, ctx) {
-  const startedAt = new Date().toISOString();
-  const res = await fetchHtml(f.sourceUrl);
-  if (!res.ok) {
-    return {
-      id: f.id,
-      name: f.name,
-      sourceUrl: f.sourceUrl,
-      dataQuality: 'parse_error',
-      sourceCheckedAt: startedAt,
-      notice: null,
-      sessions: [],
-      _issue: { id: f.id, reason: res.error, status: res.status },
-    };
-  }
-  let parsed;
-  try {
-    parsed = f.parse(res.html, ctx);
-  } catch (err) {
-    return {
-      id: f.id,
-      name: f.name,
-      sourceUrl: f.sourceUrl,
-      dataQuality: 'parse_error',
-      sourceCheckedAt: startedAt,
-      notice: null,
-      sessions: [],
-      _issue: { id: f.id, reason: 'parser_threw', message: err?.message || String(err) },
-    };
-  }
-
-  if (parsed.ok) {
-    return {
-      id: f.id,
-      name: f.name,
-      sourceUrl: f.sourceUrl,
-      dataQuality: 'ok',
-      sourceCheckedAt: startedAt,
-      notice: null,
-      sessions: parsed.sessions,
-      // Расписание есть, но одновременно объект частично закрыт (ремонт,
-      // отключение воды и т.п.). Каждый range = { from, to, notice } в
-      // ISO-формате. Фронт пометит смены, попадающие в окно, как closed.
-      closureRanges: Array.isArray(parsed.closureRanges) ? parsed.closureRanges : [],
-    };
-  }
-  if (parsed.reason === 'closed') {
-    return {
-      id: f.id,
-      name: f.name,
-      sourceUrl: f.sourceUrl,
-      dataQuality: 'closed',
-      sourceCheckedAt: startedAt,
-      notice: parsed.notice || 'объект временно закрыт',
-      closureRange: parsed.range || null,
-      sessions: [],
-    };
-  }
-  // no_table / прочее
-  return {
-    id: f.id,
-    name: f.name,
-    sourceUrl: f.sourceUrl,
-    dataQuality: 'template',
-    sourceCheckedAt: startedAt,
-    notice: null,
-    sessions: [],
-    _issue: { id: f.id, reason: parsed.reason || 'unknown' },
-  };
-}
+const crypto = require('crypto');
+const { buildPayload } = require('./_lib/snapshot');
 
 module.exports = async (req, res) => {
   const refresh = String(req?.query?.refresh ?? '') === '1';
-  const todayIso = todayIsoMinsk();
-  const ctx = { todayIso };
+  const payload = await buildPayload();
 
-  const generatedAt = new Date().toISOString();
-  const results = await Promise.all(FACILITIES.map(f => loadFacility(f, ctx)));
-
-  const facilities = results.map(({ _issue, ...rest }) => rest);
-  const sourceIssues = results
-    .filter(r => r._issue || r.dataQuality === 'parse_error')
-    .map(r => r._issue || { id: r.id, reason: 'unknown' });
-
-  const payload = {
-    // v4: facility.closureRanges?: [{from, to, notice}] для частичного
-    // закрытия (когда расписание есть, но в часть дат объект закрыт).
-    // v3 поля (dataQuality, sessions, notice, closureRange при closed)
-    // сохранены без изменений — старые клиенты продолжат работать.
-    schemaVersion: 4,
-    generatedAt,
-    sourceCheckedAt: generatedAt,
-    timezone: TZ,
-    facilities,
-    meta: {
-      cached: false,
-      sourceCount: FACILITIES.length,
-      sourceIssueCount: sourceIssues.length,
-      sourceIssues,
-      todayIso,
-    },
-  };
+  // ETag по СОДЕРЖИМОМУ расписания (без волатильных таймстемпов —
+  // generatedAt/sourceCheckedAt меняются каждый вызов и сломали бы кэш).
+  // Браузер хранит ответ с max-age=0/must-revalidate и на каждую
+  // 5-минутную проверку шлёт If-None-Match: если расписание не менялось,
+  // уходит пустой 304 вместо полного JSON — экономия мобильного трафика.
+  const basis = JSON.stringify(payload.facilities.map(f => [
+    f.id, f.dataQuality, f.notice, f.stale || false,
+    f.sessions, f.closureRanges || null, f.closureRange || null,
+  ]));
+  const etag = '"' + crypto.createHash('sha1').update(basis).digest('base64url').slice(0, 20) + '"';
 
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.setHeader('ETag', etag);
   if (refresh) {
     res.setHeader('Cache-Control', 'no-store, max-age=0');
   } else {
-    // Vercel Edge CDN кеш на 5 минут, stale-while-revalidate ещё 10.
-    res.setHeader('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=600');
+    // s-maxage=300 — Vercel CDN на 5 минут (+10 stale-while-revalidate);
+    // max-age=0, must-revalidate — браузеру можно хранить, но каждый раз
+    // ревалидировать условным запросом (дёшево благодаря ETag выше).
+    res.setHeader('Cache-Control', 'public, max-age=0, must-revalidate, s-maxage=300, stale-while-revalidate=600');
+  }
+
+  const inm = req.headers && req.headers['if-none-match'];
+  if (!refresh && inm && inm === etag) {
+    res.status(304).end();
+    return;
   }
   res.status(200).end(JSON.stringify(payload));
 };

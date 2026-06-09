@@ -130,3 +130,35 @@ test('buildTimelineForDate: зазор между сменами даёт break-
   assert.deepEqual(rows.map(r => r.kind), ['shift', 'break', 'shift']);
   assert.equal(rows[1].minutes, 120);
 });
+
+test('buildICS: минское время → UTC, экранирование, инструкторы', () => {
+  const ics = L.buildICS(
+    [{ id: 's1', date: '2026-06-09', facilityId: 'sports_pool',
+       start: '07:30', end: '13:30', activity: 'замена; группа, U-12',
+       instructors: ['i1'] }],
+    [{ id: 'sports_pool', name: 'Большой бассейн' }],
+    [{ id: 'i1', name: 'Иванов И.И.' }]
+  );
+  assert.match(ics, /DTSTART:20260609T043000Z/);   // 07:30 Минска = 04:30 UTC
+  assert.match(ics, /DTEND:20260609T103000Z/);
+  assert.match(ics, /SUMMARY:Смена · Большой бассейн/);
+  assert.match(ics, /замена\\; группа\\, U-12/); // ; и , экранированы
+  assert.match(ics, /с Иванов И\.И\./);
+  assert.match(ics, /UID:s1@raspisanie-polessu/);
+});
+
+test('buildICS: раннее утро уходит на предыдущий день UTC', () => {
+  const ics = L.buildICS(
+    [{ id: 's2', date: '2026-06-09', facilityId: 'x', start: '01:00', end: '02:30' }],
+    [], []
+  );
+  assert.match(ics, /DTSTART:20260608T220000Z/);
+  assert.match(ics, /DTEND:20260608T233000Z/);
+});
+
+test('buildICS: битые смены пропускаются, календарь валиден', () => {
+  const ics = L.buildICS([null, { id: 'x' }], [], []);
+  assert.equal((ics.match(/BEGIN:VEVENT/g) || []).length, 0);
+  assert.match(ics, /BEGIN:VCALENDAR/);
+  assert.match(ics, /END:VCALENDAR/);
+});

@@ -35,6 +35,22 @@ const { useState, useEffect, useRef, useCallback, createContext, useContext } = 
 const RouterCtx = createContext(null);
 const useRouter = () => useContext(RouterCtx);
 
+// Плавный кроссфейд экранов через View Transitions API (Chrome 111+,
+// Safari 18+). Прогрессивное улучшение: без поддержки или с
+// prefers-reduced-motion переключение мгновенное, как раньше.
+// flushSync обязателен: setState в React 18 асинхронный, а снапшоты
+// view-transition снимаются строго вокруг синхронного DOM-апдейта.
+function commitWithTransition(apply) {
+  try {
+    if (document.startViewTransition &&
+        !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      document.startViewTransition(() => { ReactDOM.flushSync(apply); });
+      return;
+    }
+  } catch {}
+  apply();
+}
+
 let __idCounter = 0;
 function makeId() { return 't_' + Date.now() + '_' + (++__idCounter); }
 function persistentId(name) { return 'p_' + name; }
@@ -89,7 +105,7 @@ function Router({ screens, persistent = [], initial = 'home', initialProps = {} 
           const next = cur.slice(0, targetDepth);
           if (next.length >= 1) {
             stackRef.current = next;
-            setStack(next);
+            commitWithTransition(() => setStack(next));
           }
           return;
         }
@@ -115,7 +131,7 @@ function Router({ screens, persistent = [], initial = 'home', initialProps = {} 
             next = [...cur2, entry];
           }
           stackRef.current = next;
-          setStack(next);
+          commitWithTransition(() => setStack(next));
           return;
         }
         // targetDepth === cur.length — тот же уровень. Обычно ничего не
@@ -138,7 +154,7 @@ function Router({ screens, persistent = [], initial = 'home', initialProps = {} 
             next = [...cur.slice(0, -1), entry];
           }
           stackRef.current = next;
-          setStack(next);
+          commitWithTransition(() => setStack(next));
         }
         return;
       }
@@ -156,7 +172,7 @@ function Router({ screens, persistent = [], initial = 'home', initialProps = {} 
       // Внутренний pop на не-корне с unknown history.state — просто откатываем.
       const next = stackRef.current.slice(0, -1);
       stackRef.current = next;
-      setStack(next);
+      commitWithTransition(() => setStack(next));
     }
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
@@ -187,7 +203,7 @@ function Router({ screens, persistent = [], initial = 'home', initialProps = {} 
       '',
       '#' + name
     );
-    setStack(next);
+    commitWithTransition(() => setStack(next));
   }, [screens]);
 
   const pop = useCallback(() => {
@@ -206,7 +222,7 @@ function Router({ screens, persistent = [], initial = 'home', initialProps = {} 
           '',
           '#' + entry.name
         );
-        setStack(next);
+        commitWithTransition(() => setStack(next));
       }
       return;
     }
@@ -214,7 +230,7 @@ function Router({ screens, persistent = [], initial = 'home', initialProps = {} 
     history.back();
     const next = cur.slice(0, -1);
     stackRef.current = next;
-    setStack(next);
+    commitWithTransition(() => setStack(next));
   }, [initial, screens]);
 
   const replace = useCallback((name, props = {}) => {
@@ -227,7 +243,7 @@ function Router({ screens, persistent = [], initial = 'home', initialProps = {} 
       '',
       '#' + name
     );
-    setStack(next);
+    commitWithTransition(() => setStack(next));
   }, [screens]);
 
   // ── Render ──────────────────────────────────────────────────────

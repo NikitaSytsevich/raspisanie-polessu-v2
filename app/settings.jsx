@@ -9,6 +9,49 @@ function SettingsScreen({ onThemeChange }) {
   const toast = window.UI.useToast();
   const [settings, setSettings] = _ss(() => window.Data.loadSettings());
   const [confirmDelete, setConfirmDelete] = _ss(false);
+  const [instructors, setInstructors] = _ss(() => window.Data.loadInstructors());
+  const [newInstName, setNewInstName] = _ss('');
+
+  _se(() => {
+    const reload = () => setInstructors(window.Data.loadInstructors());
+    window.addEventListener('rpgu:instructors-changed', reload);
+    return () => window.removeEventListener('rpgu:instructors-changed', reload);
+  }, []);
+
+  function handleAddInstructor() {
+    const added = window.Data.addInstructor(newInstName);
+    if (added) {
+      setNewInstName('');
+      toast.show(`${added.name} — добавлен`);
+    } else if (newInstName.trim()) {
+      toast.show('Такой инструктор уже есть');
+    }
+  }
+
+  // Экспорт смен в системный календарь (.ics). Время в UTC: Минск =
+  // UTC+3 без сезонных переходов, см. buildICS в _logic.js.
+  function handleExportICS() {
+    try {
+      if (!window.Data.loadShifts().length) {
+        toast.show('Смен пока нет — нечего экспортировать');
+        return;
+      }
+      const blob = new Blob([window.Data.exportICS()], { type: 'text/calendar;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `raspisanie-${new Date().toISOString().slice(0, 10)}.ics`;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 0);
+      toast.show('Календарь .ics скачан');
+    } catch (e) {
+      toast.show('Не удалось сохранить файл');
+    }
+  }
 
   function setTheme(t) {
     const next = window.Data.saveSettings({ theme: t });
@@ -122,6 +165,22 @@ function SettingsScreen({ onThemeChange }) {
 
         <window.UI.SecLabel>Данные</window.UI.SecLabel>
         <section className="list">
+          <a className="row" onClick={() => router.push('stats')}>
+            <span className="ic"><span className="material-symbols-outlined">bar_chart</span></span>
+            <div className="body">
+              <p className="lbl">Статистика часов</p>
+              <span className="hint">отработано за неделю и месяц · CSV</span>
+            </div>
+            <span className="material-symbols-outlined chev">chevron_right</span>
+          </a>
+          <a className="row" onClick={handleExportICS}>
+            <span className="ic"><span className="material-symbols-outlined">event</span></span>
+            <div className="body">
+              <p className="lbl">Экспорт в календарь (.ics)</p>
+              <span className="hint">смены — в календарь телефона</span>
+            </div>
+            <span className="material-symbols-outlined chev">chevron_right</span>
+          </a>
           <a className="row" onClick={handleExport}>
             <span className="ic"><span className="material-symbols-outlined">download</span></span>
             <div className="body">
@@ -148,6 +207,43 @@ function SettingsScreen({ onThemeChange }) {
           </a>
         </section>
 
+        <window.UI.SecLabel hint="чипы «с кем работаю»">Инструкторы</window.UI.SecLabel>
+        <section className="list insts-manage">
+          {instructors.map(pp => (
+            <div key={pp.id} className="row is-static">
+              <span className="ic"><span className="inst-av">{pp.initials}</span></span>
+              <div className="body"><p className="lbl">{pp.name}</p></div>
+              <button
+                type="button"
+                className="inst-del"
+                title={`Удалить «${pp.name}»`}
+                aria-label={`Удалить «${pp.name}»`}
+                onClick={() => { window.Data.removeInstructor(pp.id); toast.show(`${pp.name} — удалён`); }}
+              >
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+          ))}
+          <div className="row is-static inst-add-row">
+            <input
+              className="inst-add-input"
+              placeholder="Фамилия И.О."
+              value={newInstName}
+              onChange={e => setNewInstName(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') handleAddInstructor(); }}
+            />
+            <button
+              type="button"
+              className="inst-add-btn"
+              onClick={handleAddInstructor}
+              disabled={!newInstName.trim()}
+            >
+              <span className="material-symbols-outlined">person_add</span>
+              <span>Добавить</span>
+            </button>
+          </div>
+        </section>
+
         <window.UI.SecLabel hint="4 объекта">Источники</window.UI.SecLabel>
         <section className="list">
           {window.Data.FACILITIES.map(f => (
@@ -172,7 +268,7 @@ function SettingsScreen({ onThemeChange }) {
             и загрузите его там. Это и есть «облако».
           </p>
           <div className="meta">
-            <span>Расписание <strong>v1.4</strong></span>
+            <span>Расписание <strong>v1.5</strong></span>
             <span>часовой пояс <strong>Europe/Minsk</strong></span>
           </div>
         </section>

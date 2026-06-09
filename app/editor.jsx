@@ -28,6 +28,12 @@ function EditorScreen({ shiftId, date } = {}) {
   const isEditing = Boolean(shiftId);
   const [draft, setDraft] = _es(initialShift);
   const [recent, setRecent] = _es(() => window.Data.loadShifts());
+  const [instructors, setInstructors] = _es(() => window.Data.loadInstructors());
+  _ee(() => {
+    const reload = () => setInstructors(window.Data.loadInstructors());
+    window.addEventListener('rpgu:instructors-changed', reload);
+    return () => window.removeEventListener('rpgu:instructors-changed', reload);
+  }, []);
   // Модалка подтверждения: 'exit' (несохранённые изменения) | 'delete' | null
   const [confirmKind, setConfirmKind] = _es(null);
   // Что выполнить, если пользователь подтвердит «Выйти без сохранения»
@@ -95,14 +101,17 @@ function EditorScreen({ shiftId, date } = {}) {
     }
   }
 
+  // Удаление без confirm-модалки: удаляем сразу, а в тосте 6 секунд живёт
+  // «Отменить», возвращающий смену как была. Меньше модалок — быстрее UX,
+  // а ошибка обратима.
   function handleDelete() {
     if (!shiftId) return;
-    setConfirmKind('delete');
-  }
-  function confirmDelete() {
+    const removed = window.Data.loadShifts().find(s => s.id === shiftId);
     window.Data.removeShift(shiftId);
-    setConfirmKind(null);
-    toast.show('Смена удалена');
+    toast.show('Смена удалена', {
+      actionLabel: 'Отменить',
+      onAction: () => { if (removed) window.Data.upsertShift(removed); },
+    });
     router.pop();
   }
 
@@ -280,7 +289,7 @@ function EditorScreen({ shiftId, date } = {}) {
 
         <window.UI.SecLabel hint="опционально">С кем работаю</window.UI.SecLabel>
         <div className="insts">
-          {window.Data.INSTRUCTORS.map(p => {
+          {instructors.map(p => {
             const sel = draft.instructors?.includes(p.id);
             return (
               <button
@@ -364,21 +373,19 @@ function EditorScreen({ shiftId, date } = {}) {
         <window.UI.HomeIndicator/>
       </div>
 
-      {confirmKind && (
+      {confirmKind === 'exit' && (
         <window.UI.ConfirmSheet
-          {...(confirmKind === 'delete'
-            ? { icon: 'delete', title: 'Удалить смену?', body: 'Действие нельзя отменить — смена пропадёт из расписания.', confirm: 'Удалить', danger: true }
-            : { icon: 'edit_off', title: 'Выйти без сохранения?', body: 'У вас есть несохранённые изменения. При выходе они потеряются.', confirm: 'Выйти', danger: true })}
+          icon="edit_off"
+          title="Выйти без сохранения?"
+          body="У вас есть несохранённые изменения. При выходе они потеряются."
+          confirm="Выйти"
+          danger
           onCancel={() => { setConfirmKind(null); setPendingExit(null); }}
           onConfirm={() => {
-            if (confirmKind === 'delete') {
-              confirmDelete();
-            } else if (confirmKind === 'exit') {
-              const exit = pendingExit;
-              setConfirmKind(null);
-              setPendingExit(null);
-              exit?.();
-            }
+            const exit = pendingExit;
+            setConfirmKind(null);
+            setPendingExit(null);
+            exit?.();
           }}
         />
       )}

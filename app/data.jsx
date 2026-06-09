@@ -19,6 +19,7 @@ const {
   computeScheduleDiff,
   eventOverlapsShift,
   annotateAffectedShifts,
+  buildICS,
 } = require('./_logic.js');
 
 const STORAGE = {
@@ -26,6 +27,7 @@ const STORAGE = {
   settings: 'rpgu_settings_v1',
   siteChanges: 'rpgu_site_changes_v1',
   cache: 'rpgu_cache_v1',
+  instructors: 'rpgu_instructors_v1',
 };
 
 const TZ = 'Europe/Minsk';
@@ -70,7 +72,10 @@ const FACILITIES = [
     sourceUrl: 'https://www.polessu.by/%D1%80%D0%B0%D1%81%D0%BF%D0%B8%D1%81%D0%B0%D0%BD%D0%B8%D0%B5-%D1%80%D0%B0%D0%B1%D0%BE%D1%82%D1%8B-%D1%82%D1%80%D0%B5%D0%BD%D0%B0%D0%B6%D0%B5%D1%80%D0%BD%D0%BE%D0%B3%D0%BE-%D0%B7%D0%B0%D0%BB%D0%B0-%D0%B8-%D0%B7%D0%B0%D0%BB%D0%B0-%D1%88%D1%82%D0%B0%D0%BD%D0%B3%D0%B8-%D0%B3%D1%80%D0%B5%D0%B1%D0%BD%D0%B0%D1%8F-%D0%B1%D0%B0%D0%B7%D0%B0-%E2%84%961' },
 ];
 
-const INSTRUCTORS = [
+// Дефолтный каталог инструкторов — используется, пока пользователь не
+// отредактировал список в настройках (хранится в localStorage,
+// см. loadInstructors / saveInstructors ниже).
+const DEFAULT_INSTRUCTORS = [
   { id: 'lapchuk_as',   name: 'Липчук А.С.',     initials: 'ЛА' },
   { id: 'krylychuk_ps', name: 'Крыльчук П.С.',   initials: 'КП' },
   { id: 'melnikova_ov', name: 'Мельникова О.В.', initials: 'МО' },
@@ -124,6 +129,19 @@ function notifyAsync(eventName) {
     const fire = () => window.dispatchEvent(new CustomEvent(eventName));
     if (typeof queueMicrotask === 'function') queueMicrotask(fire);
     else Promise.resolve().then(fire);
+  } catch {}
+}
+
+// Бейдж на иконке установленного PWA: число непросмотренных проверок
+// с изменениями. Поддерживается iOS ≥ 16.4 (PWA с главного экрана),
+// Android/Chrome, десктоп-Chromium; в остальных — тихий no-op.
+function updateAppBadge() {
+  try {
+    if (typeof navigator === 'undefined' || !('setAppBadge' in navigator)) return;
+    const list = loadJSON(STORAGE.siteChanges, []) || [];
+    const n = list.filter(c => !c.acknowledgedAt && (c.hasChanges || c.hasSourceIssues)).length;
+    if (n > 0) navigator.setAppBadge(n).catch(() => {});
+    else navigator.clearAppBadge().catch(() => {});
   } catch {}
 }
 
@@ -190,6 +208,7 @@ function withTimeout(promise, ms = FETCH_TIMEOUT_MS) {
 // и minute-tick получалось ~30 JSON.parse в минуту. Теперь парсим один раз,
 // инвалидируем через _invalidateCache при saveJSON(STORAGE.cache).
 let _cacheParsed = null;       // { at, payload, mock }
+let _instructorsParsed = null; // распарсенный каталог инструкторов
 let _cacheRawHash = null;      // строка из localStorage, для детектирования multi-tab изменений
 
 // Результат ПОСЛЕДНЕЙ попытки fetchSchedule: true если свалились в mock.
@@ -213,7 +232,9 @@ function _invalidateCache() {
 
 const Data = {
   FACILITIES,
-  INSTRUCTORS,
+  // Каталог инструкторов теперь редактируемый (настройки) — геттер, чтобы
+  // существующий код Data.INSTRUCTORS продолжал работать без изменений.
+  get INSTRUCTORS() { return this.loadInstructors(); },
   get TODAY_ISO() { return todayIso(); },
 
   // ── Settings ──
@@ -252,6 +273,35 @@ const Data = {
   },
   clearShifts() { this.saveShifts([]); },
 
+  // ── Instructors (редактируемый каталог) ──
+  loadInstructors() {
+    if (_instructorsParsed) return _instructorsParsed;
+    const stored = loadJSON(STORAGE.instructors, null);
+    _instructorsParsed = (Array.isArray(stored) && stored.length)
+      ? stored
+      : DEFAULT_INSTRUCTORS.slice();
+    return _instructorsParsed;
+  },
+  saveInstructors(list) {
+    _instructorsParsed = list;
+    saveJSON(STORAGE.instructors, list);
+    notifyAsync('rpgu:instructors-changed');
+  },
+  addInstructor(name) {
+    const clean = String(name || '').trim().replace(/\s+/g, ' ');
+    if (!clean) return null;
+    const list = this.loadInstructors();
+    if (list.some(i => i.name.toLowerCase() === clean.toLowerCase())) return null;
+    const parts = clean.split(' ');
+    const initials = ((parts[0][0] || '') + ((parts[1] || '')[0] || '')).toUpperCase();
+    const inst = { id: 'i' + Date.now().toString(36), name: clean, initials };
+    this.saveInstructors([...list, inst]);
+    return inst;
+  },
+  removeInstructor(id) {
+    this.saveInstructors(this.loadInstructors().filter(i => i.id !== id));
+  },
+
   // ── Site changes ──
   loadSiteChanges() {
     const stored = loadJSON(STORAGE.siteChanges, null);
@@ -261,6 +311,7 @@ const Data = {
   saveSiteChanges(list) {
     saveJSON(STORAGE.siteChanges, list);
     notifyAsync('rpgu:site-changes-changed');
+    updateAppBadge();
   },
   ackChange(id) {
     const list = this.loadSiteChanges().map(c =>
@@ -417,7 +468,7 @@ const Data = {
   RU_MONTHS,
 
   getFacility(id) { return FACILITIES.find(f => f.id === id) || null; },
-  getInstructor(id) { return INSTRUCTORS.find(i => i.id === id) || null; },
+  getInstructor(id) { return this.loadInstructors().find(i => i.id === id) || null; },
 
   // ── Доступ к закэшированному снапшоту сайта ──
   loadCachedSchedule() {
@@ -547,6 +598,12 @@ const Data = {
   },
 
   // ── Export / Import ──
+  // .ics для системного календаря телефона/компьютера. Время конвертируется
+  // в UTC (Минск = UTC+3 без переходов) — см. buildICS в _logic.js.
+  exportICS() {
+    return buildICS(this.loadShifts(), FACILITIES, this.loadInstructors());
+  },
+
   exportJSON() {
     return JSON.stringify({
       version: 4,
@@ -631,3 +688,25 @@ const Data = {
 };
 
 window.Data = Data;
+
+// Мульти-таб/мульти-окно: событие storage стреляет в ДРУГИХ вкладках при
+// изменении localStorage. Транслируем его в те же события, что и локальные
+// мутации, чтобы вторая вкладка или открытое рядом PWA-окно не расходились
+// с актуальными данными до ближайшего focus.
+window.addEventListener('storage', (e) => {
+  if (!e || !e.key) return;
+  if (e.key === STORAGE.shifts) notifyAsync('rpgu:shifts-changed');
+  else if (e.key === STORAGE.siteChanges) {
+    notifyAsync('rpgu:site-changes-changed');
+    updateAppBadge();
+  } else if (e.key === STORAGE.cache) {
+    _invalidateCache();
+  } else if (e.key === STORAGE.instructors) {
+    _instructorsParsed = null;
+    notifyAsync('rpgu:instructors-changed');
+  }
+});
+
+// Синхронизируем бейдж на иконке при старте (вдруг изменения квитировали
+// на другом устройстве/вкладке, а бейдж остался).
+updateAppBadge();

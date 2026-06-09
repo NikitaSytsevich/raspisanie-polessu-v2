@@ -277,6 +277,69 @@ function annotateAffectedShifts(events, shifts) {
   }
 }
 
+
+// ── Экспорт в iCalendar (.ics) ──────────────────────────────────
+// Минск — UTC+3 без сезонных переходов (с 2011 года), поэтому время
+// безопасно конвертируется в UTC простой арифметикой, без VTIMEZONE.
+const MINSK_UTC_OFFSET_MIN = 180;
+
+function icsEscape(s) {
+  return String(s || '')
+    .replace(/\\/g, '\\\\')
+    .replace(/;/g, '\\;')
+    .replace(/,/g, '\\,')
+    .replace(/\r?\n/g, '\\n');
+}
+
+function icsUtcStamp(dateIso, hhmm) {
+  const [y, mo, d] = dateIso.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, mo - 1, d, 0, toMinutes(hhmm) - MINSK_UTC_OFFSET_MIN));
+  const p2 = (n) => String(n).padStart(2, '0');
+  return `${dt.getUTCFullYear()}${p2(dt.getUTCMonth() + 1)}${p2(dt.getUTCDate())}` +
+         `T${p2(dt.getUTCHours())}${p2(dt.getUTCMinutes())}00Z`;
+}
+
+// Чистая генерация .ics: смены пользователя → VEVENT'ы. Зависимости
+// (каталоги объектов/инструкторов) передаются параметрами, чтобы
+// функция тестировалась в node без window/localStorage.
+function buildICS(shifts, facilities, instructors = []) {
+  const facById = new Map((facilities || []).map(f => [f.id, f]));
+  const instById = new Map((instructors || []).map(i => [i.id, i]));
+  const now = new Date();
+  const p2 = (n) => String(n).padStart(2, '0');
+  const dtstamp = `${now.getUTCFullYear()}${p2(now.getUTCMonth() + 1)}${p2(now.getUTCDate())}` +
+                  `T${p2(now.getUTCHours())}${p2(now.getUTCMinutes())}${p2(now.getUTCSeconds())}Z`;
+  const lines = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//raspisanie-polessu//RU',
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',
+    'X-WR-CALNAME:Расписание ПолесГУ',
+  ];
+  for (const s of shifts || []) {
+    if (!s || !s.date || !s.start || !s.end) continue;
+    const fac = facById.get(s.facilityId);
+    const withWho = (s.instructors || [])
+      .map(id => (instById.get(id) || {}).name)
+      .filter(Boolean).join(', ');
+    const descr = [s.activity, withWho && ('с ' + withWho)].filter(Boolean).join(' · ');
+    lines.push(
+      'BEGIN:VEVENT',
+      `UID:${icsEscape(s.id)}@raspisanie-polessu`,
+      `DTSTAMP:${dtstamp}`,
+      `DTSTART:${icsUtcStamp(s.date, s.start)}`,
+      `DTEND:${icsUtcStamp(s.date, s.end)}`,
+      `SUMMARY:${icsEscape('Смена · ' + ((fac && fac.name) || s.facilityId))}`
+    );
+    if (descr) lines.push(`DESCRIPTION:${icsEscape(descr)}`);
+    if (fac && fac.name) lines.push(`LOCATION:${icsEscape(fac.name)}`);
+    lines.push('END:VEVENT');
+  }
+  lines.push('END:VCALENDAR');
+  return lines.join('\r\n') + '\r\n';
+}
+
 module.exports = {
   toMinutes,
   minutesToHHMM,
@@ -289,4 +352,5 @@ module.exports = {
   computeScheduleDiff,
   eventOverlapsShift,
   annotateAffectedShifts,
+  buildICS,
 };

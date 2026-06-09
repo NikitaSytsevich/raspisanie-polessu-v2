@@ -42,6 +42,7 @@ function App() {
     changes:  () => <window.ChangesScreen/>,
     editor:   (props) => <window.EditorScreen {...props}/>,
     settings: () => <window.SettingsScreen onThemeChange={handleThemeChange}/>,
+    stats:    () => <window.StatsScreen/>,
   };
 
   // home/settings/changes — без аргументов, монтируем при старте и держим

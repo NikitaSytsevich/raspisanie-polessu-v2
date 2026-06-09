@@ -9,4 +9,5 @@ import './home.jsx';
 import './changes.jsx';
 import './editor.jsx';
 import './settings.jsx';
+import './stats.jsx';
 import './main.jsx';

@@ -132,6 +132,7 @@ function renderTemplates(assets) {
     assets.bundle, assets.styles, assets.react, assets.reactDom,
     '/manifest.webmanifest',
     '/icon-192.png', '/icon-512.png', '/apple-touch-icon.png', '/favicon-32.png',
+    '/icon-maskable-192.png', '/icon-maskable-512.png',
   ];
   let sw = fs.readFileSync(SW_TEMPLATE, 'utf8');
   sw = sw
