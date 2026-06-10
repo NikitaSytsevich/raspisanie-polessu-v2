@@ -82,14 +82,57 @@ async function handleCommand(cmd, chatId) {
   return sendLong(chatId, 'Не знаю такую команду. Список: /help');
 }
 
+// Однократная (и идемпотентная) регистрация webhook'а у Telegram —
+// GET /api/telegram?setup=<TELEGRAM_WEBHOOK_SECRET>. Токен бота знает
+// только сервер (sensitive env, из CLI не читается), поэтому setWebhook
+// вызывается отсюда, а не с машины разработчика.
+async function handleSetup(req, res) {
+  const { tgApi } = require('./_lib/telegram');
+  const host = process.env.APP_URL
+    ? new URL(process.env.APP_URL).host
+    : (req.headers['x-forwarded-host'] || req.headers.host);
+  const webhook = await tgApi('setWebhook', {
+    url: `https://${host}/api/telegram`,
+    secret_token: process.env.TELEGRAM_WEBHOOK_SECRET,
+    allowed_updates: ['message'],
+    drop_pending_updates: true,
+  });
+  const commands = await tgApi('setMyCommands', {
+    commands: [
+      { command: 'today',       description: 'Расписание на сегодня' },
+      { command: 'tomorrow',    description: 'Расписание на завтра' },
+      { command: 'status',      description: 'Здоровье источников' },
+      { command: 'subscribe',   description: 'Получать уведомления об изменениях' },
+      { command: 'unsubscribe', description: 'Отписаться' },
+      { command: 'help',        description: 'Что умеет бот' },
+    ],
+  });
+  const info = await tgApi('getWebhookInfo', {});
+  res.status(200).end(JSON.stringify({
+    ok: webhook.ok && commands.ok,
+    webhook: webhook.json,
+    commands: commands.json,
+    info: info.json?.result || null,
+  }));
+}
+
 module.exports = async (req, res) => {
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
 
   const secret = process.env.TELEGRAM_WEBHOOK_SECRET;
+  if (!secret) {
+    res.status(503).end(JSON.stringify({ ok: false, error: 'webhook_not_configured' }));
+    return;
+  }
+  if (req.method === 'GET' && req.query && req.query.setup === secret) {
+    await handleSetup(req, res);
+    return;
+  }
+
   const got = req.headers && req.headers['x-telegram-bot-api-secret-token'];
-  // Без настроенного секрета webhook не работает — не оставляем endpoint
-  // открытым: любой мог бы слать «команды» от чужого имени.
-  if (!secret || got !== secret) {
+  // Без валидного секрета не работаем — не оставляем endpoint открытым:
+  // любой мог бы слать «команды» от чужого имени.
+  if (got !== secret) {
     res.status(401).end(JSON.stringify({ ok: false }));
     return;
   }
