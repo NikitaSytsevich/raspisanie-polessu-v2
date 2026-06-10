@@ -34,8 +34,9 @@ jobs:
           ENDPOINT: https://raspisanie-polessu-v2.vercel.app/api/notify
         run: |
           # Запрашиваем OIDC-токен у GitHub (audience = наш домен).
+          # jq предустановлен на ubuntu-latest.
           TOKEN=$(curl -fsS \
             -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
             "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$AUDIENCE" \
-            | python3 -c 'import sys,json; print(json.load(sys.stdin)["value"])')
+            | jq -r '.value')
           curl -fsS --max-time 40 -H "Authorization: Bearer $TOKEN" "$ENDPOINT"
