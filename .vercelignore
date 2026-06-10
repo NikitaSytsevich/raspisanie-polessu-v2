@@ -8,3 +8,9 @@ design/
 api/_parsers/__fixtures__/
 README.md
 dev-server.js
+
+# Dev-артефакты watch-сборки (прод собирает хэшированные имена сам;
+# эти файлы только раздулись бы как публичная статика).
+app/bundle.js
+app/bundle.js.map
+app/styles.min.css

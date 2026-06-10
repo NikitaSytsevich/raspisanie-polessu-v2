@@ -101,7 +101,7 @@
                                   (HTML Drupal-нод)
 ```
 
-- **Бекенд** — одна функция `api/schedule.js`. Параллельно тянет 4 страницы через `undici`, прогоняет через `cheerio`-парсеры, возвращает JSON с `schemaVersion: 4` (v4 добавил `facility.closureRanges: [{from, to, notice}]` для частичного закрытия — когда расписание есть, но в часть дат объект закрыт). Кеш CDN на 5 минут (`s-maxage=300, stale-while-revalidate=600`).
+- **Бекенд** — одна функция `api/schedule.js`. Параллельно тянет 4 страницы через глобальный `fetch` (Node 20), прогоняет через `cheerio`-парсеры, возвращает JSON с `schemaVersion: 4` (v4 добавил `facility.closureRanges: [{from, to, notice}]` для частичного закрытия — когда расписание есть, но в часть дат объект закрыт). Кеш CDN на 5 минут (`s-maxage=300, stale-while-revalidate=600`).
 - **Парсеры** — общий «табличный экстрактор» (`_common.js`) + общий inline-движок (`_inline.js`: «Вторник 26.05.2026 / HH.MM – HH.MM …» с конкретными датами — так публикуют расписание оба бассейна и ледовая арена после ремонтов) + детектор закрытия объекта + отдельный inline-парсер гребной базы (расписание в `<h1>` через `<br>`). Все сессии проходят валидацию (`start < end`, окно дат `[today−7, today+45]`), inline побеждает таблицу только при «богатом» результате (≥2 дней или ≥3 слотов). Парсер возвращает `{ ok: true, sessions, closureRanges? }` либо `{ ok: false, reason: 'closed', notice, range }`.
 - **Фронтенд** — React 18, JSX собирается в `app/bundle.js` через **esbuild** (см. `scripts/build.js`). React/ReactDOM грузятся как UMD с unpkg, что выносится из бандла. PWA с service worker'ом (`sw.js`): app-shell cache-first, `/api/schedule` stale-while-revalidate, шрифты Google и React CDN — отдельные кеши.
 - **Хранилище** — `localStorage` пользователя. Сервер не знает ни кто вы, ни что вы записали.
@@ -115,7 +115,7 @@
 | Слой        | Технологии                                      |
 |-------------|-------------------------------------------------|
 | Фронт       | React 18 (UMD c CDN), esbuild, vanilla CSS, PWA |
-| Бекенд      | Node.js 20, Vercel serverless, cheerio, undici  |
+| Бекенд      | Node.js 20, Vercel serverless, cheerio          |
 | Хостинг     | Vercel Hobby (free)                             |
 | Хранилище   | `localStorage` (клиент), CDN-кеш (Vercel Edge)  |
 | Тесты       | `node --test` (без зависимостей)                |
