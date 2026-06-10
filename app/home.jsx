@@ -756,9 +756,33 @@ function DatePicker({ popoverRef, anchorDate, onSelect, onClose }) {
 // смены пользователя сворачиваются в footer-хинт «график 07:30–13:30».
 // ──────────────────────────────────────────────────────────────────
 
+// Сайтовые сессии объекта на дату. Малый бассейн: на сайте смешаны
+// «сеанс/родительский сеанс», «платные занятия», «обучение плаванию» —
+// берём только первый тип, инструктор работает только с сеансами
+// (тот же фильтр, что в FacilityCard).
+function facilitySiteSessions(facilityId, date) {
+  const raw = window.Data.getSiteSessionsForDay(facilityId, date);
+  if (facilityId !== 'small_pool') return raw;
+  return raw.filter(s => /сеанс/i.test(s.activity || ''));
+}
+
+// Фактическое начало работы на объекте ПО САЙТУ: старт первого сайтового
+// сеанса, пересекающегося с окном моих смен (обрезанный моим окном).
+// Нет данных сайта / нет пересечений — фолбэк на время по графику.
+function facilityEffectiveStart(facilityId, date, myStart, myEnd) {
+  for (const ss of facilitySiteSessions(facilityId, date)) {
+    const s = window.Data.toMinutes(ss.start);
+    const e = window.Data.toMinutes(ss.end);
+    if (s < myEnd && e > myStart) return Math.max(s, myStart);
+  }
+  return myStart;
+}
+
 function FacilityList({ shifts, today, date, nowMins, onPushEditor }) {
-  // Группируем смены по объекту. Порядок карточек — по первому старту смены
-  // на каждом объекте (стабильно и совпадает с восприятием «утро → вечер»).
+  // Группируем смены по объекту. Порядок карточек — по ФАКТИЧЕСКОМУ началу
+  // работы по сайту (первый сайтовый сеанс в моём окне), а не по плановому
+  // старту смены: видно реальную очерёдность «куда иду сначала».
+  // Tie-break — плановый старт, чтобы порядок был стабильным без данных сайта.
   const groups = _hm(() => {
     const map = new Map();
     for (const s of shifts) {
@@ -770,15 +794,18 @@ function FacilityList({ shifts, today, date, nowMins, onPushEditor }) {
       const sorted = shs.slice().sort(
         (a, b) => window.Data.toMinutes(a.start) - window.Data.toMinutes(b.start)
       );
+      const myStart = window.Data.toMinutes(sorted[0].start);
+      const myEnd = Math.max(...sorted.map(s => window.Data.toMinutes(s.end)));
       entries.push({
         facilityId,
         shifts: sorted,
-        firstStart: window.Data.toMinutes(sorted[0].start),
+        firstStart: myStart,
+        effStart: facilityEffectiveStart(facilityId, date, myStart, myEnd),
       });
     }
-    entries.sort((a, b) => a.firstStart - b.firstStart);
+    entries.sort((a, b) => a.effStart - b.effStart || a.firstStart - b.firstStart);
     return entries;
-  }, [shifts]);
+  }, [shifts, date]);
 
   if (!groups.length) {
     const isToday = date === today;
@@ -819,15 +846,10 @@ function FacilityList({ shifts, today, date, nowMins, onPushEditor }) {
 function FacilityCard({ facilityId, shifts, today, date, nowMins, idx, onPushEditor }) {
   const fac = window.Data.getFacility(facilityId);
   const cached = window.Data.getCachedFacility(facilityId);
-  // Малый бассейн: на сайте смешаны «сеанс/родительский сеанс», «платные
-  // занятия», «обучение плаванию». В карточку забираем ТОЛЬКО первый
-  // тип — инструктор работает только с сеансами; платные и обучение
-  // ведёт другой персонал и в эту смену не считается.
-  const siteSessions = _hm(() => {
-    const raw = window.Data.getSiteSessionsForDay(facilityId, date);
-    if (facilityId !== 'small_pool') return raw;
-    return raw.filter(s => /сеанс/i.test(s.activity || ''));
-  }, [facilityId, date]);
+  const siteSessions = _hm(
+    () => facilitySiteSessions(facilityId, date),
+    [facilityId, date]
+  );
 
   // Состояние объекта на эту дату
   let closed = false;
