@@ -15,6 +15,49 @@ const { normalizeText, parseDateRange } = require('../_lib/timeParse');
 // допускает «тепл» и «электр» помимо горячей/холодной воды.
 const TRIGGER_RE = /(закрыт\w*\s+(?:на|в\s+связи|до|с|по|временно)|не\s+работает|приостанов|ремонтн|техническ|отключени\w*\s+(?:горяч|холодн|вод|тепл|электр)|планов\w+\s+отключени)/iu;
 
+// Диапазон дат внутри объявления; формы зеркалят parseDateRange():
+// «с 18.05[.2026] по 25.05[.2026]» и «11.05.2026-24.05.2026». Слоты времени
+// («09.15 – 10.00») сюда не попадают: в них нет ни «по», ни года.
+const RANGE_MARKER =
+  '(?:с\\s*)?\\d{1,2}\\.\\d{1,2}(?:\\.\\d{4})?\\s*г?\\.?\\s*по\\s*\\d{1,2}\\.\\d{1,2}(?:\\.\\d{4})?' +
+  '|\\d{1,2}\\.\\d{1,2}\\.\\d{4}\\s*г?\\.?\\s*[-–—−]\\s*\\d{1,2}\\.\\d{1,2}\\.\\d{4}';
+// Начало смысловой клаузы объявления: причина («в связи …») или диапазон дат.
+const CLAUSE_MARKER_RE = new RegExp(`в\\s+связи|${RANGE_MARKER}`, 'giu');
+
+const MAX_LEAD = 120;      // столько символов перед триггером ещё терпимо
+const MARKER_WINDOW = 200; // где искать начало клаузы, если шапка длиннее
+
+// Страницы бассейнов публикуют расписание сплошным текстом без точек, поэтому
+// «предложение» с триггером вбирает всю простыню слотов перед объявлением:
+// «Расписание плавательного бассейна Воскресенье 07.06.2026 09.15 – 10.00 …
+// С 08.06.2026 по 20.06.2026 плавательный бассейн не работает.» Если перед
+// триггером больше MAX_LEAD символов — обрезаем до начала клаузы: самый левый
+// маркер в окне MARKER_WINDOW до триггера («С 08.06.2026 по …»), а без
+// маркера — по границе слова с зачисткой обрывков слотов до первой буквы.
+function trimToClause(sentence) {
+  const t = sentence.match(TRIGGER_RE);
+  if (!t || t.index <= MAX_LEAD) return sentence;
+
+  let cut = -1;
+  CLAUSE_MARKER_RE.lastIndex = 0;
+  let m;
+  while ((m = CLAUSE_MARKER_RE.exec(sentence)) !== null) {
+    if (m.index >= t.index) break;
+    if (m.index >= t.index - MARKER_WINDOW) { cut = m.index; break; }
+  }
+
+  let out;
+  if (cut >= 0) {
+    out = sentence.slice(cut);
+  } else {
+    out = sentence.slice(t.index - MAX_LEAD)
+      .replace(/^\S*\s+/, '')               // обрубок слова на месте разреза
+      .replace(/^[^A-Za-zА-Яа-яЁё]+/, '');  // хвосты слотов «– 21.15 …»
+    if (!out) out = sentence.slice(t.index);
+  }
+  return out.charAt(0).toUpperCase() + out.slice(1);
+}
+
 // Третий аргумент `plainText` — заранее очищенный текст root'а (с пробелами
 // между блочными элементами). Если не передан — читаем напрямую через
 // $root.text(), как раньше. Это нужно, потому что cheerio склеивает соседние
@@ -25,10 +68,13 @@ function detect($, $root, plainText, todayIso) {
   const tm = text.match(TRIGGER_RE);
   if (!tm) return null;
 
-  // Берём предложение/абзац с триггером, чтобы не тащить весь HTML в notice.
+  // Берём предложение/абзац с триггером, чтобы не тащить весь HTML в notice,
+  // и обрезаем шумную шапку перед триггером (см. trimToClause). Хвост длиннее
+  // 280 символов режем по границе слова — мидворд-обрез выглядел неряшливо.
   const sentences = text.split(/(?<=[\.\!?])\s+/);
-  const matched = sentences.filter(s => TRIGGER_RE.test(s));
-  const notice = (matched.join(' ') || text).slice(0, 280);
+  const matched = sentences.filter(s => TRIGGER_RE.test(s)).map(trimToClause);
+  const base = matched.join(' ') || trimToClause(text);
+  const notice = base.length > 280 ? base.slice(0, 279).replace(/\s+\S*$/, '') + '…' : base;
 
   // Диапазон дат ищем сначала в самом notice, затем — в окне вокруг триггера.
   // По всему тексту нельзя: подцепится чужой диапазон в духе «срок действия
