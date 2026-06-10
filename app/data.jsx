@@ -597,6 +597,27 @@ const Data = {
     };
   },
 
+  // ── Синхронизация смен с Telegram-ботом ──
+  // Пушит копию смен на /api/shifts-sync (→ Vercel Blob), чтобы бот мог
+  // помечать изменения сайта, задевающие ИМЕННО ваши смены. Работает только
+  // если в настройках задан ключ (botSyncKey) — без него no-op.
+  async syncShiftsToBot() {
+    const key = this.loadSettings().botSyncKey;
+    if (!key) return { ok: false, reason: 'no_key' };
+    try {
+      const r = await fetchWithTimeout('/api/shifts-sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Sync-Key': key },
+        body: JSON.stringify({ shifts: this.loadShifts() }),
+      });
+      if (r.status === 401) return { ok: false, reason: 'bad_key' };
+      if (r.status === 503) return { ok: false, reason: 'not_configured' };
+      return { ok: r.ok };
+    } catch {
+      return { ok: false, reason: 'network' };
+    }
+  },
+
   // ── Export / Import ──
   // .ics для системного календаря телефона/компьютера. Время конвертируется
   // в UTC (Минск = UTC+3 без переходов) — см. buildICS в _logic.js.
@@ -710,3 +731,13 @@ window.addEventListener('storage', (e) => {
 // Синхронизируем бейдж на иконке при старте (вдруг изменения квитировали
 // на другом устройстве/вкладке, а бейдж остался).
 updateAppBadge();
+
+// Автосинк смен с ботом: после любого изменения смен (debounce 4 с — серия
+// из N смен уйдёт одним запросом) шлём копию на сервер. Тихий best-effort:
+// упавшая сеть не мешает работе, при следующем изменении попробуем снова.
+let _botSyncTimer = null;
+window.addEventListener('rpgu:shifts-changed', () => {
+  if (!Data.loadSettings().botSyncKey) return;
+  clearTimeout(_botSyncTimer);
+  _botSyncTimer = setTimeout(() => { Data.syncShiftsToBot(); }, 4000);
+});

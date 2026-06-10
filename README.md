@@ -55,12 +55,26 @@
 
 ## Новое в v1.5
 
-- **Telegram-уведомления** — `/api/notify` сверяет сайт по расписанию (Vercel Cron
-  или внешний пингер) и шлёт изменения ботом в Telegram. Настройка: env-переменные
-  `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `CRON_SECRET` (см. `.env.example`,
-  токен — только в переменных окружения, не в коде). Опционально
-  `TELEGRAM_ADMIN_CHAT_ID` — отдельный чат для служебных алертов о здоровье
-  парсера (источник перестал парситься / восстановился).
+- **Telegram-бот** — не только уведомления, но и команды:
+  - `/api/notify` сверяет сайт и шлёт изменения (Vercel Cron раз в сутки +
+    GitHub Actions пингер `notify-ping.yml` каждые 10 минут, нужен repo-секрет
+    `NOTIFY_PING_URL`). Переносы сеансов склеиваются в «🔁 было → стало»,
+    под сообщением inline-кнопка «Открыть приложение», длинные сообщения
+    режутся по лимиту 4096 c retry на 429.
+  - `/api/telegram` — webhook бота: `/today`, `/tomorrow`, `/status`,
+    `/subscribe`, `/unsubscribe` (самоподписка чатов хранится в Vercel Blob,
+    редеплой не нужен). Регистрация: `setWebhook` c `secret_token` =
+    `TELEGRAM_WEBHOOK_SECRET`.
+  - `/api/shifts-sync` — приложение (при заданном в настройках ключе
+    `SHIFTS_SYNC_KEY`) пушит копию смен в Blob, и уведомления получают
+    пометку «⚠️ ваша смена» на пересекающихся событиях.
+  - Утренний дайджест: первый прогон notify в окне 07:50–08:35 Минска шлёт
+    расписание на день (выключается `TELEGRAM_DIGEST=off`).
+  - env: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `CRON_SECRET`,
+    `TELEGRAM_WEBHOOK_SECRET`, `SHIFTS_SYNC_KEY`, опционально
+    `TELEGRAM_ADMIN_CHAT_ID` (служебные алерты о здоровье парсера) и
+    `APP_URL` (адрес для inline-кнопки). Токены — только в переменных
+    окружения, не в коде.
 - **Live-устойчивость бэкенда** — last-known-good снапшот (память инстанса +
   Vercel Blob при подключённом сторе): если polessu.by лежит, отдаём последние
   успешные данные с флагом `stale`, а не parse_error. Плюс один retry упавшего

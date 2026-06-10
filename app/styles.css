@@ -1381,6 +1381,17 @@ html.light .add-shift-link:hover .plus { color: #fffaf3; }
   cursor: pointer;
 }
 .src-row:last-child { border-bottom: none; }
+
+/* Пояснение под полем ключа синхронизации с ботом (настройки) */
+.sync-note {
+  margin: 0;
+  padding: 10px 16px 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-subtle);
+  font-family: "Newsreader", Georgia, serif;
+}
+.sync-note strong { color: var(--text-muted); font-weight: 600; }
 .src-row .dot {
   width: 8px; height: 8px; border-radius: 50%;
   justify-self: center;

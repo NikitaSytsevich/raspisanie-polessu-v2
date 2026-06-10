@@ -1,4 +1,4 @@
-// GET /api/notify — серверная проверка изменений + уведомление в Telegram.
+// GET /api/notify — серверная проверка изменений + уведомления в Telegram.
 //
 // Зачем: фронтенд считает diff локально, но пользователь узнаёт о нём
 // только открыв приложение. Эта функция шлёт изменения пушем в Telegram.
@@ -7,119 +7,41 @@
 //   TELEGRAM_BOT_TOKEN — токен бота от @BotFather. НИКОГДА не коммитить
 //                        в репозиторий — только переменная окружения!
 //   TELEGRAM_CHAT_ID   — id чата/канала, можно несколько через запятую.
-//                        Свой id проще всего узнать у @userinfobot.
+//                        Дополнительно к этому списку рассылка идёт всем,
+//                        кто подписался командой /subscribe (Blob).
 //   TELEGRAM_ADMIN_CHAT_ID — (опционально) отдельный чат для служебных
-//                        оповещений о здоровье парсера: источник перестал
-//                        парситься (ok → template/parse_error/stale) или
-//                        восстановился. Не настроен — health-алерты выключены,
-//                        пользовательский канал ими не засоряется.
-//   CRON_SECRET        — произвольная строка, защищает endpoint от чужих
-//                        вызовов. Vercel Cron подставляет её сам в
-//                        заголовок Authorization: Bearer <CRON_SECRET>.
-//   BLOB_READ_WRITE_TOKEN — появляется при подключении Vercel Blob;
-//                        нужен для хранения «предыдущего» снапшота.
+//                        оповещений о здоровье парсера.
+//   TELEGRAM_DIGEST    — 'off' выключает утренний дайджест (по умолчанию вкл).
+//   CRON_SECRET        — защита endpoint'а. Vercel Cron подставляет его сам
+//                        (Authorization: Bearer), внешний пингер — ?key=.
+//   BLOB_READ_WRITE_TOKEN — Vercel Blob: prev-снапшот, подписчики, смены.
 //
 // Запуск по расписанию:
-//   • Vercel Cron (vercel.json → crons) — на Hobby максимум 1 раз в сутки.
-//   • Чаще — бесплатный внешний пингер (cron-job.org / UptimeRobot):
-//     GET https://<домен>/api/notify?key=<CRON_SECRET> каждые 10–15 минут.
+//   • Vercel Cron (vercel.json) — на Hobby 1 раз в сутки, 08:00 Минска.
+//   • Чаще — GitHub Actions workflow notify-ping.yml (каждые 10 минут,
+//     нужен repo-секрет NOTIFY_PING_URL) или любой внешний пингер.
+//
+// Утренний дайджест: первый прогон в окне 07:50–08:35 Минска шлёт
+// расписание на день (дедуп по дате в Blob) — независимо от изменений.
 
 const { buildPayload } = require('./_lib/snapshot');
-const { computeScheduleDiff } = require('../app/_logic.js');
+const { computeScheduleDiff, eventOverlapsShift } = require('../app/_logic.js');
+const {
+  haveBlob, blobLoadJson, blobSaveJson, allRecipients, envChats,
+  broadcast, appButton,
+} = require('./_lib/telegram');
+const { pairMoves, formatChangesMessage, formatDaySchedule, esc } = require('./_lib/format');
 
 const PREV_KEY = 'notify-prev-snapshot.json';
-const RU_WD = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
-const RU_MO = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
-               'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
+const SHIFTS_KEY = 'user-shifts.json';
+const DIGEST_KEY = 'tg-digest-state.json';
+const TZ = 'Europe/Minsk';
 
 function authorized(req) {
   const secret = process.env.CRON_SECRET;
   if (!secret) return true; // защита не настроена — не блокируем
   if ((req.headers && req.headers.authorization) === `Bearer ${secret}`) return true;
   return String((req.query && req.query.key) || '') === secret;
-}
-
-function haveBlob() { return Boolean(process.env.BLOB_READ_WRITE_TOKEN); }
-
-async function loadPrev() {
-  if (!haveBlob()) return null;
-  try {
-    const { list } = require('@vercel/blob');
-    const { blobs } = await list({ prefix: PREV_KEY, limit: 1 });
-    if (!blobs || !blobs.length) return null;
-    const r = await fetch(blobs[0].url, { cache: 'no-store' });
-    return r.ok ? await r.json() : null;
-  } catch { return null; }
-}
-
-async function savePrev(payload) {
-  if (!haveBlob()) return;
-  try {
-    const { put } = require('@vercel/blob');
-    await put(PREV_KEY, JSON.stringify(payload), {
-      access: 'public',
-      addRandomSuffix: false,
-      allowOverwrite: true,
-      contentType: 'application/json',
-    });
-  } catch {}
-}
-
-function fmtDate(iso) {
-  const d = new Date(iso + 'T12:00:00');
-  return `${RU_WD[d.getDay()]}, ${d.getDate()} ${RU_MO[d.getMonth()]}`;
-}
-
-function esc(s) {
-  return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-
-function formatMessage(events, facNames) {
-  const groups = new Map();
-  for (const ev of events) {
-    const key = `${ev.facilityId}::${ev.date}`;
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(ev);
-  }
-  const lines = ['🔔 <b>Расписание ПолесГУ — изменения на сайте</b>'];
-  for (const [key, evs] of groups) {
-    const [facId, date] = key.split('::');
-    lines.push('', `<b>${esc(facNames[facId] || facId)}</b> · ${fmtDate(date)}`);
-    for (const ev of evs.slice(0, 15)) {
-      const sign = ev.kind === 'add' ? '➕' : ev.kind === 'rem' ? '➖' : '✏️';
-      const act = ev.activity ? ` (${esc(ev.activity)})` : '';
-      lines.push(`${sign} ${ev.start}–${ev.end}${act}`);
-    }
-    if (evs.length > 15) lines.push(`… и ещё ${evs.length - 15}`);
-  }
-  return lines.join('\n');
-}
-
-function chatsFromEnv(name) {
-  return String(process.env[name] || '')
-    .split(',').map(s => s.trim()).filter(Boolean);
-}
-
-async function sendTelegram(text, chats) {
-  const token = process.env.TELEGRAM_BOT_TOKEN;
-  if (!token || !chats.length) return { sent: 0, reason: 'telegram_not_configured' };
-  let sent = 0;
-  for (const chatId of chats) {
-    try {
-      const r = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: chatId,
-          text,
-          parse_mode: 'HTML',
-          disable_web_page_preview: true,
-        }),
-      });
-      if (r.ok) sent++;
-    } catch {}
-  }
-  return { sent };
 }
 
 // Diff только по объектам с dataQuality 'ok' С ОБЕИХ сторон. Иначе упавший
@@ -144,7 +66,7 @@ function healthMap(payload) {
 
 // Переходы здоровья между prev и next: деградация (ok/closed → bad) и
 // восстановление (bad → ok/closed). Сравнение с prev даёт «N=1 с дедупом»:
-// алерт уходит один раз на переход, а не на каждый прогон в сломанном состоянии.
+// алерт уходит один раз на переход, а не на каждый прогон.
 function healthTransitions(prev, next) {
   if (!prev) return [];
   const was = healthMap(prev);
@@ -160,6 +82,51 @@ function healthTransitions(prev, next) {
   return lines;
 }
 
+// Помечаем события, пересекающиеся со сменами пользователя (смены
+// синхронизирует приложение через /api/shifts-sync → Blob). Для kind:'move'
+// проверяем И новое, И старое окно — перенос задевает смену в обоих случаях.
+function markAffected(events, shifts) {
+  if (!Array.isArray(shifts) || !shifts.length) return;
+  for (const ev of events) {
+    const windows = ev.kind === 'move'
+      ? [ev, { facilityId: ev.facilityId, date: ev.date, start: ev.from.start, end: ev.from.end }]
+      : [ev];
+    ev.affectsMe = shifts.some(s => windows.some(w => eventOverlapsShift(w, s)));
+  }
+}
+
+// Минские часы-минуты текущего момента (для окна дайджеста).
+function minskNow() {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: TZ, hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).format(new Date()).split(':').map(Number);
+  return { h: parts[0], m: parts[1] };
+}
+
+function minskTodayIso() {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date());
+}
+
+// Утренний дайджест: окно 07:50–08:35 Минска (ловит и Vercel-cron в 08:00,
+// и 10-минутный пингер), дедуп по дате через Blob.
+async function maybeSendDigest(payload, recipients) {
+  if (process.env.TELEGRAM_DIGEST === 'off') return { sent: 0, skipped: 'disabled' };
+  const { h, m } = minskNow();
+  const inWindow = (h === 7 && m >= 50) || (h === 8 && m <= 35);
+  if (!inWindow) return { sent: 0, skipped: 'out_of_window' };
+  const today = minskTodayIso();
+  const state = await blobLoadJson(DIGEST_KEY);
+  if (state?.lastDate === today) return { sent: 0, skipped: 'already_sent' };
+  const text = formatDaySchedule(payload, today, {
+    title: `☀️ <b>Доброе утро! Расписание на сегодня</b>`,
+  });
+  const out = await broadcast(text, recipients, appButton());
+  if (out.sent) await blobSaveJson(DIGEST_KEY, { lastDate: today });
+  return out;
+}
+
 module.exports = async (req, res) => {
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
   res.setHeader('Cache-Control', 'no-store');
@@ -169,16 +136,23 @@ module.exports = async (req, res) => {
   }
 
   const next = await buildPayload();
-  const prev = await loadPrev();
+  const prev = await blobLoadJson(PREV_KEY);
+  const recipients = await allRecipients();
 
   let events = [];
   let notified = { sent: 0 };
   if (prev) {
-    events = computeScheduleDiff(okOnly(prev), okOnly(next));
+    events = pairMoves(computeScheduleDiff(okOnly(prev), okOnly(next)));
     if (events.length) {
+      const userShifts = (await blobLoadJson(SHIFTS_KEY))?.shifts;
+      markAffected(events, userShifts);
       const facNames = {};
       for (const f of next.facilities) facNames[f.id] = f.name;
-      notified = await sendTelegram(formatMessage(events, facNames), chatsFromEnv('TELEGRAM_CHAT_ID'));
+      notified = await broadcast(
+        formatChangesMessage(events, facNames),
+        recipients,
+        appButton()
+      );
     }
   }
 
@@ -187,22 +161,26 @@ module.exports = async (req, res) => {
   let adminNotified = { sent: 0 };
   if (health.length) {
     const msg = ['🛠 <b>Парсер ПолесГУ — статус источников</b>', '', ...health.map(esc)].join('\n');
-    adminNotified = await sendTelegram(msg, chatsFromEnv('TELEGRAM_ADMIN_CHAT_ID'));
+    adminNotified = await broadcast(msg, envChats('TELEGRAM_ADMIN_CHAT_ID'));
   }
+
+  const digest = await maybeSendDigest(next, recipients);
 
   // Пишем prev только когда есть что записать (baseline, изменения или
   // смена здоровья — иначе health-алерт повторялся бы каждый прогон) —
   // не жжём Blob-операции на каждый тихий прогон.
-  if (!prev || events.length || health.length) await savePrev(next);
+  if (!prev || events.length || health.length) await blobSaveJson(PREV_KEY, next);
 
   res.status(200).end(JSON.stringify({
     ok: true,
     baseline: !prev,
     events: events.length,
     notified: notified.sent,
+    recipients: recipients.length,
+    digest,
     healthChanges: health.length,
     adminNotified: adminNotified.sent,
     blobConfigured: haveBlob(),
-    telegramConfigured: Boolean(process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID),
+    telegramConfigured: Boolean(process.env.TELEGRAM_BOT_TOKEN && recipients.length),
   }));
 };

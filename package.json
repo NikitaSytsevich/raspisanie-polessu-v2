@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "node dev-server.js",
     "build": "node scripts/build.js",
-    "test": "node --test api/_parsers/*.test.js app/*.test.js"
+    "test": "node --test api/_parsers/*.test.js api/_lib/*.test.js app/*.test.js"
   },
   "dependencies": {
     "cheerio": "^1.0.0",

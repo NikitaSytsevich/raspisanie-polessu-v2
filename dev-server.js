@@ -42,6 +42,27 @@ const MIME = {
 
 const scheduleHandler = require('./api/schedule');
 const notifyHandler = require('./api/notify');
+const telegramHandler = require('./api/telegram');
+const shiftsSyncHandler = require('./api/shifts-sync');
+
+const API_ROUTES = {
+  '/api/schedule': scheduleHandler,
+  '/api/notify': notifyHandler,
+  '/api/telegram': telegramHandler,
+  '/api/shifts-sync': shiftsSyncHandler,
+};
+
+// Vercel-runtime парсит JSON-body сам; здесь читаем поток вручную.
+function readJsonBody(req) {
+  return new Promise((resolve) => {
+    let raw = '';
+    req.on('data', c => { raw += c; if (raw.length > 1e6) req.destroy(); });
+    req.on('end', () => {
+      try { resolve(raw ? JSON.parse(raw) : {}); } catch { resolve({}); }
+    });
+    req.on('error', () => resolve({}));
+  });
+}
 
 function safePath(reqPath) {
   let p = decodeURIComponent(reqPath.split('?')[0]);
@@ -56,15 +77,15 @@ const server = http.createServer(async (req, res) => {
     const parsed = url.parse(req.url, true);
     req.query = parsed.query;
 
-    if (parsed.pathname === '/api/schedule' || parsed.pathname === '/api/notify') {
+    const apiHandler = API_ROUTES[parsed.pathname];
+    if (apiHandler) {
       console.log(`[api] ${req.method} ${req.url}`);
-      const handler = parsed.pathname === '/api/notify' ? notifyHandler : scheduleHandler;
+      if (req.method === 'POST') req.body = await readJsonBody(req);
       // Адаптируем Node http.ServerResponse под мини-API Vercel
-      const origStatus = res.statusCode;
       const wrapped = Object.assign(res, {
         status(code) { res.statusCode = code; return wrapped; },
       });
-      await handler(req, wrapped);
+      await apiHandler(req, wrapped);
       return;
     }
 

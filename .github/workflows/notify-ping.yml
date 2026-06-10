@@ -1,0 +1,33 @@
+# Пингер /api/notify каждые 10 минут — обходит лимит Vercel Hobby
+# (cron там только раз в сутки). Изменения на сайте ПолесГУ долетают
+# в Telegram за ~10 минут, а не на следующее утро.
+#
+# Требуется repo-секрет NOTIFY_PING_URL (Settings → Secrets → Actions):
+#   https://raspisanie-polessu-v2.vercel.app/api/notify?key=<CRON_SECRET>
+# Без секрета job тихо скипается — ничего не ломается.
+#
+# Примечание: GitHub отключает schedule-workflow после 60 дней без
+# коммитов в репозиторий — после долгой паузы его нужно включить заново
+# на вкладке Actions.
+
+name: notify-ping
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    env:
+      URL: ${{ secrets.NOTIFY_PING_URL }}
+    steps:
+      - name: Ping /api/notify
+        run: |
+          if [ -z "$URL" ]; then
+            echo "::notice::NOTIFY_PING_URL не задан — пропускаю"
+            exit 0
+          fi
+          curl -fsS --max-time 40 "$URL"

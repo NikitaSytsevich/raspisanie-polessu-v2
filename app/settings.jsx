@@ -11,6 +11,8 @@ function SettingsScreen({ onThemeChange }) {
   const [confirmDelete, setConfirmDelete] = _ss(false);
   const [instructors, setInstructors] = _ss(() => window.Data.loadInstructors());
   const [newInstName, setNewInstName] = _ss('');
+  const [syncKey, setSyncKey] = _ss(() => window.Data.loadSettings().botSyncKey || '');
+  const [syncBusy, setSyncBusy] = _ss(false);
 
   _se(() => {
     const reload = () => setInstructors(window.Data.loadInstructors());
@@ -111,6 +113,25 @@ function SettingsScreen({ onThemeChange }) {
     return 'смен';
   }
 
+  // Сохранить ключ и сразу проверить его пробным синком. Пустой ключ —
+  // отключение синхронизации (бот перестанет видеть смены после
+  // следующего обновления списка на сервере).
+  async function handleSaveSyncKey() {
+    const key = syncKey.trim();
+    window.Data.saveSettings({ botSyncKey: key });
+    if (!key) {
+      toast.show('Синхронизация с ботом выключена');
+      return;
+    }
+    setSyncBusy(true);
+    const r = await window.Data.syncShiftsToBot();
+    setSyncBusy(false);
+    if (r.ok) toast.show('Связано! Смены отправлены боту');
+    else if (r.reason === 'bad_key') toast.show('Ключ не подошёл — проверьте его');
+    else if (r.reason === 'not_configured') toast.show('Синк не настроен на сервере');
+    else toast.show('Нет сети — попробуем при следующем изменении смен');
+  }
+
   function handleDelete() {
     setConfirmDelete(true);
   }
@@ -205,6 +226,44 @@ function SettingsScreen({ onThemeChange }) {
             </div>
             <span className="material-symbols-outlined chev">chevron_right</span>
           </a>
+        </section>
+
+        <window.UI.SecLabel hint="@Raspisanie_polessu_bot">Telegram-бот</window.UI.SecLabel>
+        <section className="list">
+          <a className="row" href="https://t.me/Raspisanie_polessu_bot" target="_blank" rel="noopener">
+            <span className="ic"><span className="material-symbols-outlined">send</span></span>
+            <div className="body">
+              <p className="lbl">Открыть бота</p>
+              <span className="hint">/today, /tomorrow, /status, /subscribe</span>
+            </div>
+            <span className="material-symbols-outlined chev">open_in_new</span>
+          </a>
+          <div className="row is-static inst-add-row">
+            <input
+              className="inst-add-input"
+              placeholder="Ключ синхронизации"
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck="false"
+              value={syncKey}
+              onChange={e => setSyncKey(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') handleSaveSyncKey(); }}
+            />
+            <button
+              type="button"
+              className="inst-add-btn"
+              onClick={handleSaveSyncKey}
+              disabled={syncBusy}
+            >
+              <span className={`material-symbols-outlined ${syncBusy ? 'spin' : ''}`}>{syncBusy ? 'progress_activity' : 'sync'}</span>
+              <span>Связать</span>
+            </button>
+          </div>
+          <p className="sync-note">
+            С ключом приложение отправляет копию смен на сервер, и бот помечает
+            изменения сайта, задевающие <strong>ваши</strong> смены
+            («⚠️ ваша смена»). Без ключа бот шлёт только общие изменения.
+          </p>
         </section>
 
         <window.UI.SecLabel hint="чипы «с кем работаю»">Инструкторы</window.UI.SecLabel>

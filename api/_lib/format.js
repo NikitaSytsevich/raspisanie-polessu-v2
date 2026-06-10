@@ -1,0 +1,200 @@
+// Чистое форматирование сообщений Telegram-бота (без сети и Blob) —
+// покрывается node-тестами (format.test.js).
+
+const RU_WD = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
+const RU_MO = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
+               'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
+
+// Telegram обрезает сообщения на 4096 символах; режем с запасом.
+const TG_TEXT_LIMIT = 4000;
+
+function esc(s) {
+  return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function fmtDate(iso) {
+  const d = new Date(iso + 'T12:00:00');
+  return `${RU_WD[d.getDay()]}, ${d.getDate()} ${RU_MO[d.getMonth()]}`;
+}
+
+function toMin(hhmm) {
+  const [h, m] = String(hhmm).split(':').map(Number);
+  return h * 60 + m;
+}
+
+// ── Склейка переносов ───────────────────────────────────────────
+// computeScheduleDiff матчит сессии по (start,end), поэтому сдвиг времени
+// приходит как пара несвязанных rem+add — в сообщении это читается как
+// «сеанс отменили» + «появился новый». Здесь спариваем их обратно в одно
+// событие kind:'move' («🔁 было → стало»). Матчим внутри (объект, дата):
+// ближайший по старту add (совпадение activity — сильный бонус), не дальше
+// 3 часов. Непарные add/rem остаются как есть.
+function pairMoves(events) {
+  const byGroup = new Map();
+  for (const ev of events) {
+    const k = `${ev.facilityId}::${ev.date}`;
+    if (!byGroup.has(k)) byGroup.set(k, []);
+    byGroup.get(k).push(ev);
+  }
+  const out = [];
+  for (const evs of byGroup.values()) {
+    const adds = evs.filter(e => e.kind === 'add');
+    const rems = evs.filter(e => e.kind === 'rem');
+    const rest = evs.filter(e => e.kind !== 'add' && e.kind !== 'rem');
+    const usedAdd = new Set();
+    for (const rem of rems) {
+      let best = null;
+      let bestScore = Infinity;
+      for (const add of adds) {
+        if (usedAdd.has(add)) continue;
+        const dist = Math.abs(toMin(add.start) - toMin(rem.start));
+        if (dist > 180) continue;
+        const sameAct = (add.activity || '') === (rem.activity || '');
+        const score = dist + (sameAct ? 0 : 240);
+        if (score < bestScore) { bestScore = score; best = add; }
+      }
+      if (best) {
+        usedAdd.add(best);
+        out.push({
+          kind: 'move',
+          facilityId: rem.facilityId,
+          date: rem.date,
+          from: { start: rem.start, end: rem.end },
+          start: best.start,
+          end: best.end,
+          activity: best.activity || rem.activity || '',
+        });
+      } else {
+        out.push(rem);
+      }
+    }
+    for (const add of adds) if (!usedAdd.has(add)) out.push(add);
+    out.push(...rest);
+  }
+  out.sort((x, y) => x.date.localeCompare(y.date) || x.start.localeCompare(y.start));
+  return out;
+}
+
+// ── Сообщение об изменениях ─────────────────────────────────────
+// events — после pairMoves (kind: add|rem|mod|move). У события может быть
+// affectsMe:true — строка получает пометку «ваша смена».
+function formatChangesMessage(events, facNames) {
+  const groups = new Map();
+  for (const ev of events) {
+    const key = `${ev.facilityId}::${ev.date}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(ev);
+  }
+  const lines = ['🔔 <b>Расписание ПолесГУ — изменения на сайте</b>'];
+  for (const [key, evs] of groups) {
+    const [facId, date] = key.split('::');
+    lines.push('', `<b>${esc(facNames[facId] || facId)}</b> · ${fmtDate(date)}`);
+    for (const ev of evs.slice(0, 15)) {
+      let line;
+      if (ev.kind === 'move') {
+        line = `🔁 ${ev.from.start}–${ev.from.end} → ${ev.start}–${ev.end}`;
+        if (ev.activity) line += ` (${esc(ev.activity)})`;
+      } else if (ev.kind === 'mod') {
+        line = `✏️ ${ev.start}–${ev.end}: ${esc(ev.wasActivity || '—')} → ${esc(ev.activity || '—')}`;
+      } else {
+        const sign = ev.kind === 'add' ? '➕' : '➖';
+        line = `${sign} ${ev.start}–${ev.end}`;
+        if (ev.activity) line += ` (${esc(ev.activity)})`;
+      }
+      if (ev.affectsMe) line += ' · ⚠️ ваша смена';
+      lines.push(line);
+    }
+    if (evs.length > 15) lines.push(`… и ещё ${evs.length - 15}`);
+  }
+  return lines.join('\n');
+}
+
+// ── Расписание на день (/today, /tomorrow, дайджест) ────────────
+function formatDaySchedule(payload, dateIso, { title = null } = {}) {
+  const lines = [title || `📅 <b>Расписание ПолесГУ · ${fmtDate(dateIso)}</b>`];
+  for (const f of payload.facilities || []) {
+    lines.push('', `<b>${esc(f.name)}</b>${f.stale ? ' · ⚠️ данные могли устареть' : ''}`);
+    if (f.dataQuality === 'closed') {
+      lines.push(`⛔ закрыт${f.notice ? ` — ${esc(f.notice)}` : ''}`);
+      continue;
+    }
+    if (f.dataQuality !== 'ok') {
+      lines.push('— нет данных (источник не распарсен)');
+      continue;
+    }
+    const closure = (f.closureRanges || []).find(r => dateIso >= r.from && dateIso <= r.to);
+    if (closure) {
+      lines.push(`⛔ закрыт${closure.notice ? ` — ${esc(closure.notice)}` : ''}`);
+      continue;
+    }
+    const sessions = (f.sessions || [])
+      .filter(s => s.date === dateIso)
+      .sort((a, b) => toMin(a.start) - toMin(b.start));
+    if (!sessions.length) {
+      lines.push('— на эту дату сеансов нет');
+      continue;
+    }
+    for (const s of sessions) {
+      lines.push(`• ${s.start}–${s.end}${s.activity ? ` ${esc(s.activity)}` : ''}`);
+    }
+  }
+  return lines.join('\n');
+}
+
+// ── Статус источников (/status) ─────────────────────────────────
+function formatStatus(payload) {
+  const lines = ['🛠 <b>Статус источников</b>'];
+  for (const f of payload.facilities || []) {
+    let icon, note;
+    if (f.stale) { icon = '🟡'; note = 'источник не ответил, данные last-good'; }
+    else if (f.dataQuality === 'ok') { icon = '🟢'; note = 'ок'; }
+    else if (f.dataQuality === 'closed') { icon = '⛔'; note = f.notice || 'закрыт'; }
+    else { icon = '🔴'; note = f.dataQuality; }
+    lines.push(`${icon} ${esc(f.name)} — ${esc(note)}`);
+  }
+  const at = payload.generatedAt ? new Date(payload.generatedAt) : null;
+  if (at) {
+    const hm = new Intl.DateTimeFormat('ru-RU', {
+      timeZone: 'Europe/Minsk', hour: '2-digit', minute: '2-digit',
+    }).format(at);
+    lines.push('', `проверено в ${hm} (Минск)`);
+  }
+  return lines.join('\n');
+}
+
+// ── Разбивка длинного текста на части ≤ limit ───────────────────
+// Режем по границам строк; одиночная строка длиннее лимита режется жёстко.
+function chunkText(text, limit = TG_TEXT_LIMIT) {
+  if (text.length <= limit) return [text];
+  const chunks = [];
+  let cur = '';
+  for (const line of String(text).split('\n')) {
+    if (line.length > limit) {
+      // Сверхдлинная строка: дорезаем по символам.
+      if (cur) { chunks.push(cur); cur = ''; }
+      for (let i = 0; i < line.length; i += limit) chunks.push(line.slice(i, i + limit));
+      continue;
+    }
+    const candidate = cur ? cur + '\n' + line : line;
+    if (candidate.length > limit) {
+      chunks.push(cur);
+      cur = line;
+    } else {
+      cur = candidate;
+    }
+  }
+  if (cur) chunks.push(cur);
+  return chunks;
+}
+
+module.exports = {
+  esc,
+  fmtDate,
+  toMin,
+  pairMoves,
+  formatChangesMessage,
+  formatDaySchedule,
+  formatStatus,
+  chunkText,
+  TG_TEXT_LIMIT,
+};
