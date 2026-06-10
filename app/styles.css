@@ -1508,10 +1508,297 @@ html.light .add-shift-link:hover .plus { color: #fffaf3; }
 .changes-screen[data-state="issue"]  .hero-kicker  { color: var(--warning); }
 
 /* ──────────────────────────────────────────────────────────────────
-   EDITOR
+   EDITOR (v2)
    ────────────────────────────────────────────────────────────────── */
-.editor-screen .hero-title { font-size: 30px; line-height: 1.1; }
-.editor-screen .hero-title em { font-style: italic; color: var(--accent); }
+
+/* Живой тикет-превью: то, что будет сохранено, с тинтом объекта */
+.ed-ticket {
+  --fac-color: var(--accent);
+  --fac-soft: var(--accent-soft);
+  position: relative;
+  margin: 8px 22px 0;
+  padding: 14px 16px 13px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, var(--fac-soft), transparent 70%), var(--bg-elevated);
+  border: 1px solid var(--hairline);
+  box-shadow: inset 3px 0 0 var(--fac-color);
+  overflow: hidden;
+}
+.ed-ticket.is-fac-ice_arena   { --fac-color: var(--ice);    --fac-soft: var(--ice-soft); }
+.ed-ticket.is-fac-sports_pool { --fac-color: var(--pool);   --fac-soft: var(--pool-soft); }
+.ed-ticket.is-fac-small_pool  { --fac-color: var(--small);  --fac-soft: var(--small-soft); }
+.ed-ticket.is-fac-rowing_base { --fac-color: var(--rowing); --fac-soft: var(--rowing-soft); }
+.ed-ticket-mark {
+  position: absolute;
+  right: -14px; top: -18px;
+  color: var(--fac-color);
+  opacity: 0.1;
+  pointer-events: none;
+}
+.ed-ticket-mark .material-symbols-outlined { font-size: 110px; }
+.ed-ticket-kicker {
+  margin: 0 0 6px;
+  font-family: "Newsreader", Georgia, serif;
+  font-style: italic;
+  font-size: 13px;
+  color: var(--fac-color);
+}
+.ed-ticket-time {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.ed-ticket-time .t {
+  font-family: "Newsreader", Georgia, serif;
+  font-weight: 500;
+  font-size: 32px;
+  letter-spacing: -0.025em;
+  color: var(--text-strong);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.ed-ticket-time .arr { color: var(--text-subtle); font-size: 18px; }
+.ed-ticket-time .dur {
+  margin-left: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-family: "Newsreader", Georgia, serif;
+  font-style: italic;
+}
+.ed-ticket-time .dur.is-bad { color: var(--danger); font-style: normal; }
+.ed-ticket-sub { margin: 8px 0 0; font-size: 13px; color: var(--text-muted); }
+.ed-ticket-sub strong { color: var(--text); font-weight: 600; }
+.ed-ticket-sub .sep { margin: 0 6px; color: var(--text-subtle); }
+.ed-ticket-with {
+  margin: 3px 0 0;
+  font-size: 12px;
+  color: var(--text-subtle);
+  font-family: "Newsreader", Georgia, serif;
+  font-style: italic;
+}
+
+/* Переключатель «несколько дат» в sec-label */
+.ed-series-toggle {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-subtle);
+  font-family: "Inter", system-ui, sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 8px;
+}
+.ed-series-toggle .material-symbols-outlined { font-size: 16px; }
+.ed-series-toggle:hover { color: var(--text); }
+.ed-series-toggle.is-on { color: var(--accent); }
+.ed-series-info {
+  margin: 8px 24px 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-family: "Newsreader", Georgia, serif;
+  font-style: italic;
+}
+.ed-series-info .material-symbols-outlined { font-size: 16px; color: var(--accent); }
+
+/* Inline-календарь (страницы по 4 недели) */
+.ed-cal {
+  margin: 10px 22px 0;
+  padding: 8px 10px 10px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--hairline);
+  border-radius: 16px;
+}
+.ed-cal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 2px;
+}
+.ed-cal-label {
+  font-family: "Newsreader", Georgia, serif;
+  font-style: italic;
+  font-size: 14px;
+  color: var(--text);
+}
+.ed-cal-nav {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  width: 32px; height: 32px;
+  border-radius: 10px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+.ed-cal-nav:hover { background: var(--bg-raised); color: var(--text); }
+.ed-cal-dow {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  text-align: center;
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-subtle);
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+.ed-cal-row { display: grid; grid-template-columns: repeat(7, 1fr); }
+.ed-cal-cell {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  position: relative;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: var(--text);
+  font-family: "Newsreader", Georgia, serif;
+  font-size: 14px;
+}
+.ed-cal-cell:hover { background: var(--bg-raised); }
+.ed-cal-cell .mo {
+  position: absolute;
+  top: 2px;
+  font-size: 8.5px;
+  color: var(--accent);
+  font-family: "Inter", system-ui, sans-serif;
+  letter-spacing: 0.04em;
+}
+.ed-cal-cell .num { line-height: 1; }
+.ed-cal-cell .dot {
+  position: absolute;
+  bottom: 4px;
+  width: 3px; height: 3px;
+  border-radius: 50%;
+  background: var(--text-subtle);
+}
+.ed-cal-cell.is-past .num { color: var(--text-subtle); }
+.ed-cal-cell.is-today { box-shadow: inset 0 0 0 1px var(--hairline-strong); }
+.ed-cal-cell.is-selected {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.ed-cal-cell.is-selected .num { color: var(--accent); font-weight: 600; }
+.ed-cal-cell.is-selected .dot { background: var(--accent); }
+
+/* Объект закрыт на выбранную дату */
+.ed-closed {
+  margin: 10px 22px 0;
+  padding: 11px 13px;
+  border-radius: 12px;
+  background: var(--warning-soft);
+  border: 1px solid color-mix(in srgb, var(--warning) 35%, transparent);
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+.ed-closed .material-symbols-outlined { font-size: 18px; color: var(--warning); flex-shrink: 0; margin-top: 1px; }
+.ed-closed strong { color: var(--text); font-weight: 600; }
+
+/* Сеансы с сайта: тап подставляет время */
+.ed-site {
+  margin: 10px 22px 0;
+  border: 1px solid var(--hairline);
+  border-radius: 14px;
+  background: var(--bg-elevated);
+  overflow: hidden;
+}
+.ed-site-head {
+  margin: 0;
+  padding: 10px 13px 8px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-subtle);
+}
+.ed-site-head .material-symbols-outlined { font-size: 15px; color: var(--success); }
+.ed-site-hint {
+  margin-left: auto;
+  font-family: "Newsreader", Georgia, serif;
+  font-style: italic;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+  font-size: 11.5px;
+  color: var(--text-subtle);
+}
+.ed-site-row {
+  appearance: none;
+  border: 0;
+  width: 100%;
+  background: transparent;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 13px;
+  border-top: 1px solid var(--hairline);
+  color: var(--text);
+  text-align: left;
+  transition: background 140ms ease;
+}
+.ed-site-row:hover { background: var(--bg-raised); }
+.ed-site-row .tm {
+  font-family: "Newsreader", Georgia, serif;
+  font-weight: 500;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+  flex-shrink: 0;
+}
+.ed-site-row .act {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ed-site-row .apply { font-size: 16px; color: var(--text-subtle); flex-shrink: 0; }
+.ed-site-row.is-active { background: var(--accent-soft); }
+.ed-site-row.is-active .tm,
+.ed-site-row.is-active .apply { color: var(--accent); }
+.ed-site-more {
+  appearance: none;
+  border: 0;
+  width: 100%;
+  background: transparent;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 8px;
+  font-size: 11.5px;
+  color: var(--text-subtle);
+  font-family: "Newsreader", Georgia, serif;
+  font-style: italic;
+  border-top: 1px solid var(--hairline);
+}
+.ed-site-more:hover { color: var(--text); background: var(--bg-raised); }
+.ed-site-more .material-symbols-outlined { font-size: 16px; }
 
 .date-strip {
   padding: 0 16px 4px;
@@ -1591,6 +1878,15 @@ html.light .add-shift-link:hover .plus { color: #fffaf3; }
   background: var(--accent);
   color: #fffaf3;
 }
+/* Чип-кнопка инлайн-календаря в начале ленты */
+.date-chip.is-cal {
+  min-width: 48px;
+  justify-content: center;
+  color: var(--text-muted);
+}
+.date-chip.is-cal .material-symbols-outlined { font-size: 20px; }
+.date-chip.is-cal .mo { color: inherit; }
+.date-chip.is-cal.is-active { color: var(--accent); }
 
 .facility-row {
   padding: 0 22px;
@@ -1640,13 +1936,19 @@ html.light .add-shift-link:hover .plus { color: #fffaf3; }
   color: var(--text-subtle);
   letter-spacing: 0.02em;
 }
+/* Активный объект подсвечивается СВОИМ тинтом (как карточки на главной) */
+.fc-btn { --fac-color: var(--accent); --fac-soft: var(--accent-soft); }
+.fc-btn.is-fac-ice_arena   { --fac-color: var(--ice);    --fac-soft: var(--ice-soft); }
+.fc-btn.is-fac-sports_pool { --fac-color: var(--pool);   --fac-soft: var(--pool-soft); }
+.fc-btn.is-fac-small_pool  { --fac-color: var(--small);  --fac-soft: var(--small-soft); }
+.fc-btn.is-fac-rowing_base { --fac-color: var(--rowing); --fac-soft: var(--rowing-soft); }
 .fc-btn.is-active {
-  background: var(--accent-soft);
-  border-color: var(--border);
-  box-shadow: inset 3px 0 0 var(--accent);
+  background: var(--fac-soft);
+  border-color: color-mix(in srgb, var(--fac-color) 35%, var(--hairline));
+  box-shadow: inset 3px 0 0 var(--fac-color);
 }
-.fc-btn.is-active .ic { background: color-mix(in srgb, var(--accent) 18%, var(--bg-raised)); color: var(--accent); }
-.fc-btn.is-active .name { color: var(--accent); }
+.fc-btn.is-active .ic { background: color-mix(in srgb, var(--fac-color) 18%, var(--bg-raised)); color: var(--fac-color); }
+.fc-btn.is-active .name { color: var(--fac-color); }
 
 .time-row {
   padding: 4px 22px 0;
@@ -1790,6 +2092,12 @@ html.light .add-shift-link:hover .plus { color: #fffaf3; }
   font-size: 11px;
   color: var(--text-subtle);
 }
+.preset-chip.is-active {
+  border-color: var(--border);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.preset-chip.is-active .tm { color: var(--accent); }
 
 .insts {
   padding: 2px 22px 0;
@@ -1836,6 +2144,31 @@ html.light .add-shift-link:hover .plus { color: #fffaf3; }
   background: var(--accent);
   color: #fff;
 }
+/* «+ добавить» и инлайн-поле нового инструктора */
+.inst-chip.is-add {
+  border-style: dashed;
+  background: transparent;
+  color: var(--text-subtle);
+}
+.inst-chip.is-add:hover { color: var(--accent); border-color: var(--border); }
+.inst-chip.is-add .av {
+  background: transparent;
+  border: 1px dashed var(--hairline-strong);
+}
+.inst-chip.is-add .av .material-symbols-outlined { font-size: 14px; }
+.inst-chip.is-input { padding-right: 9px; cursor: text; }
+.inst-chip.is-input .av .material-symbols-outlined { font-size: 13px; }
+.inst-chip.is-input input {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  outline: none;
+  color: var(--text);
+  font-size: 12.5px;
+  width: 116px;
+  font-family: "Inter", system-ui, sans-serif;
+}
+.inst-chip.is-input input::placeholder { color: var(--text-subtle); }
 
 .note-wrap { padding: 4px 22px 0; }
 .note {
@@ -1885,12 +2218,17 @@ html.light .add-shift-link:hover .plus { color: #fffaf3; }
   white-space: nowrap;
 }
 
-.actions {
-  margin: 18px 22px 4px;
+/* Закреплённая панель действий внизу экрана (вне .screen-scroll) */
+.ed-bar {
+  flex-shrink: 0;
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(104px, 2fr) 3fr;
   gap: 8px;
+  padding: 10px 22px calc(10px + env(safe-area-inset-bottom, 0px));
+  background: var(--bg);
+  border-top: 1px solid var(--hairline);
 }
+.ed-scroll-tail { height: 14px; }
 .btn {
   appearance: none;
   width: 100%;
