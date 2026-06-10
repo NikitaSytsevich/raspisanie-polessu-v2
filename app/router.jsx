@@ -40,15 +40,33 @@ const useRouter = () => useContext(RouterCtx);
 // prefers-reduced-motion переключение мгновенное, как раньше.
 // flushSync обязателен: setState в React 18 асинхронный, а снапшоты
 // view-transition снимаются строго вокруг синхронного DOM-апдейта.
-function commitWithTransition(apply) {
+//
+// uaHandled=true — навигацию уже анимировал САМ браузер (системный
+// свайп-назад на iOS / predictive back на Android). Если поверх нативного
+// слайда запустить ещё и наш кроссфейд, экран «дёргается»: жест закончился,
+// и тут же вся страница пере-проигрывает переход, как будто обновилась.
+// В этом случае коммитим мгновенно, без view-transition.
+function commitWithTransition(apply, uaHandled = false) {
   try {
-    if (document.startViewTransition &&
+    if (!uaHandled &&
+        document.startViewTransition &&
         !matchMedia('(prefers-reduced-motion: reduce)').matches) {
       document.startViewTransition(() => { ReactDOM.flushSync(apply); });
       return;
     }
   } catch {}
   apply();
+}
+
+// Время последнего касания экрана — фолбэк-детектор жеста для браузеров без
+// PopStateEvent.hasUAVisualTransition (iOS < 18.4, Chrome < 110). popstate,
+// прилетевший сразу после касания, — это свайп-назад, а не кнопка браузера:
+// клик по кнопке UI браузера touch-событий странице не шлёт.
+let _lastTouchAt = 0;
+if (typeof window !== 'undefined') {
+  const markTouch = () => { _lastTouchAt = Date.now(); };
+  window.addEventListener('touchstart', markTouch, { capture: true, passive: true });
+  window.addEventListener('touchend',   markTouch, { capture: true, passive: true });
 }
 
 let __idCounter = 0;
@@ -91,11 +109,17 @@ function Router({ screens, persistent = [], initial = 'home', initialProps = {} 
         '#' + top.name
       );
     }
-    function onPopState() {
+    function onPopState(e) {
       if (suppressPopRef.current) {
         suppressPopRef.current = false;
         return;
       }
+      // Браузер уже отыграл свою анимацию навигации (свайп-жест)?
+      // hasUAVisualTransition — прямой сигнал (Chrome 110+, Safari 18.4+,
+      // FF 117+); без него — эвристика «касание было только что».
+      const uaHandled = (e && 'hasUAVisualTransition' in e)
+        ? e.hasUAVisualTransition
+        : (Date.now() - _lastTouchAt < 1000);
       const s = history.state;
       if (s && s.__rs && typeof s.depth === 'number' && screens[s.name]) {
         const targetDepth = s.depth;
@@ -105,7 +129,7 @@ function Router({ screens, persistent = [], initial = 'home', initialProps = {} 
           const next = cur.slice(0, targetDepth);
           if (next.length >= 1) {
             stackRef.current = next;
-            commitWithTransition(() => setStack(next));
+            commitWithTransition(() => setStack(next), uaHandled);
           }
           return;
         }
@@ -131,7 +155,7 @@ function Router({ screens, persistent = [], initial = 'home', initialProps = {} 
             next = [...cur2, entry];
           }
           stackRef.current = next;
-          commitWithTransition(() => setStack(next));
+          commitWithTransition(() => setStack(next), uaHandled);
           return;
         }
         // targetDepth === cur.length — тот же уровень. Обычно ничего не
@@ -154,7 +178,7 @@ function Router({ screens, persistent = [], initial = 'home', initialProps = {} 
             next = [...cur.slice(0, -1), entry];
           }
           stackRef.current = next;
-          commitWithTransition(() => setStack(next));
+          commitWithTransition(() => setStack(next), uaHandled);
         }
         return;
       }
@@ -172,7 +196,7 @@ function Router({ screens, persistent = [], initial = 'home', initialProps = {} 
       // Внутренний pop на не-корне с unknown history.state — просто откатываем.
       const next = stackRef.current.slice(0, -1);
       stackRef.current = next;
-      commitWithTransition(() => setStack(next));
+      commitWithTransition(() => setStack(next), uaHandled);
     }
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
