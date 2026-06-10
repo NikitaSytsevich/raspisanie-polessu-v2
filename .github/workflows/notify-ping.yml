@@ -2,9 +2,11 @@
 # (cron там только раз в сутки). Изменения на сайте ПолесГУ долетают
 # в Telegram за ~10 минут, а не на следующее утро.
 #
-# Требуется repo-секрет NOTIFY_PING_URL (Settings → Secrets → Actions):
-#   https://raspisanie-polessu-v2.vercel.app/api/notify?key=<CRON_SECRET>
-# Без секрета job тихо скипается — ничего не ломается.
+# Secretless: вместо общего ключа в repo-секрете workflow запрашивает у
+# GitHub короткоживущий OIDC-токен (доказывает «это Actions нашего репо»)
+# и шлёт его Bearer'ом. /api/notify проверяет подпись против JWKS GitHub
+# (см. api/_lib/github-oidc.js) — настраивать ничего не нужно, работает
+# сразу после мёрджа в main.
 #
 # Примечание: GitHub отключает schedule-workflow после 60 дней без
 # коммитов в репозиторий — после долгой паузы его нужно включить заново
@@ -17,17 +19,23 @@ on:
     - cron: '*/10 * * * *'
   workflow_dispatch: {}
 
+permissions:
+  id-token: write   # разрешает запрашивать OIDC-токен
+  contents: read
+
 jobs:
   ping:
     runs-on: ubuntu-latest
     timeout-minutes: 2
-    env:
-      URL: ${{ secrets.NOTIFY_PING_URL }}
     steps:
-      - name: Ping /api/notify
+      - name: Ping /api/notify with OIDC token
+        env:
+          AUDIENCE: https://raspisanie-polessu-v2.vercel.app
+          ENDPOINT: https://raspisanie-polessu-v2.vercel.app/api/notify
         run: |
-          if [ -z "$URL" ]; then
-            echo "::notice::NOTIFY_PING_URL не задан — пропускаю"
-            exit 0
-          fi
-          curl -fsS --max-time 40 "$URL"
+          # Запрашиваем OIDC-токен у GitHub (audience = наш домен).
+          TOKEN=$(curl -fsS \
+            -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$AUDIENCE" \
+            | python3 -c 'import sys,json; print(json.load(sys.stdin)["value"])')
+          curl -fsS --max-time 40 -H "Authorization: Bearer $TOKEN" "$ENDPOINT"

@@ -37,11 +37,34 @@ const SHIFTS_KEY = 'user-shifts.json';
 const DIGEST_KEY = 'tg-digest-state.json';
 const TZ = 'Europe/Minsk';
 
-function authorized(req) {
+const GH_REPO = 'NikitaSytsevich/raspisanie-polessu-v2';
+const OIDC_AUDIENCE = 'https://raspisanie-polessu-v2.vercel.app';
+
+// Авторизация пингера. Три пути:
+//   1) Bearer <CRON_SECRET> — Vercel Cron (шлёт сам) и ручной вызов.
+//   2) ?key=<CRON_SECRET> — внешний пингер по URL.
+//   3) GitHub Actions OIDC — secretless: workflow доказывает, что он
+//      запущен в НАШЕМ репозитории, валидным подписанным JWT. Так
+//      CI-пингер не носит общий секрет (см. _lib/github-oidc.js).
+async function authorized(req) {
   const secret = process.env.CRON_SECRET;
   if (!secret) return true; // защита не настроена — не блокируем
-  if ((req.headers && req.headers.authorization) === `Bearer ${secret}`) return true;
-  return String((req.query && req.query.key) || '') === secret;
+  const auth = (req.headers && req.headers.authorization) || '';
+  if (auth === `Bearer ${secret}`) return true;
+  if (String((req.query && req.query.key) || '') === secret) return true;
+  // OIDC: Bearer-токен, не совпавший с CRON_SECRET, пробуем как GitHub JWT.
+  const m = /^Bearer\s+(.+)$/.exec(auth);
+  if (m) {
+    try {
+      const { verifyGitHubOidc } = require('./_lib/github-oidc');
+      const r = await verifyGitHubOidc(m[1], {
+        expectedRepo: GH_REPO,
+        expectedAudience: OIDC_AUDIENCE,
+      });
+      if (r.ok) return true;
+    } catch {}
+  }
+  return false;
 }
 
 // Diff только по объектам с dataQuality 'ok' С ОБЕИХ сторон. Иначе упавший
@@ -130,7 +153,7 @@ async function maybeSendDigest(payload, recipients) {
 module.exports = async (req, res) => {
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
   res.setHeader('Cache-Control', 'no-store');
-  if (!authorized(req)) {
+  if (!(await authorized(req))) {
     res.status(401).end(JSON.stringify({ ok: false, error: 'unauthorized' }));
     return;
   }
