@@ -9,7 +9,7 @@ const cheerio = require('cheerio');
 const { genericParse, extractContentRoot } = require('./_common');
 const closure = require('./closureNotice');
 const {
-  normalizeText, parseTimeRange, weekdayIndex, nextDateForWeekday,
+  normalizeText, parseTimeRange, weekdayIndex, nextDateForWeekday, validateSessions,
 } = require('../_lib/timeParse');
 
 // Собирает список конкретных дат-исключений вида «1.05.2026 Выходной день»
@@ -49,7 +49,7 @@ function parse(html, { todayIso }) {
   const $ = cheerio.load(html);
   const $root = extractContentRoot($);
 
-  const notice = closure.detect($, $root);
+  const notice = closure.detect($, $root, undefined, todayIso);
   if (notice) {
     return { ok: false, reason: 'closed', notice: notice.notice, range: notice.range || null };
   }
@@ -94,9 +94,9 @@ function parse(html, { todayIso }) {
     }
   });
 
-  // Уникализуем (date,start,end)
+  // Уникализуем (date,start,end) и отбрасываем битые слоты (start ≥ end).
   const seen = new Set();
-  const unique = sessions.filter(s => {
+  const unique = validateSessions(sessions, todayIso).filter(s => {
     const k = `${s.date}|${s.start}|${s.end}`;
     if (seen.has(k)) return false;
     seen.add(k);

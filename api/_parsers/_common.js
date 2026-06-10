@@ -7,7 +7,7 @@ const cheerio = require('cheerio');
 const closure = require('./closureNotice');
 const {
   normalizeText, parseTimeRange,
-  weekdayIndex, nextDateForWeekday,
+  weekdayIndex, nextDateForWeekday, validateSessions,
 } = require('../_lib/timeParse');
 
 // Достаёт корень контента независимо от четности класса (.even/.odd).
@@ -89,7 +89,7 @@ function genericParse(html, { todayIso }) {
   const $ = cheerio.load(html);
   const $root = extractContentRoot($);
 
-  const notice = closure.detect($, $root);
+  const notice = closure.detect($, $root, undefined, todayIso);
   if (notice) {
     return { ok: false, reason: 'closed', notice: notice.notice, range: notice.range || null };
   }
@@ -104,11 +104,17 @@ function genericParse(html, { todayIso }) {
   if (!sessions.length) {
     return { ok: false, reason: 'no_table' };
   }
+  // Битые слоты (start ≥ end из-за опечатки на сайте, неправдоподобные даты)
+  // отбрасываем; если не осталось ничего валидного — это не расписание.
+  const valid = validateSessions(sessions, todayIso);
+  if (!valid.length) {
+    return { ok: false, reason: 'no_valid_sessions' };
+  }
   // На странице бывает несколько таблиц (основная + повтор/превью), и
   // одна и та же (date,start,end,activity) попадает дважды. Лишние слоты
   // потом раздували бы карточку «по сайту» и счётчики Hero.
   const seen = new Set();
-  const unique = sessions.filter(s => {
+  const unique = valid.filter(s => {
     const k = `${s.date}|${s.start}|${s.end}|${s.activity}`;
     if (seen.has(k)) return false;
     seen.add(k);

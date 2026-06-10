@@ -5,6 +5,29 @@
 const DEFAULT_TIMEOUT_MS = 8000;
 const USER_AGENT = 'raspisanie-polessu-bot/1.0 (+https://github.com/)';
 
+// res.text() по спецификации fetch ВСЕГДА декодирует UTF-8, игнорируя
+// charset из Content-Type. Если Drupal ПолесГУ отдаст windows-1251,
+// кириллические регэкспы парсеров молча перестанут матчиться и все объекты
+// уйдут в template. Поэтому charset определяем сами: заголовок Content-Type →
+// <meta charset> в начале тела → UTF-8 по умолчанию.
+function sniffCharset(buf, contentType) {
+  let m = /charset=["']?([\w-]+)/i.exec(contentType || '');
+  if (m) return m[1];
+  // latin1 — байт-в-байт, безопасно для поиска ASCII-метатега до декодирования.
+  const head = buf.slice(0, 4096).toString('latin1');
+  m = /<meta[^>]+charset=["']?([\w-]+)/i.exec(head);
+  return m ? m[1] : 'utf-8';
+}
+
+function decodeBody(buf, contentType) {
+  const charset = sniffCharset(buf, contentType).toLowerCase();
+  try {
+    return new TextDecoder(charset).decode(buf);
+  } catch {
+    return buf.toString('utf8'); // неизвестный charset — fallback на UTF-8
+  }
+}
+
 async function fetchHtml(url, { timeoutMs = DEFAULT_TIMEOUT_MS, signal } = {}) {
   const ac = new AbortController();
   const onAbort = () => ac.abort();
@@ -25,7 +48,8 @@ async function fetchHtml(url, { timeoutMs = DEFAULT_TIMEOUT_MS, signal } = {}) {
     if (!res.ok) {
       return { ok: false, status: res.status, error: `HTTP ${res.status}`, ms: Date.now() - startedAt };
     }
-    const html = await res.text();
+    const buf = Buffer.from(await res.arrayBuffer());
+    const html = decodeBody(buf, res.headers.get('content-type'));
     return { ok: true, status: res.status, html, ms: Date.now() - startedAt };
   } catch (err) {
     return {
@@ -40,4 +64,4 @@ async function fetchHtml(url, { timeoutMs = DEFAULT_TIMEOUT_MS, signal } = {}) {
   }
 }
 
-module.exports = { fetchHtml };
+module.exports = { fetchHtml, decodeBody, sniffCharset };

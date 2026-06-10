@@ -21,3 +21,6 @@ app/styles.min.css
 app/styles.*.css
 app/vendor/react.*.js
 app/vendor/react-dom.*.js
+
+.vercel
+.env*.local

@@ -11,7 +11,7 @@
 ![Node](https://img.shields.io/badge/node-%E2%89%A520-339933?logo=node.js&logoColor=white)
 ![Vercel](https://img.shields.io/badge/Vercel-Hobby-000?logo=vercel&logoColor=white)
 ![License: MIT](https://img.shields.io/badge/license-MIT-blue)
-![Tests](https://img.shields.io/badge/tests-14%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-82%20passing-brightgreen)
 
 </div>
 
@@ -58,7 +58,9 @@
 - **Telegram-уведомления** — `/api/notify` сверяет сайт по расписанию (Vercel Cron
   или внешний пингер) и шлёт изменения ботом в Telegram. Настройка: env-переменные
   `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `CRON_SECRET` (см. `.env.example`,
-  токен — только в переменных окружения, не в коде).
+  токен — только в переменных окружения, не в коде). Опционально
+  `TELEGRAM_ADMIN_CHAT_ID` — отдельный чат для служебных алертов о здоровье
+  парсера (источник перестал парситься / восстановился).
 - **Live-устойчивость бэкенда** — last-known-good снапшот (память инстанса +
   Vercel Blob при подключённом сторе): если polessu.by лежит, отдаём последние
   успешные данные с флагом `stale`, а не parse_error. Плюс один retry упавшего
@@ -100,7 +102,7 @@
 ```
 
 - **Бекенд** — одна функция `api/schedule.js`. Параллельно тянет 4 страницы через `undici`, прогоняет через `cheerio`-парсеры, возвращает JSON с `schemaVersion: 4` (v4 добавил `facility.closureRanges: [{from, to, notice}]` для частичного закрытия — когда расписание есть, но в часть дат объект закрыт). Кеш CDN на 5 минут (`s-maxage=300, stale-while-revalidate=600`).
-- **Парсеры** — общий «табличный экстрактор» + детектор закрытия объекта на ремонт + индивидуальные inline-парсеры для гребной базы (расписание в `<h1>` через `<br>`) и большого бассейна (после закрытия публикуют список «Вторник 26.05.2026 / HH.MM – HH.MM (…)» с конкретными датами). Парсер возвращает `{ ok: true, sessions, closureRanges? }` либо `{ ok: false, reason: 'closed', notice, range }`.
+- **Парсеры** — общий «табличный экстрактор» (`_common.js`) + общий inline-движок (`_inline.js`: «Вторник 26.05.2026 / HH.MM – HH.MM …» с конкретными датами — так публикуют расписание оба бассейна и ледовая арена после ремонтов) + детектор закрытия объекта + отдельный inline-парсер гребной базы (расписание в `<h1>` через `<br>`). Все сессии проходят валидацию (`start < end`, окно дат `[today−7, today+45]`), inline побеждает таблицу только при «богатом» результате (≥2 дней или ≥3 слотов). Парсер возвращает `{ ok: true, sessions, closureRanges? }` либо `{ ok: false, reason: 'closed', notice, range }`.
 - **Фронтенд** — React 18, JSX собирается в `app/bundle.js` через **esbuild** (см. `scripts/build.js`). React/ReactDOM грузятся как UMD с unpkg, что выносится из бандла. PWA с service worker'ом (`sw.js`): app-shell cache-first, `/api/schedule` stale-while-revalidate, шрифты Google и React CDN — отдельные кеши.
 - **Хранилище** — `localStorage` пользователя. Сервер не знает ни кто вы, ни что вы записали.
 - **Diff** — считается на клиенте: текущий снапшот из API vs предыдущий из `localStorage`. Событие, пересекающееся со сменой, аннотируется `affectsShiftId`. UI **не доверяет** сохранённому флагу: `SiteCard` и `ChangesScreen` пересчитывают список затронутых смен на лету против текущих shifts через `Data.eventOverlapsShift` — иначе удалённая смена оставляет orphan-предупреждение, а добавленная не учитывается до следующего fetch.
@@ -174,26 +176,16 @@ npx vercel --prod
 npm test
 ```
 
-14 тестов покрывают:
+82 теста покрывают:
 
 - Детектор «объект закрыт на ремонт» на сохранённых HTML-фикстурах текущего состояния `polessu.by`.
 - Извлечение сессий из синтетической таблицы расписания (большой бассейн).
+- Inline-парсеры бассейнов и ледовой арены на реальных страницах (частичные закрытия → `closureRanges`, «протекание» сторонних секций в последний день, footer-болванка).
 - Inline-парсер гребной базы (Пн-Пт × 18:30 + 19:30) с исключениями вида «1.05.2026 Выходной день».
-- Inline-парсер большого бассейна на реальной странице с частичным закрытием — сессии 26.05–31.05 + `closureRanges: [{from: '2026-05-18', to: '2026-05-25'}]`.
-- Утилиты: `parseTime`, `parseTimeRange`, `weekdayIndex`, `parseDateRange`, `nextDateForWeekday`.
-
-```
-✔ closure detector: большой бассейн (отключение горячей воды)
-✔ closure detector: малый бассейн
-✔ closure detector: не срабатывает на странице с расписанием
-✔ rowingBase: исключает дату-выходной из расписания
-✔ rowingBase: парсит инлайн-формат "Пн-Пт 18.30-19.30"
-✔ sportsPool: полное закрытие — нет таблицы, есть только объявление
-✔ sportsPool: парсит синтетическую таблицу
-✔ sportsPool: частичное закрытие + inline-расписание
-✔ parseTime, parseTimeRange, weekdayIndex, parseDateRange, nextDateForWeekday
-ℹ tests 14  pass 14  fail 0
-```
+- **Контрактный тест** (`contract.test.js`): каждый парсер × каждая фикстура, включая чужие — не бросает исключений, а ok-результат всегда содержит валидные сессии (ISO-даты, `start < end`, окно дат, без дублей).
+- Декодирование кодировки ответа (`decodeBody`): windows-1251 из Content-Type / `<meta charset>`, fallback UTF-8.
+- Утилиты: `parseTime`, `parseTimeRange`, `weekdayIndex` (включая защиту от ложных дней — «все группы» ≠ воскресенье), `parseDateRange` (включая перенос года через Новый год), `validateSessions`, `nextDateForWeekday`.
+- Фронтовая логика (`app/_logic.test.js`): дорожки, диффы, таймлайн, ICS.
 
 ---
 
@@ -204,18 +196,21 @@ npm test
 ├── api/
 │   ├── schedule.js              # Vercel serverless entry
 │   ├── _lib/
-│   │   ├── fetcher.js           # undici + timeout
-│   │   └── timeParse.js         # время, дни недели, даты
+│   │   ├── fetcher.js           # fetch + timeout + нормализация кодировки
+│   │   ├── timeParse.js         # время, дни недели, даты, validateSessions
+│   │   ├── snapshot.js          # сборка payload + last-known-good подмена
+│   │   └── lastGood.js          # последний хороший снапшот (память + Blob)
 │   └── _parsers/
 │       ├── _common.js           # универсальный табличный экстрактор
+│       ├── _inline.js           # общий движок inline-расписаний с датами
 │       ├── closureNotice.js     # детектор «объект закрыт»
 │       ├── iceArena.js
 │       ├── sportsPool.js
 │       ├── smallPool.js
-│       ├── rowingBase.js        # inline-формат
+│       ├── rowingBase.js        # inline-формат «Пн-Пт × HH.MM»
 │       ├── index.js             # facilityId → URL + parse
 │       ├── __fixtures__/        # сохранённые HTML для тестов
-│       └── *.test.js            # node --test
+│       └── *.test.js            # node --test (вкл. contract.test.js)
 ├── app/                         # фронт (React 18 UMD + esbuild)
 │   ├── entry.jsx                # точка входа сборки
 │   ├── main.jsx                 # корневое приложение + темы
@@ -242,13 +237,14 @@ npm test
 
 Каждая страница на `polessu.by` — это Drupal-нода с контентом внутри `<div class="field-item even" property="content:encoded">`. Парсер:
 
-1. Извлекает корень контента.
-2. Прогоняет через `closureNotice.detect()`. Если в тексте найдено `закрыт`, `не работает`, `отключение горячей воды`, `ремонтно-профилактические работы` рядом с диапазоном дат вида `DD.MM.YYYY-DD.MM.YYYY` или `с DD.MM по DD.MM` — возвращает `{ ok: false, reason: 'closed', notice, range }`.
+1. Извлекает корень контента (кодировка ответа нормализуется ещё в `fetcher.js`: Content-Type → `<meta charset>` → UTF-8).
+2. Пробует общий inline-движок (`_inline.js`): якоря «<День недели> ДД.ММ.ГГГГ», между ними слоты «HH.MM – HH.MM». Сетка обрезается по первому «голому» дню недели без даты (сторонние секции типа «Обучение плаванию … Вторник, Четверг» не протекают в последний день). «Богатый» результат (≥2 дней или ≥3 слотов) выигрывает сразу.
 3. Иначе ищет `<table>`. Распознаёт два layout'а:
    - **A:** Дни недели в шапке × слоты времени в строках.
    - **B:** Первая колонка — день недели, остальные — «HH:MM-HH:MM активность».
-4. Конвертирует дни недели в ближайшие ISO-даты от `todayIso` (горизонт +7 дней).
-5. Время нормализуется: `7.30`, `7:30`, `07-30`, `0730` → `07:30`.
+4. `closureNotice.detect()`: если в тексте найдено `закрыт на/с/по`, `не работает`, `отключение … воды` рядом с диапазоном дат вида `DD.MM.YYYY-DD.MM.YYYY` или `с DD.MM по DD.MM` (диапазон ищется только в окне вокруг триггера, чтобы не подцепить «срок действия абонементов»), при живом расписании закрытие уходит в `closureRanges`, без расписания — `{ ok: false, reason: 'closed', notice, range }`.
+5. Конвертирует дни недели в ближайшие ISO-даты от `todayIso` (горизонт +7 дней).
+6. Время нормализуется: `7.30`, `7:30`, `07-30`, `0730` → `07:30`; все сессии проходят `validateSessions` (`start < end`, дата в `[today−7, today+45]`).
 
 У гребной базы — отдельный inline-парсер: расписание там не в таблице, а в `<h1>` тегах через `<br>`. Также он понимает исключения вроде `1.05.2026 Выходной день`.
 

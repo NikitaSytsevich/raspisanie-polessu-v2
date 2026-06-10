@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 
 const {
   parseTime, parseTimeRange, weekdayIndex, parseDateRange, nextDateForWeekday,
+  validateSessions,
 } = require('../_lib/timeParse');
 
 test('parseTime: разные сепараторы', () => {
@@ -30,11 +31,48 @@ test('weekdayIndex', () => {
   assert.equal(weekdayIndex('xxx'), -1);
 });
 
+test('weekdayIndex: склонения дней матчатся, чужие слова — нет', () => {
+  assert.equal(weekdayIndex('среды'), 3);
+  assert.equal(weekdayIndex('пятницу'), 5);
+  assert.equal(weekdayIndex('Сб.'), 6);
+  assert.equal(weekdayIndex('понедельник 01.06'), 1);
+  // Регресс: префиксное сравнение давало ложные дни.
+  assert.equal(weekdayIndex('все группы'), -1);   // раньше: «вс» → воскресенье
+  assert.equal(weekdayIndex('пятый корпус'), -1); // раньше: «пят» → пятница
+  assert.equal(weekdayIndex('средний'), -1);
+  assert.equal(weekdayIndex('время работы'), -1);
+});
+
 test('parseDateRange', () => {
   const r1 = parseDateRange('с 18.05.2026-24.05.2026');
   assert.deepEqual(r1, { from: '2026-05-18', to: '2026-05-24' });
   const r2 = parseDateRange('закрыта с 29.04.2026г. по 31.05.2026г.');
   assert.deepEqual(r2, { from: '2026-04-29', to: '2026-05-31' });
+});
+
+test('parseDateRange: год по умолчанию из todayIso + перенос через Новый год', () => {
+  // Год не указан — берём из todayIso, а не из системных часов.
+  assert.deepEqual(parseDateRange('с 18.05 по 24.05', '2026-05-20'),
+    { from: '2026-05-18', to: '2026-05-24' });
+  // Диапазон через Новый год: «по»-дата уходит в следующий год.
+  assert.deepEqual(parseDateRange('с 28.12 по 05.01', '2026-12-20'),
+    { from: '2026-12-28', to: '2027-01-05' });
+  // Явный год только у «по»-даты: «с»-дата — в предыдущем году.
+  assert.deepEqual(parseDateRange('с 28.12 по 05.01.2027', '2026-12-20'),
+    { from: '2026-12-28', to: '2027-01-05' });
+});
+
+test('validateSessions: режет инверсию времени и даты вне окна', () => {
+  const ok = { date: '2026-05-22', start: '10:00', end: '11:00', activity: '' };
+  const sessions = [
+    { date: '2026-05-22', start: '11:00', end: '10:00', activity: '' }, // инверсия
+    ok,
+    { date: '2025-05-22', start: '10:00', end: '11:00', activity: '' }, // прошлый год
+    { date: '2026-09-01', start: '10:00', end: '11:00', activity: '' }, // слишком далеко
+  ];
+  assert.deepEqual(validateSessions(sessions, '2026-05-20'), [ok]);
+  // Без todayIso — только проверка start < end.
+  assert.equal(validateSessions(sessions, null).length, 3);
 });
 
 test('nextDateForWeekday: считает от среды', () => {

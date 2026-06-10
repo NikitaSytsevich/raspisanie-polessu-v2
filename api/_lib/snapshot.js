@@ -2,12 +2,24 @@
 // Параллельно тянет 4 страницы ПолесГУ, гонит через per-facility парсеры,
 // подменяет упавшие источники last-known-good данными.
 
+const crypto = require('crypto');
 const { FACILITIES } = require('../_parsers');
 const { fetchHtml } = require('./fetcher');
 const { todayIsoMinsk } = require('./timeParse');
 const lastGood = require('./lastGood');
 
 const TZ = 'Europe/Minsk';
+
+// Отпечаток HTML для диагностики template/parse_error: сам HTML в _issue не
+// тащим (большой), но по длине и хэшу видно, менялась ли страница между
+// неудачными прогонами — помогает отлаживать сломанную вёрстку без ручного
+// повторного fetch'а.
+function htmlFingerprint(html) {
+  return {
+    htmlLength: html.length,
+    htmlSha1: crypto.createHash('sha1').update(html).digest('hex').slice(0, 12),
+  };
+}
 
 async function loadFacility(f, ctx) {
   const startedAt = new Date().toISOString();
@@ -40,7 +52,7 @@ async function loadFacility(f, ctx) {
       sourceCheckedAt: startedAt,
       notice: null,
       sessions: [],
-      _issue: { id: f.id, reason: 'parser_threw', message: err?.message || String(err) },
+      _issue: { id: f.id, reason: 'parser_threw', message: err?.message || String(err), ...htmlFingerprint(res.html) },
     };
   }
 
@@ -80,7 +92,7 @@ async function loadFacility(f, ctx) {
     sourceCheckedAt: startedAt,
     notice: null,
     sessions: [],
-    _issue: { id: f.id, reason: parsed.reason || 'unknown' },
+    _issue: { id: f.id, reason: parsed.reason || 'unknown', ...htmlFingerprint(res.html) },
   };
 }
 
@@ -109,7 +121,13 @@ async function buildPayload() {
     }
   }
   // Свежие ok-объекты — в last-good (память инстанса + Vercel Blob).
-  try { await lastGood.update(results.filter(r => r.dataQuality === 'ok' && !r.stale)); } catch {}
+  // Берём только объекты, у которых есть хоть одна сессия не в прошлом:
+  // расписание целиком из прошедших дат (сайт забыл обновить страницу)
+  // не должно становиться «последним хорошим».
+  try {
+    await lastGood.update(results.filter(r =>
+      r.dataQuality === 'ok' && !r.stale && r.sessions.some(s => s.date >= todayIso)));
+  } catch {}
 
   const facilities = results.map(({ _issue, ...rest }) => rest);
   const sourceIssues = results

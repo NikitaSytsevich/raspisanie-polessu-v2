@@ -19,16 +19,22 @@ const TRIGGER_RE = /(закрыт\w*\s+(?:на|в\s+связи|до|с|по|вр
 // между блочными элементами). Если не передан — читаем напрямую через
 // $root.text(), как раньше. Это нужно, потому что cheerio склеивает соседние
 // <p>/<span> без пробелов: «года» + «плавательный» → «годаплавательный».
-function detect($, $root, plainText) {
+// Четвёртый аргумент `todayIso` — базовый год для дат без года («с 28.12 по 05.01»).
+function detect($, $root, plainText, todayIso) {
   const text = plainText != null ? plainText : normalizeText($root.text());
-  if (!TRIGGER_RE.test(text)) return null;
+  const tm = text.match(TRIGGER_RE);
+  if (!tm) return null;
 
   // Берём предложение/абзац с триггером, чтобы не тащить весь HTML в notice.
   const sentences = text.split(/(?<=[\.\!?])\s+/);
   const matched = sentences.filter(s => TRIGGER_RE.test(s));
   const notice = (matched.join(' ') || text).slice(0, 280);
 
-  const range = parseDateRange(notice) || parseDateRange(text);
+  // Диапазон дат ищем сначала в самом notice, затем — в окне вокруг триггера.
+  // По всему тексту нельзя: подцепится чужой диапазон в духе «срок действия
+  // абонементов с 01.09 по 31.05» из футера страницы.
+  const windowText = text.slice(Math.max(0, tm.index - 120), tm.index + 360);
+  const range = parseDateRange(notice, todayIso) || parseDateRange(windowText, todayIso);
   return { notice, range };
 }
 

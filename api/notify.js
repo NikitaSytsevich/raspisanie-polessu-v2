@@ -8,6 +8,11 @@
 //                        в репозиторий — только переменная окружения!
 //   TELEGRAM_CHAT_ID   — id чата/канала, можно несколько через запятую.
 //                        Свой id проще всего узнать у @userinfobot.
+//   TELEGRAM_ADMIN_CHAT_ID — (опционально) отдельный чат для служебных
+//                        оповещений о здоровье парсера: источник перестал
+//                        парситься (ok → template/parse_error/stale) или
+//                        восстановился. Не настроен — health-алерты выключены,
+//                        пользовательский канал ими не засоряется.
 //   CRON_SECRET        — произвольная строка, защищает endpoint от чужих
 //                        вызовов. Vercel Cron подставляет её сам в
 //                        заголовок Authorization: Bearer <CRON_SECRET>.
@@ -90,10 +95,13 @@ function formatMessage(events, facNames) {
   return lines.join('\n');
 }
 
-async function sendTelegram(text) {
-  const token = process.env.TELEGRAM_BOT_TOKEN;
-  const chats = String(process.env.TELEGRAM_CHAT_ID || '')
+function chatsFromEnv(name) {
+  return String(process.env[name] || '')
     .split(',').map(s => s.trim()).filter(Boolean);
+}
+
+async function sendTelegram(text, chats) {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token || !chats.length) return { sent: 0, reason: 'telegram_not_configured' };
   let sent = 0;
   for (const chatId of chats) {
@@ -121,6 +129,37 @@ function okOnly(payload) {
   return { facilities: (payload.facilities || []).filter(f => f.dataQuality === 'ok') };
 }
 
+// Здоровье источников: template/parse_error — парсер не понял страницу,
+// stale — источник не ответил и подставлен last-known-good. closed сюда
+// НЕ входит — это валидное состояние контента, а не сбой парсера.
+const BAD_QUALITY = new Set(['template', 'parse_error', 'stale']);
+
+function healthMap(payload) {
+  const m = {};
+  for (const f of payload.facilities || []) {
+    m[f.id] = f.stale ? 'stale' : (f.dataQuality || 'unknown');
+  }
+  return m;
+}
+
+// Переходы здоровья между prev и next: деградация (ok/closed → bad) и
+// восстановление (bad → ok/closed). Сравнение с prev даёт «N=1 с дедупом»:
+// алерт уходит один раз на переход, а не на каждый прогон в сломанном состоянии.
+function healthTransitions(prev, next) {
+  if (!prev) return [];
+  const was = healthMap(prev);
+  const now = healthMap(next);
+  const lines = [];
+  for (const f of next.facilities || []) {
+    const a = was[f.id];
+    const b = now[f.id];
+    if (!a || a === b) continue;
+    if (BAD_QUALITY.has(b) && !BAD_QUALITY.has(a)) lines.push(`🔴 ${f.name}: ${a} → ${b}`);
+    else if (BAD_QUALITY.has(a) && !BAD_QUALITY.has(b)) lines.push(`🟢 ${f.name}: ${a} → ${b}`);
+  }
+  return lines;
+}
+
 module.exports = async (req, res) => {
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
   res.setHeader('Cache-Control', 'no-store');
@@ -139,18 +178,30 @@ module.exports = async (req, res) => {
     if (events.length) {
       const facNames = {};
       for (const f of next.facilities) facNames[f.id] = f.name;
-      notified = await sendTelegram(formatMessage(events, facNames));
+      notified = await sendTelegram(formatMessage(events, facNames), chatsFromEnv('TELEGRAM_CHAT_ID'));
     }
   }
-  // Пишем prev только когда есть что записать (baseline или изменения) —
+
+  // Служебный алерт админу: источник сломался/восстановился.
+  const health = healthTransitions(prev, next);
+  let adminNotified = { sent: 0 };
+  if (health.length) {
+    const msg = ['🛠 <b>Парсер ПолесГУ — статус источников</b>', '', ...health.map(esc)].join('\n');
+    adminNotified = await sendTelegram(msg, chatsFromEnv('TELEGRAM_ADMIN_CHAT_ID'));
+  }
+
+  // Пишем prev только когда есть что записать (baseline, изменения или
+  // смена здоровья — иначе health-алерт повторялся бы каждый прогон) —
   // не жжём Blob-операции на каждый тихий прогон.
-  if (!prev || events.length) await savePrev(next);
+  if (!prev || events.length || health.length) await savePrev(next);
 
   res.status(200).end(JSON.stringify({
     ok: true,
     baseline: !prev,
     events: events.length,
     notified: notified.sent,
+    healthChanges: health.length,
+    adminNotified: adminNotified.sent,
     blobConfigured: haveBlob(),
     telegramConfigured: Boolean(process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID),
   }));

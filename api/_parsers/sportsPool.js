@@ -15,42 +15,32 @@
 //
 //      Здесь нет дней недели в шапке таблицы и часто рядом висит
 //      объявление о закрытии вида «с 18.05 по 25.05 бассейн не работает».
+//      Разбор — общим движком _inline.js.
 //
 // Стратегия:
-//   • Сначала пробуем inline-парсер (закрытие будет частичным closureRange,
-//     а сессии берём только из тех дней, что прямо перечислены).
-//   • Если inline пуст — пробуем таблицу через genericParse.
-//   • Если таблица тоже пуста, а closure-notice есть — возвращаем
-//     полное закрытие, как раньше.
+//   • «Богатый» inline (≥2 дней или ≥3 слотов) — отдаём сразу; closure
+//     уходит в closureRanges, сессии берём из перечисленных дат.
+//   • Слабый/пустой inline — сначала таблица через genericParse: одиночное
+//     inline-совпадение может оказаться фантомом из новостного абзаца при
+//     живой таблице.
+//   • Таблицы нет, но слабый inline есть — берём его.
+//   • Ничего нет, а closure-notice есть — полное закрытие, как раньше.
 
 const cheerio = require('cheerio');
 const { genericParse, extractContentRoot } = require('./_common');
 const closure = require('./closureNotice');
-const { normalizeText, parseTime } = require('../_lib/timeParse');
+const { normalizeText } = require('../_lib/timeParse');
+const {
+  extractInlineSessions, flatTextWithSpaces, isRichInline, okWithClosure,
+} = require('./_inline');
 
-// «Вторник 26.05.2026» / «Воскресенье 31.05.2026» — все 7 дней недели.
-// Сам день недели не несёт информации (дата уже задана), мы его просто
-// проматываем при поиске следующего якоря.
-const DAY_HEADER_RE = /(понедельник|вторник|сред[ауы]|четверг|пятниц[аы]|суббот[аы]|воскресень[еяю])\s+(\d{1,2})\.(\d{1,2})\.(\d{4})/giu;
-
-// То же название дня недели, но дата ПОСЛЕ него опциональна. Используется
-// для поиска «конца сетки»: в дневной сетке день недели встречается ТОЛЬКО
-// в шапке «<день> ДД.ММ.ГГГГ». Голое название без даты — признак сторонней
-// секции, которая идёт после расписания (на странице это блок
-// «Обучение плаванию … Вторник, Четверг … Суббота …» с днями-словами).
-const BARE_DAY_RE = /(понедельник|вторник|сред[ауы]|четверг|пятниц[аы]|суббот[аы]|воскресень[еяю])(\s+\d{1,2}\.\d{1,2}\.\d{4})?/giu;
-
-// «HH.MM – HH.MM» с опциональным «(описание дорожек)». Описание матчится
+// Слот «HH.MM – HH.MM» с опциональным «(описание дорожек)». Описание матчится
 // только при наличии ОБЕИХ скобок. Без `)` (на странице встречаются такие
 // «огрызки» вида «09.15 – 10.00 (свободно 3 дорожки, без 1 крайней») слот
 // учитывается, но без description — иначе жадный [^)] пожрал бы текст
 // следующего слота до его закрывающей скобки. `[^()]` явно исключает
 // вложенные скобки.
-//
-// Разделитель часов и минут — [.:]: исторически на этой странице ставят
-// точку, но если вёрстку поправят на «09:15-10:00» (стандарт остальных
-// страниц ПолесГУ), парсер не должен молча отдавать 0 сессий.
-const SLOT_RE = /(\d{1,2})[.:](\d{2})\s*[-–—]\s*(\d{1,2})[.:](\d{2})(?:\s*\(([^()]+)\))?/g;
+const SLOT_WITH_DESC_RE = /(\d{1,2})[.:](\d{2})\s*[-–—]\s*(\d{1,2})[.:](\d{2})(?:\s*\(([^()]+)\))?/g;
 
 // «Обучение плаванию …» (на странице — «Обучение плаванию Мельникова О.В.»):
 // отдельная секция занятий с тренером, идёт ПОСЛЕ сетки свободного плавания,
@@ -63,10 +53,6 @@ const LESSONS_SECTION_RE = /обучени[ея]\s+плавани[июя]/iu;
 function stripLessonsSection(text) {
   const m = LESSONS_SECTION_RE.exec(text);
   return m ? text.slice(0, m.index).trim() : text;
-}
-
-function isoDate(y, m, d) {
-  return `${y}-${String(+m).padStart(2, '0')}-${String(+d).padStart(2, '0')}`;
 }
 
 // Превращает «(свободно 3 дорожки, без 1 крайней)» →
@@ -92,120 +78,33 @@ function activityFromDescription(desc) {
   return `${base} · ${parts.join(', ')}`;
 }
 
-// Конец «дневной сетки», начиная с позиции fromPos: первое голое название
-// дня недели БЕЗ даты после него. Если такого нет — конец текста.
-//
-// Зачем: у ПОСЛЕДНЕГО дня нет следующего якоря-даты, поэтому его срез иначе
-// тянулся бы до конца текста и заглатывал секцию «Обучение плаванию …»
-// (Вторник, Четверг, Суббота — днями-словами без дат). Совпавшие по времени
-// слоты схлопывались дедупом, а несовпавшие (19:00, 20:00) протекали в
-// последний день — был баг: воскресенье показывало лишние сеансы.
-function scheduleSliceEnd(text, fromPos) {
-  BARE_DAY_RE.lastIndex = fromPos;
-  let m;
-  while ((m = BARE_DAY_RE.exec(text)) !== null) {
-    // m[2] есть → это шапка «<день> ДД.ММ.ГГГГ», часть сетки, проматываем.
-    if (!m[2]) return m.index;
-  }
-  return text.length;
-}
-
-// Извлекает inline-сессии из плоского нормализованного текста.
-// Логика: идём слева направо, переключаем «активную дату» по DAY_HEADER_RE,
-// между двумя соседними якорями собираем все слоты SLOT_RE.
-function extractInlineSessions(text) {
-  const sessions = [];
-  // Сначала собираем якоря-дни — позиции и распарсенные даты.
-  const anchors = [];
-  let m;
-  DAY_HEADER_RE.lastIndex = 0;
-  while ((m = DAY_HEADER_RE.exec(text)) !== null) {
-    anchors.push({ pos: m.index, date: isoDate(m[4], m[3], m[2]) });
-  }
-  if (!anchors.length) return [];
-  // К каждому якорю — кусок текста до следующего, в нём ищем слоты.
-  for (let i = 0; i < anchors.length; i++) {
-    const from = anchors[i].pos;
-    // Срез ограничен следующим якорем-датой ИЛИ концом сетки (сторонняя
-    // секция с днями-словами) — что наступит раньше. Для промежуточных дней
-    // граница всегда — следующий якорь; конец сетки бьёт только по последнему.
-    const nextAnchor = i + 1 < anchors.length ? anchors[i + 1].pos : text.length;
-    const to = Math.min(nextAnchor, scheduleSliceEnd(text, from));
-    const slice = text.slice(from, to);
-    SLOT_RE.lastIndex = 0;
-    let sm;
-    while ((sm = SLOT_RE.exec(slice)) !== null) {
-      const start = parseTime(`${sm[1]}.${sm[2]}`);
-      const end   = parseTime(`${sm[3]}.${sm[4]}`);
-      if (!start || !end) continue;
-      sessions.push({
-        date: anchors[i].date,
-        start,
-        end,
-        activity: activityFromDescription(sm[5]),
-      });
-    }
-  }
-  // Уникализуем (date,start,end) — на случай дублирующих текстовых фрагментов.
-  const seen = new Set();
-  return sessions.filter(s => {
-    const k = `${s.date}|${s.start}|${s.end}`;
-    if (seen.has(k)) return false;
-    seen.add(k);
-    return true;
-  });
-}
-
-// Превращает root-элемент в плоский текст, но с разделителями между
-// блочными элементами (по умолчанию cheerio.text() склеивает соседние
-// блоки без пробела — получается «года‚плавательный» вместо «года плавательный»).
-function flatTextWithSpaces($, $root) {
-  // Клонируем — иначе портим дерево вызывающему.
-  const $clone = cheerio.load('<root>' + $root.html() + '</root>').root().find('root');
-  $clone.find('br').replaceWith(' ');
-  // Между любыми <p>, <div>, <h1..6>, <li>, <tr>, <td>, <th> вставляем пробел перед закрывающим тегом
-  // через .text(), просто пройдёмся .each и накопим текст.
-  // Проще: для каждого блочного элемента подменим контент на «<пробел>content<пробел>».
-  // Но это рекурсивно сложно. Используем простой трюк: добавим пробел в начале каждого
-  // блочного элемента через прокладку.
-  const BLOCKS = 'p, div, h1, h2, h3, h4, h5, h6, li, tr, td, th, blockquote';
-  $clone.find(BLOCKS).each((_, el) => {
-    cheerio.load('<x> </x>')('x').prependTo(el);
-    cheerio.load('<x> </x>')('x').appendTo(el);
-  });
-  return normalizeText($clone.text());
-}
-
 function parse(html, ctx) {
   const $ = cheerio.load(html);
   const $root = extractContentRoot($);
+  const todayIso = ctx && ctx.todayIso;
 
   const text = flatTextWithSpaces($, $root);
   // closure.detect получает уже очищенный текст — иначе notice выходит
   // склеенный без пробелов между блочными элементами. Ему отдаём ПОЛНЫЙ
   // текст: объявление о закрытии всегда вверху, до секции занятий.
-  const notice = closure.detect($, $root, text);
+  const notice = closure.detect($, $root, text, todayIso);
   // Сессии разбираем по тексту БЕЗ хвостовой секции «Обучение плаванию» —
   // её слоты не относятся к свободному плаванию (см. stripLessonsSection).
-  const sessions = extractInlineSessions(stripLessonsSection(text));
+  const inline = extractInlineSessions(stripLessonsSection(text), {
+    slotRe: SLOT_WITH_DESC_RE,
+    activityFor: slot => activityFromDescription(slot.m[5]),
+    todayIso,
+  });
 
-  if (sessions.length > 0) {
-    // Расписание есть — отдаём его. closure (если был) приходит как
-    // closureRanges, чтобы фронт мог пометить «закрыт» для дат в окне.
-    const closureRanges = [];
-    if (notice?.range) {
-      closureRanges.push({
-        from: notice.range.from,
-        to: notice.range.to,
-        notice: notice.notice,
-      });
-    }
-    return { ok: true, sessions, closureRanges };
-  }
+  // Уверенный inline — отдаём сразу.
+  if (isRichInline(inline)) return okWithClosure(inline, notice);
 
-  // Inline пусто — пробуем таблицу.
+  // Иначе сначала таблица: при живой таблице слабый inline — скорее фантом.
   const generic = genericParse(html, ctx);
   if (generic.ok && generic.sessions.length > 0) return generic;
+
+  // Таблицы нет — слабый inline всё же лучше, чем ничего.
+  if (inline.length > 0) return okWithClosure(inline, notice);
 
   // И таблицы нет, но closure-notice был — возвращаем полное закрытие.
   if (notice) {
