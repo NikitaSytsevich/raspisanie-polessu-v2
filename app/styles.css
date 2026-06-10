@@ -4027,7 +4027,15 @@ html.light .ln-status-pill.is-free { background: rgba(63, 130, 118, 0.18); color
 }
 .insts-manage .inst-del:hover { opacity: 1; }
 .insts-manage .inst-del .material-symbols-outlined { font-size: 18px; }
-.inst-add-row { gap: 10px; }
+/* Плашка добавления — это .row, а .row раскладывает детей grid'ом
+   «36px 1fr 20px»: input попадал в 36px-колонку для иконки и схлопывался
+   в квадратик, где помещалась одна буква плейсхолдера. Здесь своя
+   раскладка: input тянется, кнопка — по содержимому. */
+.inst-add-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
 .inst-add-input {
   flex: 1;
   min-width: 0;

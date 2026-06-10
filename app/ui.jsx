@@ -109,6 +109,10 @@ function PullToRefresh({ onRefresh, children, scrollRef }) {
   const [pulled, setPulled] = _us(0);
   const [refreshing, setRefreshing] = _us(false);
   const startY = _ur(null);
+  const startX = _ur(null);
+  // Ось жеста: null — ещё не решена, 'v' — вертикальный (наш pull),
+  // 'h' — горизонтальный (системный свайп-назад/вперёд — не наш).
+  const axis = _ur(null);
   // Зеркала state в ref — чтобы touch-обработчики не перевешивались на
   // каждое движение пальца (раньше deps были [pulled, refreshing], эффект
   // снимал/ставил listener'ы по 30+ раз в секунду во время свайпа).
@@ -126,11 +130,23 @@ function PullToRefresh({ onRefresh, children, scrollRef }) {
       if (node.scrollTop > 4) return;
       const t = e.touches[0];
       startY.current = t.clientY;
+      startX.current = t.clientX;
+      axis.current = null;
     }
     function onMove(e) {
       if (startY.current == null) return;
       const t = e.touches[0];
       const dy = t.clientY - startY.current;
+      const dx = t.clientX - startX.current;
+      // Ось решаем один раз, по первому заметному смещению. Горизонтальный
+      // жест (свайп-назад по краю экрана) — не наш: бросаем отслеживание,
+      // иначе вертикальный дрейф пальца дёргал страницу и, перевалив порог,
+      // самопроизвольно запускал обновление.
+      if (axis.current == null) {
+        if (Math.abs(dx) < 6 && Math.abs(dy) < 6) return; // ещё не ясно
+        axis.current = Math.abs(dy) > Math.abs(dx) ? 'v' : 'h';
+        if (axis.current === 'h') { startY.current = null; setPulledBoth(0); return; }
+      }
       if (dy > 0 && node.scrollTop <= 0) {
         setPulledBoth(Math.min(dy * 0.55, 80));
         if (e.cancelable && dy > 8) e.preventDefault();
@@ -150,13 +166,21 @@ function PullToRefresh({ onRefresh, children, scrollRef }) {
         setPulledBoth(0);
       }
     }
-    node.addEventListener('touchstart', onStart, { passive: true });
-    node.addEventListener('touchmove',  onMove,  { passive: false });
-    node.addEventListener('touchend',   onEnd);
+    function onCancel() {
+      // Браузер забрал жест себе (системная навигация, выделение и т.п.) —
+      // тихо сбрасываем без запуска обновления.
+      startY.current = null;
+      setPulledBoth(0);
+    }
+    node.addEventListener('touchstart',  onStart, { passive: true });
+    node.addEventListener('touchmove',   onMove,  { passive: false });
+    node.addEventListener('touchend',    onEnd);
+    node.addEventListener('touchcancel', onCancel);
     return () => {
-      node.removeEventListener('touchstart', onStart);
-      node.removeEventListener('touchmove',  onMove);
-      node.removeEventListener('touchend',   onEnd);
+      node.removeEventListener('touchstart',  onStart);
+      node.removeEventListener('touchmove',   onMove);
+      node.removeEventListener('touchend',    onEnd);
+      node.removeEventListener('touchcancel', onCancel);
     };
   }, [scrollRef]);
 
