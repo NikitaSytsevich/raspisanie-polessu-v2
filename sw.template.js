@@ -84,8 +84,15 @@ self.addEventListener('fetch', (event) => {
   // 4. Хэшированные ассеты /app/* — cache-first БЕЗ ревалидации.
   // Имена содержат content-hash → содержимое неизменно. Нет смысла
   // ходить в сеть в фоне (это раньше жгло трафик на каждый hit).
+  //
+  // ИСКЛЮЧЕНИЕ — dev-сборка (VERSION === 'dev'): там имена СТАБИЛЬНЫЕ
+  // (bundle.js, styles.min.css), а версия SW не меняется — immutable-кэш
+  // намертво замораживал первый собранный бандл, и правки в watch-режиме
+  // не доезжали до браузера до ручного сброса SW.
   if (url.origin === self.location.origin && url.pathname.startsWith('/app/')) {
-    event.respondWith(cacheFirstImmutable(req, SHELL_CACHE));
+    event.respondWith(VERSION === 'dev'
+      ? networkFirst(req, SHELL_CACHE)
+      : cacheFirstImmutable(req, SHELL_CACHE));
     return;
   }
 

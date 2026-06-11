@@ -447,6 +447,10 @@ body::after {
   margin-top: 10px;
   display: flex;
   flex-wrap: wrap;
+  /* center — иначе .sep (3px точка) прилипает к верху строки (stretch
+     не растягивает элементы с фиксированной высотой, оставляя их у
+     flex-start). */
+  align-items: center;
   gap: 6px 14px;
   font-size: 12px;
   color: var(--text-muted);
@@ -518,7 +522,8 @@ body::after {
   gap: 2px;
   transition: background 160ms ease, color 160ms ease;
 }
-.month-label::first-letter { text-transform: uppercase; }
+/* Заглавная буква месяца проставляется в JS: ::first-letter не работает
+   на flex-контейнерах (кнопка — inline-flex). */
 .month-label:hover { background: var(--bg-elevated); color: var(--text); }
 .month-label .material-symbols-outlined {
   font-size: 16px;
@@ -580,6 +585,30 @@ body::after {
   justify-content: space-between;
   margin-bottom: 10px;
 }
+.dp-head-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+/* Стрелки страниц календаря — в шапке. Раньше жили в угловых ячейках
+   сетки, но шаг страницы (28 дней) совпадал с размером сетки, и даты
+   под стрелками были невыбираемы ни с какой страницы. */
+.dp-nav {
+  appearance: none;
+  border: 0;
+  background: var(--bg-raised);
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 140ms ease, color 140ms ease;
+}
+.dp-nav:hover { background: var(--hairline); color: var(--accent); }
+.dp-nav .material-symbols-outlined { font-size: 18px; }
 .dp-title {
   font-family: "Inter", system-ui, sans-serif;
   font-weight: 600;
@@ -721,13 +750,6 @@ body::after {
 .dp-cell.is-selected .mo { color: rgba(255,250,243,0.85); }
 .dp-cell.is-selected .num.is-star,
 .dp-cell.is-selected.is-today .num:not(.is-star) { color: #fffaf3; }
-.dp-cell.is-nav {
-  color: var(--text-subtle);
-}
-.dp-cell.is-nav .material-symbols-outlined {
-  font-size: 20px;
-}
-.dp-cell.is-nav:hover { color: var(--accent); }
 .week-strip-row {
   display: grid;
   grid-template-columns: auto 1fr auto;
@@ -3024,7 +3046,12 @@ html.light .about-sheet {
      отменяет animation и сбрасывает forwards-фиксацию. Карточки оставались
      opacity:0 при возврате на home (баг «карточки пропадают»). */
   animation: fcRise 520ms cubic-bezier(0.34, 1.2, 0.64, 1) both;
+  /* Карточка кликабельна (тап → редактор смены) */
+  cursor: pointer;
+  transition: border-color 200ms ease;
 }
+.fc-card:hover { border-color: var(--hairline-strong); }
+.fc-card:hover .fc-place { color: var(--accent); }
 .fc-card.idx-0 { animation-delay: 40ms; }
 .fc-card.idx-1 { animation-delay: 120ms; }
 .fc-card.idx-2 { animation-delay: 200ms; }
@@ -3807,12 +3834,13 @@ html.light .ln-status-pill.is-free { background: rgba(63, 130, 118, 0.18); color
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 0 16px 4px;
+  /* 18px — в линию с .fc-card (карточки идут margin 12px 18px) */
+  margin: 0 18px 4px;
   padding: 8px 14px;
   border-radius: 12px;
-  background: color-mix(in srgb, var(--accent, #fc8501) 12%, transparent);
-  border: 1px solid color-mix(in srgb, var(--accent, #fc8501) 28%, transparent);
-  color: var(--text-secondary, inherit);
+  background: var(--accent-soft);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
   font-size: 13px;
   line-height: 1.3;
 }

@@ -30,11 +30,13 @@ function formatDuration(mins) {
   return `${m} м`;
 }
 
+// Подпись зазора между сеансами. Монотонно по длительности:
+// короткий зазор — «пауза», от двух часов — «перерыв» (раньше <45 минут
+// тоже звалось «перерывом», и подписи скакали: перерыв → пауза → перерыв).
 function classifyBreak(minutes, facilityId) {
   if (facilityId === 'ice_arena' && minutes >= 20 && minutes <= 90) return 'заливка льда';
   if (minutes >= 120) return 'перерыв';
-  if (minutes >= 45) return 'пауза';
-  return 'перерыв';
+  return 'пауза';
 }
 
 // Раскладка позиций дорожек большого бассейна.
@@ -185,6 +187,45 @@ function inferSessionIndicator(facilityId, activity) {
   }
 
   return null;
+}
+
+// Слияние пересекающихся/смежных интервалов [startMin, endMin].
+// Нужно, когда у пользователя несколько смен на один объект в день:
+// без слияния пересекающиеся смены считают одни и те же сайтовые
+// сеансы дважды (наблюдалось: 2:15 реальных превращались в 4:30).
+function mergeIntervals(intervals) {
+  const sorted = intervals
+    .filter(([a, b]) => b > a)
+    .sort((x, y) => x[0] - y[0]);
+  const out = [];
+  for (const [a, b] of sorted) {
+    const last = out[out.length - 1];
+    if (last && a <= last[1]) last[1] = Math.max(last[1], b);
+    else out.push([a, b]);
+  }
+  return out;
+}
+
+// «Фактическое» время работы на объекте за день.
+// shiftIntervals — окна смен пользователя (минуты), sessionIntervals —
+// сайтовые сеансы. Семантика повторяет computeEffectiveShift, но на
+// уровне объекта (без двойного счёта пересекающихся смен):
+//   • объединённое окно, в которое попал хоть один сеанс →
+//     confirmedMin += сумма пересечений (остаток окна не считается);
+//   • окно совсем без сеансов → unconfirmedMin += его длина
+//     («по графику», сайт не подтвердил).
+function facilityDayUsage(shiftIntervals, sessionIntervals) {
+  let confirmedMin = 0, unconfirmedMin = 0;
+  for (const [a, b] of mergeIntervals(shiftIntervals)) {
+    let ov = 0;
+    for (const [s, e] of sessionIntervals) {
+      const u = Math.max(a, s), v = Math.min(b, e);
+      if (v > u) ov += v - u;
+    }
+    if (ov > 0) confirmedMin += ov;
+    else unconfirmedMin += b - a;
+  }
+  return { confirmedMin, unconfirmedMin };
 }
 
 function buildTimelineForDate(shifts, date) {
@@ -347,6 +388,8 @@ module.exports = {
   classifyBreak,
   buildLanes,
   inferSessionIndicator,
+  mergeIntervals,
+  facilityDayUsage,
   buildTimelineForDate,
   indexSessionsByFacDate,
   computeScheduleDiff,

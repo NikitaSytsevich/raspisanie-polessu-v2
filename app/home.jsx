@@ -125,22 +125,36 @@ function HomeScreen() {
   if (!shifts.length) state = 'empty';
   else if (!shifts.some(s => s.date >= today)) state = 'caught_up';
 
-  // Hero stats — суммируем «фактическое» время по сайту через
-  // computeEffectiveShift на каждую смену.
-  // Подтверждённые смены идут в totalMin; неподтверждённые (нет данных или
+  // Hero stats — «фактическое» время по сайту, считается ПО ОБЪЕКТАМ
+  // через facilityDayUsage (слитые окна смен × сайтовые сеансы).
+  // Подтверждённое время идёт в totalMin; неподтверждённое (нет данных или
   // объект работает, но в это окно ничего) — в unconfirmedMin как контекст.
-  const { totalMin, unconfirmedMin, facCount } = _hm(() => {
-    let t = 0, u = 0;
-    const facs = new Set();
+  //
+  // Раньше суммировали computeEffectiveShift по каждой смене отдельно —
+  // две пересекающиеся смены на один объект считали одни и те же сеансы
+  // дважды, а малый бассейн учитывал «обучение плаванию», которое карточка
+  // отфильтровывает (hero и карточка расходились в минутах).
+  const { totalMin, unconfirmedMin, facCount, closedFacCount } = _hm(() => {
+    let t = 0, u = 0, closedN = 0;
+    const byFac = new Map();
     for (const s of dayShifts) {
-      const e = window.Data.computeEffectiveShift(s);
-      facs.add(s.facilityId);
-      if (e.badge === 'closed') continue;
-      if (e.badge === 'confirmed') t += e.minutes;
-      else u += e.minutes;
+      if (!byFac.has(s.facilityId)) byFac.set(s.facilityId, []);
+      byFac.get(s.facilityId).push(s);
     }
-    return { totalMin: t, unconfirmedMin: u, facCount: facs.size };
-  }, [dayShifts]);
+    for (const [facilityId, shs] of byFac.entries()) {
+      const cached = window.Data.getCachedFacility(facilityId);
+      if (facilityClosureOn(cached, selectedDate)) { closedN++; continue; } // закрыт — 0 минут
+      const intervals = shs.map(s => [window.Data.toMinutes(s.start), window.Data.toMinutes(s.end)]);
+      const sessions = cached?.dataQuality === 'ok'
+        ? facilitySiteSessions(facilityId, selectedDate)
+            .map(ss => [window.Data.toMinutes(ss.start), window.Data.toMinutes(ss.end)])
+        : [];
+      const usage = window.Data.facilityDayUsage(intervals, sessions);
+      t += usage.confirmedMin;
+      u += usage.unconfirmedMin;
+    }
+    return { totalMin: t, unconfirmedMin: u, facCount: byFac.size, closedFacCount: closedN };
+  }, [dayShifts, selectedDate]);
 
   // Минск-TZ, не локальный браузерный — `today` и все даты в приложении
   // считаются в зоне Минска, и если бы здесь стояло new Date().getHours(),
@@ -159,11 +173,19 @@ function HomeScreen() {
   //     событие, не учитывается (event.affectsShiftId = undefined) — SiteCard
   //     врёт «ваши смены не тронуты» (баг #4).
   // Та же величина управляет и плашкой-вверху/внизу (см. ниже).
+  //
+  // Считаем УНИКАЛЬНЫЕ смены, а не события: плашка говорит «Затронуты
+  // N ваших смен», но три rem-события в окне одной смены — это одна
+  // затронутая смена, а не три (плашка завышала счёт втрое).
   const unreadAffectedCount = _hm(() => {
     if (!unreadChange?.events?.length) return 0;
-    return unreadChange.events.filter(
-      ev => shifts.some(s => window.Data.eventOverlapsShift(ev, s))
-    ).length;
+    const ids = new Set();
+    for (const ev of unreadChange.events) {
+      for (const s of shifts) {
+        if (window.Data.eventOverlapsShift(ev, s)) ids.add(s.id);
+      }
+    }
+    return ids.size;
   }, [unreadChange, shifts]);
   const unreadAffectsMe = unreadAffectedCount > 0;
 
@@ -188,31 +210,30 @@ function HomeScreen() {
   }, [toast, refreshing]);
 
   // Week strip — окно из 7 дней. weekOffset=0 центрировано на сегодня,
-  // ±1 сдвигает на неделю. Подпись месяца показываем на первом чипе и
-  // на любом, который начинает новый месяц в пределах окна.
+  // ±1 сдвигает на неделю.
+  //
+  // `today` в deps — не лишний: isoOffset(i) и isToday считаются от
+  // ТЕКУЩЕЙ даты. Без него PWA, переживший полночь, держал бы в memo
+  // вчерашнее окно с вчерашним «сегодня» до первого изменения других deps
+  // (minute-tick ре-рендерит, но deps не меняет — memo возвращал старьё).
   const weekDays = _hm(() => {
     const arr = [];
     const baseStart = -1 + weekOffset * 7;
     const baseEnd   = 5 + weekOffset * 7;
-    let lastMonth = -1;
     for (let i = baseStart; i <= baseEnd; i++) {
       const date = window.Data.isoOffset(i);
       const d = new Date(date + 'T12:00:00');
-      const month = d.getMonth();
       arr.push({
         date,
         wd: window.Data.RU_WEEKDAYS_SHORT[d.getDay()],
         num: d.getDate(),
-        mo: window.Data.RU_MONTHS[month].slice(0, 3),
-        showMonth: month !== lastMonth,
         isToday: i === 0,
         isSelected: date === selectedDate,
         hasShift: dateSet.has(date),
       });
-      lastMonth = month;
     }
     return arr;
-  }, [dateSet, selectedDate, weekOffset]);
+  }, [dateSet, selectedDate, weekOffset, today]);
 
   // Когда меняется selectedDate — синхронизируем weekOffset так, чтобы
   // выбранный день попадал в текущее окно (если только что вернулись из
@@ -282,7 +303,7 @@ function HomeScreen() {
 
           {state === 'normal' && (
             <>
-              <Hero date={selectedDate} count={dayShifts.length} totalMin={totalMin} unconfirmedMin={unconfirmedMin} facCount={facCount} isToday={isToday}/>
+              <Hero date={selectedDate} count={dayShifts.length} totalMin={totalMin} unconfirmedMin={unconfirmedMin} facCount={facCount} closedFacCount={closedFacCount} isToday={isToday}/>
               {/* Если сайт нашёл изменения, затронувшие наши смены — поднимаем
                   SiteCard вверх, чтобы пользователь сразу увидел проблему.
                   Используем unreadAffectsMe (рассчитан против ТЕКУЩИХ shifts),
@@ -426,16 +447,27 @@ function AboutModal({ open, onClose }) {
 }
 
 // ── Hero ────────────────────────────────────────────────────────
-function Hero({ date, count, totalMin, unconfirmedMin, facCount, muted, isToday }) {
+function Hero({ date, count, totalMin, unconfirmedMin, facCount, closedFacCount = 0, muted, isToday }) {
   const d = new Date(date + 'T12:00:00');
   const wd = window.Data.RU_WEEKDAYS_SHORT[d.getDay()];
   const day = d.getDate();
   const mo = window.Data.RU_MONTHS[d.getMonth()];
-  let kicker = window.Data.formatDayHeading(date);
+  // Кикер — ОТНОСИТЕЛЬНОЕ положение дня, заголовок — сама дата.
+  // Раньше для дат дальше ±1 дня кикер шёл через formatDayHeading и
+  // дублировал заголовок слово в слово («Вс, 14 июня» дважды друг
+  // под другом).
+  let kicker;
   if (isToday) kicker = 'Сегодня';
   else if (date === window.Data.isoOffset(1)) kicker = 'Завтра';
   else if (date === window.Data.isoOffset(-1)) kicker = 'Вчера';
-  else kicker = kicker[0].toUpperCase() + kicker.slice(1);
+  else {
+    const dayDiff = Math.round(
+      (d.getTime() - new Date(window.Data.TODAY_ISO + 'T12:00:00').getTime()) / 86400000
+    );
+    kicker = dayDiff > 0
+      ? `Через ${dayDiff} ${pluralizeDays(dayDiff)}`
+      : `${-dayDiff} ${pluralizeDays(-dayDiff)} назад`;
+  }
   return (
     <section className={`hero ${muted ? 'is-muted' : ''} ${!muted && count === 0 ? 'is-empty-day' : ''}`}>
       <p className="hero-kicker">{kicker}</p>
@@ -454,11 +486,29 @@ function Hero({ date, count, totalMin, unconfirmedMin, facCount, muted, isToday 
             )}
           </span>
           <span className="sep"/>
-          <span className="stat"><strong>{facCount}</strong> {pluralizeFacilities(facCount)}</span>
+          <span className="stat">
+            <strong>{facCount}</strong> {pluralizeFacilities(facCount)}
+            {/* Закрытый объект не даёт часов, но в счёте объектов есть —
+                без хинта «3 объекта» при пустой карточке выглядело враньём. */}
+            {closedFacCount > 0 && (
+              <span className="hint">
+                {closedFacCount === facCount
+                  ? (facCount === 1 ? 'закрыт' : 'все закрыты')
+                  : `${closedFacCount} ${pluralizeClosed(closedFacCount)}`}
+              </span>
+            )}
+          </span>
         </div>
       )}
     </section>
   );
+}
+
+function pluralizeDays(n) {
+  const last = n % 10, last2 = n % 100;
+  if (last === 1 && last2 !== 11) return 'день';
+  if (last >= 2 && last <= 4 && (last2 < 12 || last2 > 14)) return 'дня';
+  return 'дней';
 }
 
 function pluralizeShifts(n) {
@@ -466,6 +516,14 @@ function pluralizeShifts(n) {
   if (last === 1 && last2 !== 11) return 'смена';
   if (last >= 2 && last <= 4 && (last2 < 12 || last2 > 14)) return 'смены';
   return 'смен';
+}
+
+// «1 закрыт», «2 закрыты», «5 закрыто» (согласование с «объект»)
+function pluralizeClosed(n) {
+  const last = n % 10, last2 = n % 100;
+  if (last === 1 && last2 !== 11) return 'закрыт';
+  if (last >= 2 && last <= 4 && (last2 < 12 || last2 > 14)) return 'закрыты';
+  return 'закрыто';
 }
 
 function pluralizeFacilities(n) {
@@ -490,19 +548,23 @@ function WeekStrip({ days, selectedDate, weekOffset, onSelect, onShift, onPick }
   const monthBtnRef = _hr(null);
   const popoverRef  = _hr(null);
 
-  // Заголовок: «май» или «май — июнь» если окно покрывает два месяца.
+  // Заголовок: «Июнь» или «Июнь — июль» если окно покрывает два месяца.
+  // Именительный падеж (RU_MONTHS_NOM): родительный «июня» сам по себе
+  // читался как обрывок даты. Заглавная — в JS: CSS ::first-letter на
+  // flex-кнопке не работает (флекс-контейнер не имеет first-letter).
   const monthsInView = [];
   const seenMonth = new Set();
   for (const d of days) {
     const m = new Date(d.date + 'T12:00:00').getMonth();
     if (!seenMonth.has(m)) {
       seenMonth.add(m);
-      monthsInView.push(window.Data.RU_MONTHS[m]);
+      monthsInView.push(window.Data.RU_MONTHS_NOM[m]);
     }
   }
-  const monthLabel = monthsInView.length === 1
+  let monthLabel = monthsInView.length === 1
     ? monthsInView[0]
     : monthsInView.join(' — ');
+  monthLabel = monthLabel[0].toUpperCase() + monthLabel.slice(1);
 
   // Outside click / Esc — закрывают попап.
   _he(() => {
@@ -543,7 +605,10 @@ function WeekStrip({ days, selectedDate, weekOffset, onSelect, onShift, onPick }
           <span>{monthLabel}</span>
           <span className="material-symbols-outlined">expand_more</span>
         </button>
-        {weekOffset !== 0 && (
+        {/* «к сегодня» и при сдвиге окна, и когда выбран другой день
+            текущей недели — иначе с выбранного «Вс, 14» не вернуться
+            одним тапом. */}
+        {(weekOffset !== 0 || selectedDate !== window.Data.TODAY_ISO) && (
           <button
             type="button"
             className="ws-today"
@@ -659,9 +724,19 @@ function DatePicker({ popoverRef, anchorDate, onSelect, onClose }) {
     <div className="date-popover" ref={popoverRef} role="dialog" aria-label="Выбрать дату">
       <header className="dp-head">
         <span className="dp-title">Выбрать дату</span>
-        <button type="button" className="dp-close" onClick={onClose} aria-label="Закрыть">
-          <span className="material-symbols-outlined">close</span>
-        </button>
+        <div className="dp-head-actions">
+          <button type="button" className="dp-nav" onClick={() => setPage(p => p - 1)}
+                  aria-label="Назад на 4 недели">
+            <span className="material-symbols-outlined">chevron_left</span>
+          </button>
+          <button type="button" className="dp-nav" onClick={() => setPage(p => p + 1)}
+                  aria-label="Вперёд на 4 недели">
+            <span className="material-symbols-outlined">chevron_right</span>
+          </button>
+          <button type="button" className="dp-close" onClick={onClose} aria-label="Закрыть">
+            <span className="material-symbols-outlined">close</span>
+          </button>
+        </div>
       </header>
 
       <div className="dp-quick">
@@ -690,53 +765,25 @@ function DatePicker({ popoverRef, anchorDate, onSelect, onClose }) {
           ))}
         </div>
         <div className="dp-cal-body">
+          {/* Раньше угловые ячейки сетки были стрелками навигации — но
+              шаг страницы (28 дней) совпадает с размером сетки, поэтому
+              даты под стрелками были невыбираемы ВООБЩЕ ни с какой
+              страницы. Стрелки переехали в dp-head, все 28 дней кликабельны. */}
           {weeks.map((row, ri) => (
             <div key={ri} className="dp-cal-row">
-              {row.map((d, di) => {
-                // Угловые ячейки — навигация по страницам, чтобы не плодить
-                // отдельные стрелки рядом с календарём.
-                const isPrevSlot = ri === 0 && di === 0;
-                const isNextSlot = ri === weeks.length - 1 && di === 6;
-                if (isPrevSlot) {
-                  return (
-                    <button
-                      key="prev"
-                      type="button"
-                      className="dp-cell is-nav"
-                      onClick={() => setPage(p => p - 1)}
-                      aria-label="Назад"
-                    >
-                      <span className="material-symbols-outlined">chevron_left</span>
-                    </button>
-                  );
-                }
-                if (isNextSlot) {
-                  return (
-                    <button
-                      key="next"
-                      type="button"
-                      className="dp-cell is-nav"
-                      onClick={() => setPage(p => p + 1)}
-                      aria-label="Вперёд"
-                    >
-                      <span className="material-symbols-outlined">chevron_right</span>
-                    </button>
-                  );
-                }
-                return (
-                  <button
-                    key={d.date}
-                    type="button"
-                    className={`dp-cell ${d.isSelected ? 'is-selected' : ''} ${d.isToday ? 'is-today' : ''}`}
-                    onClick={() => onSelect(d.date)}
-                  >
-                    {d.showMonth && <span className="mo">{d.monthShort}</span>}
-                    {d.isToday && !d.isSelected
-                      ? <span className="material-symbols-outlined num is-star">star</span>
-                      : <span className="num">{d.num}</span>}
-                  </button>
-                );
-              })}
+              {row.map(d => (
+                <button
+                  key={d.date}
+                  type="button"
+                  className={`dp-cell ${d.isSelected ? 'is-selected' : ''} ${d.isToday ? 'is-today' : ''}`}
+                  onClick={() => onSelect(d.date)}
+                >
+                  {d.showMonth && <span className="mo">{d.monthShort}</span>}
+                  {d.isToday && !d.isSelected
+                    ? <span className="material-symbols-outlined num is-star">star</span>
+                    : <span className="num">{d.num}</span>}
+                </button>
+              ))}
             </div>
           ))}
         </div>
@@ -764,6 +811,21 @@ function facilitySiteSessions(facilityId, date) {
   const raw = window.Data.getSiteSessionsForDay(facilityId, date);
   if (facilityId !== 'small_pool') return raw;
   return raw.filter(s => /сеанс/i.test(s.activity || ''));
+}
+
+// Закрыт ли объект на дату по кэшу сайта: либо целиком
+// (dataQuality === 'closed'), либо дата попала в closureRanges.
+// Возвращает { notice } или null. Общая точка для hero-статистики
+// и FacilityCard — раньше карточка считала это инлайном, а hero
+// через computeEffectiveShift, и логика могла разъехаться.
+function facilityClosureOn(cached, date) {
+  if (!cached) return null;
+  if (cached.dataQuality === 'closed') return { notice: cached.notice };
+  if (Array.isArray(cached.closureRanges)) {
+    const hit = cached.closureRanges.find(r => date >= r.from && date <= r.to);
+    if (hit) return { notice: hit.notice };
+  }
+  return null;
 }
 
 // Фактическое начало работы на объекте ПО САЙТУ: старт первого сайтового
@@ -852,15 +914,7 @@ function FacilityCard({ facilityId, shifts, today, date, nowMins, idx, onPushEdi
   );
 
   // Состояние объекта на эту дату
-  let closed = false;
-  if (cached) {
-    if (cached.dataQuality === 'closed') {
-      closed = { notice: cached.notice };
-    } else if (Array.isArray(cached.closureRanges)) {
-      const hit = cached.closureRanges.find(r => date >= r.from && date <= r.to);
-      if (hit) closed = { notice: hit.notice };
-    }
-  }
+  const closed = facilityClosureOn(cached, date);
   const noData = cached && (cached.dataQuality === 'template' || cached.dataQuality === 'parse_error');
   const facOk = !closed && !noData && cached?.dataQuality === 'ok';
 
@@ -898,36 +952,22 @@ function FacilityCard({ facilityId, shifts, today, date, nowMins, idx, onPushEdi
     rows.push({ kind: 'sess', s: overlapSessions[i] });
   }
 
-  // Хинт «график 07:30–13:30» — объединённый диапазон моих смен
-  let schedHint;
-  if (shifts.length === 1) {
-    schedHint = `${shifts[0].start}–${shifts[0].end}`;
-  } else {
-    schedHint = `${window.Data.minutesToHHMM(myStart)}–${window.Data.minutesToHHMM(myEnd)}`;
-  }
-
   // Pill: «по сайту» только если в моё окно реально что-то попадает.
   // Если сайт работает, но мои часы вне сетки → «нет на сайте».
   const haveSiteForDate = facOk && overlapSessions.length > 0;
 
-  // Итого — сумма пересечений моих смен с overlap-сессиями.
-  // Если в моё окно ничего из сайта не попало — schedMin (доверяем графику).
+  // Итого — через facilityDayUsage (слитые окна смен × сеансы):
+  // подтверждённые минуты, если сайт что-то показал в моё окно, иначе
+  // время по графику. Пересекающиеся смены на один объект больше не
+  // считают одни и те же сеансы дважды (и «по графику» не суммирует
+  // перекрытие двух смен).
   let totalMin = 0;
-  if (closed) {
-    totalMin = 0;
-  } else if (!haveSiteForDate) {
-    totalMin = shifts.reduce((s, sh) =>
-      s + (window.Data.toMinutes(sh.end) - window.Data.toMinutes(sh.start)), 0);
-  } else {
-    for (const sh of shifts) {
-      const a = window.Data.toMinutes(sh.start);
-      const b = window.Data.toMinutes(sh.end);
-      for (const ss of overlapSessions) {
-        const u = Math.max(a, window.Data.toMinutes(ss.start));
-        const v = Math.min(b, window.Data.toMinutes(ss.end));
-        if (v > u) totalMin += (v - u);
-      }
-    }
+  if (!closed) {
+    const usage = window.Data.facilityDayUsage(
+      shifts.map(sh => [window.Data.toMinutes(sh.start), window.Data.toMinutes(sh.end)]),
+      overlapSessions.map(ss => [window.Data.toMinutes(ss.start), window.Data.toMinutes(ss.end)])
+    );
+    totalMin = haveSiteForDate ? usage.confirmedMin : usage.unconfirmedMin;
   }
 
   const openEditor = () => onPushEditor(shifts[0]);
@@ -956,8 +996,13 @@ function FacilityCard({ facilityId, shifts, today, date, nowMins, idx, onPushEdi
   const cls = ['fc-card', `is-fac-${facilityId}`, `idx-${idx}`,
                closed ? 'is-closed' : ''].filter(Boolean).join(' ');
 
+  // Тап по карточке → редактор первой смены объекта. Вложенные
+  // интерактивы (дорожки, fc-ext, LaneDetailSheet) глушат всплытие,
+  // поэтому конфликтов нет. Клавиатурный путь к редактированию —
+  // экран редактора из шапки (article-кнопкой делать нельзя:
+  // button-в-button невалиден из-за вложенных дорожек).
   return (
-    <article className={cls}>
+    <article className={cls} onClick={openEditor}>
       <div className="fc-watermark" aria-hidden="true">
         <span className="material-symbols-outlined">{fac?.icon || 'place'}</span>
       </div>
@@ -1013,7 +1058,7 @@ function FacilityCard({ facilityId, shifts, today, date, nowMins, idx, onPushEdi
           ) : (
             <p className="fc-empty">
               {noData
-                ? 'сайт ещё не сматчен — показываем ваш график'
+                ? 'данных с сайта пока нет — показываем ваш график'
                 : siteSessions.length
                   ? 'в это время на сайте ничего'
                   : 'на эту дату на сайте ничего'}
@@ -1357,7 +1402,7 @@ function SiteCard({ change, affectedCount = 0, onClick, onAck }) {
   const showAck = Boolean(onAck && hasUnread);
   let head;
   if (!hasUnread) {
-    head = <>Все источники сматчены, изменений <em>не найдено</em></>;
+    head = <>Все источники проверены, изменений <em>не найдено</em></>;
   } else if (affectsMe) {
     const p = affectedShiftsPhrase(affectedCount);
     head = <>{p.verb} <em>{affectedCount}</em> {p.noun}</>;
@@ -1478,5 +1523,4 @@ function triggerImport(toast, setShifts, setChanges) {
   input.click();
 }
 
-const useMemo = _hm;
 window.HomeScreen = HomeScreen;

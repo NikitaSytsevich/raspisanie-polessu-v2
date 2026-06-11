@@ -121,6 +121,45 @@ test('annotateAffectedShifts: проставляет affectsShiftId и was* дл
   assert.equal(events[0].wasEnd, '10:00');
 });
 
+test('classifyBreak: монотонно — пауза до 2 ч, дальше перерыв; лёд — заливка', () => {
+  assert.equal(L.classifyBreak(30, 'sports_pool'), 'пауза');
+  assert.equal(L.classifyBreak(75, 'sports_pool'), 'пауза');
+  assert.equal(L.classifyBreak(120, 'sports_pool'), 'перерыв');
+  assert.equal(L.classifyBreak(30, 'ice_arena'), 'заливка льда');
+  assert.equal(L.classifyBreak(120, 'ice_arena'), 'перерыв');
+});
+
+test('mergeIntervals: пересечения и смежности сливаются, пустые выкидываются', () => {
+  assert.deepEqual(
+    L.mergeIntervals([[480, 720], [450, 810], [900, 960], [960, 990], [500, 500]]),
+    [[450, 810], [900, 990]]
+  );
+  assert.deepEqual(L.mergeIntervals([]), []);
+});
+
+test('facilityDayUsage: пересекающиеся смены не считают сеансы дважды', () => {
+  // Смены 07:30–13:30 и 08:00–12:00, сеансы 08:00–08:45, 09:15–10:00,
+  // 10:30–11:15. Раньше каждая смена пересекалась с каждым сеансом
+  // независимо → 135×2=270 мин; правильно — 135.
+  const shifts = [[450, 810], [480, 720]];
+  const sessions = [[480, 525], [555, 600], [630, 675]];
+  assert.deepEqual(L.facilityDayUsage(shifts, sessions),
+    { confirmedMin: 135, unconfirmedMin: 0 });
+});
+
+test('facilityDayUsage: окно без сеансов уходит в unconfirmed целиком', () => {
+  // Утренняя смена подтверждена частично, вечерняя — сайт молчит.
+  const shifts = [[450, 600], [840, 960]];
+  const sessions = [[480, 540]];
+  assert.deepEqual(L.facilityDayUsage(shifts, sessions),
+    { confirmedMin: 60, unconfirmedMin: 120 });
+});
+
+test('facilityDayUsage: совсем без данных сайта → весь график unconfirmed', () => {
+  assert.deepEqual(L.facilityDayUsage([[450, 810]], []),
+    { confirmedMin: 0, unconfirmedMin: 360 });
+});
+
 test('buildTimelineForDate: зазор между сменами даёт break-строку', () => {
   const shifts = [
     { id: 's1', facilityId: 'ice_arena', date: '2026-06-01', start: '09:00', end: '10:00' },

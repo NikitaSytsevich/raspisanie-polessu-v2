@@ -15,6 +15,7 @@ const {
   formatDuration,
   classifyBreak,
   inferSessionIndicator,
+  facilityDayUsage,
   buildTimelineForDate,
   computeScheduleDiff,
   eventOverlapsShift,
@@ -161,6 +162,9 @@ function formatRelativeMinutes(iso) {
 const RU_WEEKDAYS_SHORT = ['Вс','Пн','Вт','Ср','Чт','Пт','Сб'];
 const RU_WEEKDAYS_LONG  = ['воскресенье','понедельник','вторник','среда','четверг','пятница','суббота'];
 const RU_MONTHS = ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
+// Именительный падеж — для самостоятельных подписей («Июнь», «Июнь — июль»),
+// где родительный («июня») читается как обрывок даты.
+const RU_MONTHS_NOM = ['январь','февраль','март','апрель','май','июнь','июль','август','сентябрь','октябрь','ноябрь','декабрь'];
 
 function formatDayHeading(iso) {
   const d = new Date(iso + 'T12:00:00');
@@ -455,6 +459,7 @@ const Data = {
   buildTimelineForDate,
   classifyBreak,
   inferSessionIndicator,
+  facilityDayUsage,
   toMinutes,
   minutesToHHMM,
   formatDuration,
@@ -466,6 +471,7 @@ const Data = {
   RU_WEEKDAYS_SHORT,
   RU_WEEKDAYS_LONG,
   RU_MONTHS,
+  RU_MONTHS_NOM,
 
   getFacility(id) { return FACILITIES.find(f => f.id === id) || null; },
   getInstructor(id) { return this.loadInstructors().find(i => i.id === id) || null; },
