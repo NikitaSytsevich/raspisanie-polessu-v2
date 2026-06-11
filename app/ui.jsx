@@ -54,12 +54,13 @@ function AppHeader({ left, title, meta, metaImportant = false, right, onBrandCli
   );
 }
 
-function SecLabel({ children, hint, count }) {
+function SecLabel({ children, hint, count, action }) {
   return (
     <div className="sec-label">
       <span>{children}</span>
       {count != null && <span className="count">{count}</span>}
       {hint && <span className="hint">{hint}</span>}
+      {action}
     </div>
   );
 }
@@ -92,7 +93,16 @@ function ToastHost({ children }) {
   return (
     <ToastCtx.Provider value={{ show }}>
       {children}
-      <div className={`toast ${msg ? 'is-on' : ''} ${msg?.actionLabel ? 'has-action' : ''}`} role="status" aria-live="polite">
+      <div
+        className={`toast ${msg ? 'is-on' : ''} ${msg?.actionLabel ? 'has-action' : ''} ${msg?.icon ? 'has-ic' : ''} ${msg?.danger ? 'is-danger' : ''}`}
+        role="status"
+        aria-live="polite"
+      >
+        {msg?.icon && (
+          <span className="toast-ic" aria-hidden="true">
+            <span className="material-symbols-outlined">{msg.icon}</span>
+          </span>
+        )}
         {msg && <span className="toast-text">{msg.text}</span>}
         {msg?.actionLabel && (
           <button type="button" className="toast-action" onClick={runAction}>

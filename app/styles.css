@@ -405,6 +405,26 @@ body::after {
   flex-shrink: 0;
   order: 2;
 }
+/* Маленькое текстовое действие справа в заголовке секции
+   («изменить» / «готово» у чипов инструкторов). */
+.sec-label .sec-action {
+  appearance: none;
+  border: 0;
+  background: none;
+  padding: 2px 0;
+  margin: -2px 0;
+  font-family: "Newsreader", Georgia, serif;
+  font-style: italic;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 12px;
+  color: var(--accent);
+  cursor: pointer;
+  flex-shrink: 0;
+  order: 3;
+}
+.sec-label .sec-action:hover { color: var(--accent-hover); }
 
 /* iOS-имитация home-indicator убрана. */
 .home-indicator { display: none; }
@@ -1924,11 +1944,15 @@ html.light .add-shift-link:hover .plus { color: #fffaf3; }
 .facility-row {
   padding: 0 22px;
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  /* minmax(0,1fr), а не 1fr: у 1fr минимум auto, и колонка не может
+     ужаться меньше min-content текста («Большой бассейн») — на узких
+     экранах правые карточки вылезали за край и обрезались. */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 8px;
 }
 .fc-btn {
   appearance: none;
+  min-width: 0;
   border: 1px solid var(--hairline);
   background: var(--bg-elevated);
   border-radius: 14px;
@@ -1960,9 +1984,8 @@ html.light .add-shift-link:hover .plus { color: #fffaf3; }
   color: var(--text);
   display: block;
   line-height: 1.15;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  /* Длинное имя переносится на вторую строку, а не обрезается «…» */
+  text-wrap: balance;
 }
 .fc-btn .hint {
   font-size: 10.5px;
@@ -2203,6 +2226,51 @@ html.light .add-shift-link:hover .plus { color: #fffaf3; }
 }
 .inst-chip.is-input input::placeholder { color: var(--text-subtle); }
 
+/* ── Режим редактирования каталога («изменить» в заголовке секции) ──
+   Чипы получают красный крестик-бейдж и едва заметно покачиваются
+   (узнаваемый жест «можно удалять»); тап по чипу удаляет инструктора
+   из каталога, undo — через «Вернуть» в тосте. */
+.inst-chip.is-editing {
+  position: relative;
+  animation: instWobble 280ms ease-in-out infinite alternate;
+}
+.inst-chip.is-editing:nth-child(even) {
+  animation-duration: 320ms;
+  animation-direction: alternate-reverse;
+}
+.inst-chip.is-editing:hover {
+  background: var(--danger-soft);
+  border-color: color-mix(in srgb, var(--danger) 35%, transparent);
+  color: var(--danger);
+}
+@keyframes instWobble {
+  from { transform: rotate(-0.7deg); }
+  to   { transform: rotate(0.7deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .inst-chip.is-editing { animation: none; }
+}
+.inst-chip .del-badge {
+  position: absolute;
+  top: -6px;
+  right: -5px;
+  width: 17px;
+  height: 17px;
+  border-radius: 999px;
+  background: var(--danger);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 0 2px var(--bg), 0 2px 6px -2px rgba(0, 0, 0, 0.4);
+  animation: badgePop 180ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.inst-chip .del-badge .material-symbols-outlined { font-size: 11px; }
+@keyframes badgePop {
+  from { transform: scale(0.4); opacity: 0; }
+  to   { transform: scale(1); opacity: 1; }
+}
+
 .note-wrap { padding: 4px 22px 0; }
 .note {
   width: 100%;
@@ -2383,6 +2451,68 @@ html.light .add-shift-link:hover .plus { color: #fffaf3; }
    SETTINGS
    ────────────────────────────────────────────────────────────────── */
 .settings-screen .hero-title { font-size: 34px; }
+
+/* Базовый .hero-meta — flex (на главной это ряд «статов» с точками-
+   разделителями), но здесь внутри связный текст со <strong>: flex рвёт
+   его на границах элементов. Возвращаем обычный поток. */
+.settings-screen .hero-meta { display: block; }
+
+/* Вкладки настроек (Общие / Данные / Связь) — сегмент-контрол на всю
+   ширину контентной колонки. Активная вкладка «приподнята» на светлой
+   плашке поверх утопленной подложки. */
+.set-tabs {
+  margin: 4px 22px 14px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  padding: 4px;
+  border-radius: 14px;
+  background: var(--bg-sunken);
+  border: 1px solid var(--hairline);
+}
+.set-tab {
+  appearance: none;
+  border: 0;
+  background: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 9px 4px;
+  border-radius: 10px;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 160ms ease, color 160ms ease, box-shadow 160ms ease;
+}
+.set-tab .material-symbols-outlined { font-size: 17px; }
+.set-tab:hover { color: var(--text); }
+.set-tab.is-active {
+  background: var(--bg-elevated);
+  color: var(--accent);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.14), inset 0 0 0 1px var(--hairline-strong);
+}
+
+/* Панель вкладки мягко «всплывает» при переключении (key=tab ремаунтит
+   div, поэтому анимация проигрывается на каждый свитч). */
+.set-pane { padding-bottom: 6px; animation: setPaneIn 240ms cubic-bezier(0.22, 1, 0.36, 1); }
+@keyframes setPaneIn {
+  from { opacity: 0; transform: translateY(7px); }
+  to   { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .set-pane { animation: none; }
+}
+
+/* Статичные строки списка (поле ввода и т.п.) — не кликабельны целиком,
+   поэтому без hover-подсветки и pointer-курсора. */
+.row.is-static { cursor: default; }
+.row.is-static:hover { background: none; }
+.row.is-static:hover::before, .row.is-static:hover + .row::before { background: var(--hairline); }
 
 .theme-row {
   padding: 0 22px;
@@ -2665,11 +2795,17 @@ html.light .add-shift-link:hover .plus { color: #fffaf3; }
   position: absolute;
   left: 50%;
   bottom: 30px;
-  transform: translateX(-50%) translateY(20px);
-  background: var(--bg-elevated);
+  transform: translateX(-50%) translateY(16px) scale(0.95);
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  max-width: min(92vw, 440px);
+  background: color-mix(in srgb, var(--bg-elevated) 88%, transparent);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
   border: 1px solid var(--border);
   border-radius: 999px;
-  padding: 10px 18px;
+  padding: 9px 18px;
   font-family: "Newsreader", Georgia, serif;
   font-style: italic;
   font-size: 13.5px;
@@ -2677,12 +2813,42 @@ html.light .add-shift-link:hover .plus { color: #fffaf3; }
   box-shadow: 0 12px 32px -10px rgba(0, 0, 0, 0.5);
   opacity: 0;
   pointer-events: none;
-  transition: opacity 200ms ease, transform 220ms cubic-bezier(0.32, 0.72, 0, 1);
+  transition: opacity 200ms ease, transform 340ms cubic-bezier(0.34, 1.56, 0.64, 1);
   z-index: 1000;
 }
 .toast.is-on {
   opacity: 1;
-  transform: translateX(-50%) translateY(0);
+  transform: translateX(-50%) translateY(0) scale(1);
+  /* База — pointer-events:none (сквозь скрытый тост можно кликать),
+     но видимый тост обязан ловить тап по «Вернуть». */
+  pointer-events: auto;
+}
+/* Длинное имя/сообщение аккуратно обрезается, кнопка не сжимается. */
+.toast-text {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Лидирующая иконка-бейдж (например, person_remove при удалении) */
+.toast.has-ic { padding-left: 8px; }
+.toast-ic {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.toast-ic .material-symbols-outlined { font-size: 15px; }
+.toast.is-danger .toast-ic { background: var(--danger-soft); color: var(--danger); }
+/* В редакторе тост поднимается над закреплённой панелью действий,
+   чтобы «Вернуть» не ложился на «Добавить смену». */
+.router-stack:has(.router-screen.is-top .editor-screen) + .toast {
+  bottom: calc(84px + env(safe-area-inset-bottom, 0px));
 }
 
 /* Когда SiteCard поднята вверх (affectsMe) — даём ей дышать, чтобы баннер
@@ -3846,22 +4012,28 @@ html.light .ln-status-pill.is-free { background: rgba(63, 130, 118, 0.18); color
 }
 .offline-banner .material-symbols-outlined { font-size: 18px; opacity: 0.8; }
 
-/* ── Toast с action-кнопкой («Отменить» после удаления) ── */
-.toast.has-action { gap: 12px; }
+/* ── Toast с action-кнопкой («Вернуть» / «Отменить» после удаления) ── */
+.toast.has-action { padding-right: 7px; }
 .toast-action {
-  margin-left: 4px;
-  padding: 4px 10px;
+  flex-shrink: 0;
+  margin-left: 2px;
+  padding: 6px 14px;
   border: 0;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--accent, #fc8501) 22%, transparent);
-  color: var(--accent, #fc8501);
-  font: inherit;
-  font-size: 13px;
+  background: var(--accent);
+  color: #fffaf3;
+  font-family: "Inter", system-ui, sans-serif;
+  font-style: normal;
+  font-size: 12px;
   font-weight: 600;
+  letter-spacing: 0.01em;
   cursor: pointer;
   white-space: nowrap;
+  box-shadow: 0 4px 12px -4px var(--accent-glow);
+  transition: background-color 140ms ease, transform 140ms ease;
 }
-.toast-action:active { transform: scale(0.96); }
+.toast-action:hover { background: var(--accent-hover); }
+.toast-action:active { transform: scale(0.95); }
 
 /* ── Skeleton-карточки первой загрузки ── */
 .fc-list.is-skeleton { pointer-events: none; }
@@ -3892,43 +4064,17 @@ html.light .ln-status-pill.is-free { background: rgba(63, 130, 118, 0.18); color
   .sk-line { animation: none; }
 }
 
-/* ── Настройки: управление инструкторами ── */
-.insts-manage .row.is-static { cursor: default; }
-.insts-manage .inst-av {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: color-mix(in srgb, var(--accent, #fc8501) 16%, transparent);
-  color: var(--accent, #fc8501);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-}
-.insts-manage .inst-del {
-  border: 0;
-  background: none;
-  padding: 6px;
-  margin: -6px 0;
-  border-radius: 50%;
-  color: inherit;
-  opacity: 0.45;
-  cursor: pointer;
-}
-.insts-manage .inst-del:hover { opacity: 1; }
-.insts-manage .inst-del .material-symbols-outlined { font-size: 18px; }
-/* Плашка добавления — это .row, а .row раскладывает детей grid'ом
-   «36px 1fr 20px»: input попадал в 36px-колонку для иконки и схлопывался
-   в квадратик, где помещалась одна буква плейсхолдера. Здесь своя
-   раскладка: input тянется, кнопка — по содержимому. */
-.inst-add-row {
+/* ── Настройки: строка с полем ввода (ключ синхронизации) ──
+   Это .row, а .row раскладывает детей grid'ом «36px 1fr 20px»: input
+   попадал в 36px-колонку для иконки и схлопывался в квадратик, где
+   помещалась одна буква плейсхолдера. Здесь своя раскладка: input
+   тянется, кнопка — по содержимому. */
+.field-row {
   display: flex;
   align-items: center;
   gap: 10px;
 }
-.inst-add-input {
+.field-input {
   flex: 1;
   min-width: 0;
   padding: 9px 12px;
@@ -3939,11 +4085,11 @@ html.light .ln-status-pill.is-free { background: rgba(63, 130, 118, 0.18); color
   font: inherit;
   font-size: 14px;
 }
-.inst-add-input:focus {
+.field-input:focus {
   outline: none;
   border-color: var(--accent, #fc8501);
 }
-.inst-add-btn {
+.field-btn {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -3958,8 +4104,8 @@ html.light .ln-status-pill.is-free { background: rgba(63, 130, 118, 0.18); color
   cursor: pointer;
   white-space: nowrap;
 }
-.inst-add-btn:disabled { opacity: 0.4; cursor: default; }
-.inst-add-btn .material-symbols-outlined { font-size: 18px; }
+.field-btn:disabled { opacity: 0.4; cursor: default; }
+.field-btn .material-symbols-outlined { font-size: 18px; }
 
 /* ── Экран статистики ── */
 .stats-controls {

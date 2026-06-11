@@ -164,6 +164,10 @@ function EditorScreen({ shiftId, date } = {}) {
   // Инлайн-добавление инструктора прямо из чипов.
   const [addingInst, setAddingInst] = _es(false);
   const [newInstName, setNewInstName] = _es('');
+  // Режим редактирования каталога: чипы получают крестики и по тапу
+  // удаляются из каталога (а не выбираются). Единственное место
+  // управления инструкторами — настройки больше этим не занимаются.
+  const [editInsts, setEditInsts] = _es(false);
 
   // Модалка подтверждения: 'exit' (несохранённые изменения) | null
   const [confirmKind, setConfirmKind] = _es(null);
@@ -218,10 +222,50 @@ function EditorScreen({ shiftId, date } = {}) {
     if (added) {
       // Свежедобавленного сразу отмечаем выбранным — за этим и добавляли.
       patch({ instructors: [...(draft.instructors || []), added.id] });
-      toast.show(`${added.name} — добавлен`);
+      toast.show(`Добавлено: ${added.name}`, { icon: 'person_add' });
     } else {
       toast.show('Такой инструктор уже есть');
     }
+  }
+
+  function toggleEditInsts() {
+    // Вход в режим редактирования прячет чип «добавить» — бросаем
+    // незакоммиченный инлайн-ввод, чтобы он не «воскрес» после «готово».
+    setAddingInst(false);
+    setNewInstName('');
+    setEditInsts(v => !v);
+  }
+
+  // Удаление из каталога — без модалки, но с «Вернуть» в тосте: жест
+  // обратимый, подтверждение только мешало бы. Возврат вставляет
+  // инструктора на прежнее место списка и в выбор смены, если был выбран.
+  function removeInstFromCatalog(p) {
+    const prevIdx = window.Data.loadInstructors().findIndex(i => i.id === p.id);
+    const wasSelected = (draft.instructors || []).includes(p.id);
+    window.Data.removeInstructor(p.id);
+    if (wasSelected) {
+      setDraft(d => ({ ...d, instructors: (d.instructors || []).filter(x => x !== p.id) }));
+    }
+    if (window.Data.loadInstructors().length === 0) setEditInsts(false);
+    // «Удалено: …», а не «… удалён» — в каталоге есть и женские фамилии,
+    // спрягать по роду не берёмся.
+    toast.show(`Удалено: ${p.name}`, {
+      icon: 'person_remove',
+      danger: true,
+      actionLabel: 'Вернуть',
+      onAction: () => {
+        const cur = window.Data.loadInstructors();
+        if (!cur.some(i => i.id === p.id)) {
+          const idx = Math.max(0, Math.min(prevIdx, cur.length));
+          window.Data.saveInstructors([...cur.slice(0, idx), p, ...cur.slice(idx)]);
+        }
+        if (wasSelected) {
+          setDraft(d => (d.instructors || []).includes(p.id)
+            ? d
+            : { ...d, instructors: [...(d.instructors || []), p.id] });
+        }
+      },
+    });
   }
 
   // Дата в сравнение не входит (живёт в dateSel), instructors сортируем,
@@ -333,6 +377,8 @@ function EditorScreen({ shiftId, date } = {}) {
     const removed = window.Data.loadShifts().find(s => s.id === shiftId);
     window.Data.removeShift(shiftId);
     toast.show('Смена удалена', {
+      icon: 'delete',
+      danger: true,
       actionLabel: 'Отменить',
       onAction: () => { if (removed) window.Data.upsertShift(removed); },
     });
@@ -609,7 +655,14 @@ function EditorScreen({ shiftId, date } = {}) {
         )}
 
         {/* ── Инструкторы ── */}
-        <window.UI.SecLabel hint="опционально">С кем работаю</window.UI.SecLabel>
+        <window.UI.SecLabel
+          hint={editInsts ? 'коснитесь — удалить' : 'опционально'}
+          action={instructors.length > 0 && (
+            <button type="button" className="sec-action" onClick={toggleEditInsts}>
+              {editInsts ? 'готово' : 'изменить'}
+            </button>
+          )}
+        >С кем работаю</window.UI.SecLabel>
         <div className="insts">
           {instructors.map(p => {
             const sel = draft.instructors?.includes(p.id);
@@ -617,15 +670,21 @@ function EditorScreen({ shiftId, date } = {}) {
               <button
                 key={p.id}
                 type="button"
-                className={`inst-chip ${sel ? 'is-selected' : ''}`}
-                onClick={() => toggleInstructor(p.id)}
+                className={`inst-chip ${sel ? 'is-selected' : ''} ${editInsts ? 'is-editing' : ''}`}
+                title={editInsts ? `Удалить «${p.name}» из каталога` : undefined}
+                onClick={() => (editInsts ? removeInstFromCatalog(p) : toggleInstructor(p.id))}
               >
                 <span className="av">{p.initials}</span>
                 {p.name}
+                {editInsts && (
+                  <span className="del-badge" aria-hidden="true">
+                    <span className="material-symbols-outlined">close</span>
+                  </span>
+                )}
               </button>
             );
           })}
-          {addingInst ? (
+          {editInsts ? null : addingInst ? (
             <span className="inst-chip is-input">
               <span className="av"><span className="material-symbols-outlined">person_add</span></span>
               <input
