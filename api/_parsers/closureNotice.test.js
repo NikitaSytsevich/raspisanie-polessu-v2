@@ -65,6 +65,17 @@ test('closure detector: длинная шапка без маркера дат �
   assert.equal(result.notice, 'Плавательный бассейн закрыт на ремонт до особого распоряжения.');
 });
 
+// \w в JS — ASCII: хвосты склонений в триггерах обязаны быть [а-яё]*,
+// иначе женский/средний род и косвенные падежи молча не детектятся.
+test('closure detector: кириллические склонения триггеров («закрыта», «плановым отключением»)', () => {
+  const closed = closure.detect(null, null, 'Гребная база закрыта на ремонт с 01.06.2026 по 30.06.2026');
+  assert.ok(closed, '«закрыта на» (ж.р.) должно детектиться');
+  assert.deepEqual(closed.range, { from: '2026-06-01', to: '2026-06-30' });
+
+  const heating = closure.detect(null, null, 'В связи с плановым отключением тепла бассейн будет недоступен');
+  assert.ok(heating, '«плановым отключением» (тв.п.) должно детектиться');
+});
+
 test('closure detector: не срабатывает на странице с расписанием', () => {
   const $ = cheerio.load(loadFixture('synthetic_pool_schedule.html'));
   const result = closure.detect($, extractContentRoot($));

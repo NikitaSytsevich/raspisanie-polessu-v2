@@ -105,18 +105,24 @@ async function buildPayload() {
   const generatedAt = new Date().toISOString();
   const results = await Promise.all(FACILITIES.map(f => loadFacility(f, ctx)));
 
-  // Last-known-good: источник упал (сеть/парсер) → подменяем последним
-  // успешным снапшотом этого объекта с флагом stale:true, вместо того
-  // чтобы отдать parse_error и оставить всех клиентов без расписания.
+  // Last-known-good: источник упал (parse_error: сеть/исключение парсера)
+  // ИЛИ парсер не понял страницу (template: сменили вёрстку) → подменяем
+  // последним успешным снапшотом этого объекта с флагом stale:true, вместо
+  // того чтобы оставить всех клиентов без расписания до фикса парсера.
   // dataQuality остаётся 'ok' — фронт работает как обычно; «свежесть»
-  // видна по sourceCheckedAt и meta.sourceIssues.
+  // видна по sourceCheckedAt и meta.sourceIssues; админ-алерт о переходе
+  // в stale всё равно уходит (см. _lib/transitions.js). closed не подменяем —
+  // это валидное состояние контента. Залежаться навечно stale не может:
+  // его сессии стареют, и через неделю-другую на актуальные даты ничего
+  // не покажется, а в last-good попадают только снапшоты с будущими датами.
+  const SUBSTITUTABLE = new Set(['parse_error', 'template']);
   let staleCount = 0;
-  if (results.some(r => r.dataQuality === 'parse_error')) {
+  if (results.some(r => SUBSTITUTABLE.has(r.dataQuality))) {
     const lg = await lastGood.load();
     if (lg) {
       for (let i = 0; i < results.length; i++) {
         const r = results[i];
-        if (r.dataQuality === 'parse_error' && lg[r.id] && lg[r.id].dataQuality === 'ok') {
+        if (SUBSTITUTABLE.has(r.dataQuality) && lg[r.id] && lg[r.id].dataQuality === 'ok') {
           results[i] = { ...lg[r.id], stale: true, _issue: r._issue };
           staleCount++;
         }

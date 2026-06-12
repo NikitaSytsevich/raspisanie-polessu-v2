@@ -61,6 +61,13 @@ test('expired token rejected', async () => {
   assert.equal(r.reason, 'expired');
 });
 
+test('token without exp rejected (no eternal tokens)', async () => {
+  _resetCache();
+  const r = await verifyGitHubOidc(makeToken({ exp: undefined }), opts);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'no_exp');
+});
+
 test('bad issuer rejected', async () => {
   _resetCache();
   const r = await verifyGitHubOidc(makeToken({ iss: 'https://evil.example' }), opts);

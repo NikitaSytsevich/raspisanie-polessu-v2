@@ -4,6 +4,9 @@
 
 const DEFAULT_TIMEOUT_MS = 8000;
 const USER_AGENT = 'raspisanie-polessu-bot/1.0 (+https://github.com/)';
+// Страницы ПолесГУ ~100 КБ; всё сильно больше — аномалия (битый ответ,
+// прокси-страница), которую нет смысла держать в памяти 256 МБ лямбды.
+const MAX_BODY_BYTES = 3 * 1024 * 1024;
 
 // res.text() по спецификации fetch ВСЕГДА декодирует UTF-8, игнорируя
 // charset из Content-Type. Если Drupal ПолесГУ отдаст windows-1251,
@@ -48,7 +51,14 @@ async function fetchHtml(url, { timeoutMs = DEFAULT_TIMEOUT_MS, signal } = {}) {
     if (!res.ok) {
       return { ok: false, status: res.status, error: `HTTP ${res.status}`, ms: Date.now() - startedAt };
     }
+    const declared = Number(res.headers.get('content-length') || 0);
+    if (declared > MAX_BODY_BYTES) {
+      return { ok: false, status: res.status, error: 'body_too_large', ms: Date.now() - startedAt };
+    }
     const buf = Buffer.from(await res.arrayBuffer());
+    if (buf.length > MAX_BODY_BYTES) {
+      return { ok: false, status: res.status, error: 'body_too_large', ms: Date.now() - startedAt };
+    }
     const html = decodeBody(buf, res.headers.get('content-type'));
     return { ok: true, status: res.status, html, ms: Date.now() - startedAt };
   } catch (err) {

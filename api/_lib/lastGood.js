@@ -18,6 +18,8 @@ const BLOB_KEY = 'last-good-schedule.json';
 
 let _memory = null;        // { [facilityId]: facility }
 let _blobLoadedOnce = false;
+let _blobFailedAt = 0;     // время последней неудачной загрузки из Blob
+const RETRY_AFTER_MS = 60_000;
 
 function haveBlob() {
   return Boolean(process.env.BLOB_READ_WRITE_TOKEN);
@@ -26,16 +28,23 @@ function haveBlob() {
 async function load() {
   if (_memory) return _memory;
   if (!haveBlob() || _blobLoadedOnce) return _memory;
-  _blobLoadedOnce = true;
+  // Разовый сбой Blob не должен выключать слой до холодного старта —
+  // но и долбить упавший стор на каждый запрос не надо: ретрай раз в минуту.
+  if (_blobFailedAt && Date.now() - _blobFailedAt < RETRY_AFTER_MS) return _memory;
   try {
     const { list } = require('@vercel/blob');
     const { blobs } = await list({ prefix: BLOB_KEY, limit: 1 });
-    if (!blobs || !blobs.length) return null;
+    if (!blobs || !blobs.length) {
+      _blobLoadedOnce = true; // стор пуст — это успешный ответ, не сбой
+      return null;
+    }
     const r = await fetch(blobs[0].url, { cache: 'no-store' });
-    if (!r.ok) return null;
+    if (!r.ok) throw new Error(`blob HTTP ${r.status}`);
     _memory = await r.json();
-  } catch {
-    // Blob недоступен — работаем только на памяти инстанса.
+    _blobLoadedOnce = true;
+  } catch (err) {
+    _blobFailedAt = Date.now();
+    console.warn('[lastGood] blob load failed:', err?.message || err);
   }
   return _memory;
 }
@@ -66,7 +75,9 @@ async function update(freshOkFacilities) {
       allowOverwrite: true,
       contentType: 'application/json',
     });
-  } catch {}
+  } catch (err) {
+    console.warn('[lastGood] blob save failed:', err?.message || err);
+  }
 }
 
 module.exports = { load, update };

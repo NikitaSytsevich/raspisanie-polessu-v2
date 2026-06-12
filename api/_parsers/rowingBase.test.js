@@ -46,3 +46,31 @@ test('rowingBase: парсит инлайн-формат "Пн-Пт 18.30-19.30"
   assert.ok(!weekdays.has(0), 'воскресенье не должно быть в расписании');
   assert.ok(!weekdays.has(6), 'суббота не должна быть в расписании');
 });
+
+// ── mixed-state: closure-notice не должен глушить живое расписание ──
+const page = (inner) => `<html><body><div class="field-item" property="content:encoded">${inner}</div></body></html>`;
+const SCHEDULE_H1 = '<h1>Понедельник - Пятница<br/>18.30-19.30<br/>19.30-20.30</h1>';
+
+test('rowingBase: «технический перерыв» при живом расписании НЕ закрывает объект', () => {
+  const html = page(`${SCHEDULE_H1}<p>Технический перерыв 13.00-14.00</p>`);
+  const out = parse(html, { todayIso: TODAY });
+  assert.equal(out.ok, true, `ложное закрытие: ${JSON.stringify(out)}`);
+  assert.ok(out.sessions.length >= 10, `сессии потерялись: ${out.sessions.length}`);
+});
+
+test('rowingBase: закрытие с датами при живом расписании → closureRanges, не full-closed', () => {
+  const html = page(`<p>Зал закрыт на ремонт с 01.06.2026 по 07.06.2026</p>${SCHEDULE_H1}`);
+  const out = parse(html, { todayIso: TODAY });
+  assert.equal(out.ok, true, JSON.stringify(out));
+  assert.equal(out.closureRanges?.length, 1);
+  assert.equal(out.closureRanges[0].from, '2026-06-01');
+  assert.equal(out.closureRanges[0].to, '2026-06-07');
+});
+
+test('rowingBase: только объявление о закрытии, расписания нет → reason closed', () => {
+  const html = page('<p>Гребная база закрыта на ремонт с 01.06.2026 по 30.06.2026</p>');
+  const out = parse(html, { todayIso: TODAY });
+  assert.equal(out.ok, false);
+  assert.equal(out.reason, 'closed');
+  assert.ok(out.range, 'диапазон закрытия должен распарситься');
+});

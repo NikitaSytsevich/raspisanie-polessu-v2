@@ -31,6 +31,8 @@ const {
   broadcast, appButton,
 } = require('./_lib/telegram');
 const { pairMoves, formatChangesMessage, formatDaySchedule, esc } = require('./_lib/format');
+const { healthTransitions, closureTransitions } = require('./_lib/transitions');
+const { safeEqual } = require('./_lib/auth');
 
 const PREV_KEY = 'notify-prev-snapshot.json';
 const SHIFTS_KEY = 'user-shifts.json';
@@ -48,12 +50,14 @@ const OIDC_AUDIENCE = 'https://raspisanie-polessu-v2.vercel.app';
 //      CI-пингер не носит общий секрет (см. _lib/github-oidc.js).
 async function authorized(req) {
   const secret = process.env.CRON_SECRET;
-  if (!secret) return true; // защита не настроена — не блокируем
   const auth = (req.headers && req.headers.authorization) || '';
-  if (auth === `Bearer ${secret}`) return true;
-  if (String((req.query && req.query.key) || '') === secret) return true;
-  // OIDC: Bearer-токен, не совпавший с CRON_SECRET, пробуем как GitHub JWT.
   const m = /^Bearer\s+(.+)$/.exec(auth);
+  if (secret) {
+    if (m && safeEqual(m[1], secret)) return true;
+    if (safeEqual(String((req.query && req.query.key) || ''), secret)) return true;
+  }
+  // OIDC: Bearer-токен, не совпавший с CRON_SECRET, пробуем как GitHub JWT.
+  // Работает и без CRON_SECRET — GH-пингер не зависит от общего секрета.
   if (m) {
     try {
       const { verifyGitHubOidc } = require('./_lib/github-oidc');
@@ -64,60 +68,15 @@ async function authorized(req) {
       if (r.ok) return true;
     } catch {}
   }
+  // Без CRON_SECRET: локально (dev-server) не блокируем, на Vercel —
+  // fail-closed: открытый endpoint = анонимные фетчи polessu.by, Blob-операции
+  // и потенциальный спам дайджестом за наш счёт.
+  if (!secret) return !process.env.VERCEL;
   return false;
 }
 
-// Переходы «работает ↔ закрыт» — пользовательское уведомление: в отличие
-// от template/parse_error это содержательное состояние сайта, а не сбой
-// парсера. Сессии закрывшегося/открывшегося объекта в diff не попадают
-// (computeScheduleDiff пропускает не-ok объекты с любой стороны) — иначе
-// закрытие выглядело бы как flood ➖ на каждый слот без объяснения.
-function closureTransitions(prev, next) {
-  if (!prev) return [];
-  const was = new Map((prev.facilities || []).map(f => [f.id, f]));
-  const out = [];
-  for (const f of next.facilities || []) {
-    const a = was.get(f.id);
-    if (!a || a.dataQuality === f.dataQuality) continue;
-    if (f.dataQuality === 'closed' && a.dataQuality === 'ok') {
-      out.push({ kind: 'closed', name: f.name, notice: f.notice || null });
-    } else if (a.dataQuality === 'closed' && f.dataQuality === 'ok') {
-      out.push({ kind: 'reopened', name: f.name });
-    }
-  }
-  return out;
-}
-
-// Здоровье источников: template/parse_error — парсер не понял страницу,
-// stale — источник не ответил и подставлен last-known-good. closed сюда
-// НЕ входит — это валидное состояние контента, а не сбой парсера.
-const BAD_QUALITY = new Set(['template', 'parse_error', 'stale']);
-
-function healthMap(payload) {
-  const m = {};
-  for (const f of payload.facilities || []) {
-    m[f.id] = f.stale ? 'stale' : (f.dataQuality || 'unknown');
-  }
-  return m;
-}
-
-// Переходы здоровья между prev и next: деградация (ok/closed → bad) и
-// восстановление (bad → ok/closed). Сравнение с prev даёт «N=1 с дедупом»:
-// алерт уходит один раз на переход, а не на каждый прогон.
-function healthTransitions(prev, next) {
-  if (!prev) return [];
-  const was = healthMap(prev);
-  const now = healthMap(next);
-  const lines = [];
-  for (const f of next.facilities || []) {
-    const a = was[f.id];
-    const b = now[f.id];
-    if (!a || a === b) continue;
-    if (BAD_QUALITY.has(b) && !BAD_QUALITY.has(a)) lines.push(`🔴 ${f.name}: ${a} → ${b}`);
-    else if (BAD_QUALITY.has(a) && !BAD_QUALITY.has(b)) lines.push(`🟢 ${f.name}: ${a} → ${b}`);
-  }
-  return lines;
-}
+// healthTransitions (алерты админу о поломке парсера) и closureTransitions
+// (пользовательские «⛔ закрыт / ✅ снова работает») — в _lib/transitions.js.
 
 // Помечаем события, пересекающиеся со сменами пользователя (смены
 // синхронизирует приложение через /api/shifts-sync → Blob). Для kind:'move'

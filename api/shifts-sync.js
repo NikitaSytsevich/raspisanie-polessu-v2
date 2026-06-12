@@ -11,6 +11,7 @@
 // вводится один раз в настройках приложения.
 
 const { blobSaveJson, haveBlob } = require('./_lib/telegram');
+const { safeEqual } = require('./_lib/auth');
 
 const SHIFTS_KEY = 'user-shifts.json';
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -26,6 +27,7 @@ function cleanShifts(raw) {
     if (typeof s.date !== 'string' || !ISO_DATE.test(s.date)) continue;
     if (typeof s.start !== 'string' || !HHMM.test(s.start)) continue;
     if (typeof s.end !== 'string' || !HHMM.test(s.end)) continue;
+    if (s.start >= s.end) continue; // битая/«ночная» смена — пересечения не посчитать
     if (!FAC_IDS.has(s.facilityId)) continue;
     out.push({
       id: String(s.id || ''),
@@ -47,7 +49,7 @@ module.exports = async (req, res) => {
     res.status(503).end(JSON.stringify({ ok: false, error: 'sync_not_configured' }));
     return;
   }
-  if ((req.headers && req.headers['x-sync-key']) !== key) {
+  if (!safeEqual(String((req.headers && req.headers['x-sync-key']) || ''), key)) {
     res.status(401).end(JSON.stringify({ ok: false, error: 'unauthorized' }));
     return;
   }

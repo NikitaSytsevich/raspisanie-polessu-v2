@@ -8,6 +8,7 @@
 const cheerio = require('cheerio');
 const { genericParse, extractContentRoot } = require('./_common');
 const closure = require('./closureNotice');
+const { okWithClosure } = require('./_inline');
 const {
   normalizeText, parseTimeRange, weekdayIndex, nextDateForWeekday, validateSessions,
 } = require('../_lib/timeParse');
@@ -49,10 +50,12 @@ function parse(html, { todayIso }) {
   const $ = cheerio.load(html);
   const $root = extractContentRoot($);
 
+  // Closure-notice НЕ ведёт к мгновенному «закрыто»: триггеры детектора
+  // («техническ», «ремонтн», …) ловят и безобидные фразы вроде
+  // «технический перерыв», а страница может одновременно нести объявление
+  // И расписание (mixed-state, как у бассейнов). Стратегия как у них:
+  // сначала парсим расписание; полное закрытие — только если сессий нет.
   const notice = closure.detect($, $root, undefined, todayIso);
-  if (notice) {
-    return { ok: false, reason: 'closed', notice: notice.notice, range: notice.range || null };
-  }
 
   // Собираем даты-исключения по всему контенту (выходные, отмены и т.п.).
   const exceptions = collectExceptionDates(normalizeText($root.text()));
@@ -104,11 +107,18 @@ function parse(html, { todayIso }) {
   });
 
   if (!unique.length) {
+    // Расписания нет: если есть объявление о закрытии — это оно и есть.
+    if (notice) {
+      return { ok: false, reason: 'closed', notice: notice.notice, range: notice.range || null };
+    }
     return { ok: false, reason: 'no_table' };
   }
+  // Сессии есть: notice с датами уходит в closureRanges (частичное
+  // закрытие), notice без дат при живом расписании игнорируем — скорее
+  // всего это ложный триггер, а не закрытие объекта.
   // Даты синтезированы из «Понедельник - Пятница» → diff по недельному
   // паттерну, не по датам (см. weeklyPattern в _common.genericParse).
-  return { ok: true, sessions: unique, weeklyPattern: true };
+  return { ...okWithClosure(unique, notice), weeklyPattern: true };
 }
 
 module.exports = { parse };

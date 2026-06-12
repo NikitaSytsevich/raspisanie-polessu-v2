@@ -19,6 +19,19 @@ function extractContentRoot($) {
   return $root;
 }
 
+// Ячейка с colspan=N занимает N колонок — разворачиваем, чтобы колонки тела
+// совпадали с шапкой (слот «на два дня» даёт сессию в оба дня). rowspan не
+// поддержан: на страницах ПолесГУ не встречался, а честная поддержка требует
+// межстрочного состояния.
+function expandColspans($, cells) {
+  const out = [];
+  for (const c of cells) {
+    const span = Math.min(parseInt($(c).attr('colspan'), 10) || 1, 7);
+    for (let i = 0; i < span; i++) out.push(c);
+  }
+  return out;
+}
+
 // Преобразование таблицы «дни недели в шапке × строки расписания» в массив сессий.
 // Поддерживает два layout'а:
 //   A) Дни в шапке (1-й tr содержит названия дней), 1-я колонка — время.
@@ -27,7 +40,7 @@ function extractSessionsFromTable($, $table, todayIso) {
   const rows = $table.find('tr').toArray().map(tr => $(tr).find('th,td').toArray());
   if (rows.length < 2) return [];
 
-  const head = rows[0].map(c => normalizeText($(c).text()));
+  const head = expandColspans($, rows[0]).map(c => normalizeText($(c).text()));
   const headWeekdays = head.map(weekdayIndex);
   const headHasWeekdays = headWeekdays.filter(x => x >= 0).length >= 3;
 
@@ -36,7 +49,7 @@ function extractSessionsFromTable($, $table, todayIso) {
   if (headHasWeekdays) {
     // Layout A: колонки = дни, строки = слоты времени.
     for (let r = 1; r < rows.length; r++) {
-      const cells = rows[r];
+      const cells = expandColspans($, rows[r]);
       if (!cells.length) continue;
       const timeText = normalizeText($(cells[0]).text());
       const range = parseTimeRange(timeText);

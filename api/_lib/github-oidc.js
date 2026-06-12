@@ -25,7 +25,8 @@ function b64urlToJson(s) {
 }
 
 async function defaultFetchJwks() {
-  const r = await fetch(JWKS_URL, { cache: 'no-store' });
+  // Таймаут: зависший GitHub не должен съедать maxDuration функции.
+  const r = await fetch(JWKS_URL, { cache: 'no-store', signal: AbortSignal.timeout(5000) });
   if (!r.ok) throw new Error(`jwks HTTP ${r.status}`);
   return r.json();
 }
@@ -81,7 +82,9 @@ async function verifyGitHubOidc(token, {
   if (!verified) return { ok: false, reason: 'bad_signature' };
 
   const nowSec = Math.floor(now / 1000);
-  if (typeof claims.exp === 'number' && claims.exp < nowSec) return { ok: false, reason: 'expired' };
+  // exp обязателен: GitHub его всегда ставит, а токен без exp был бы вечным.
+  if (typeof claims.exp !== 'number') return { ok: false, reason: 'no_exp' };
+  if (claims.exp < nowSec) return { ok: false, reason: 'expired' };
   if (typeof claims.nbf === 'number' && claims.nbf > nowSec + 60) return { ok: false, reason: 'not_yet_valid' };
   if (expectedAudience && claims.aud !== expectedAudience) return { ok: false, reason: 'bad_audience' };
   if (expectedRepo && claims.repository !== expectedRepo) return { ok: false, reason: 'bad_repo' };

@@ -1,5 +1,10 @@
 // Telegram-транспорт + хранение подписчиков в Vercel Blob.
 // Общее для api/notify.js (рассылка) и api/telegram.js (webhook-команды).
+//
+// ПРИВАТНОСТЬ: Vercel Blob в текущем SDK пишет только с access:'public' —
+// подписчики, prev-снапшот и смены доступны по прямому URL. URL содержит
+// неугадываемый store-id (защита через неизвестность), поэтому ничего
+// чувствительнее chat_id и анонимных смен здесь хранить нельзя.
 
 const { chunkText } = require('./format');
 
@@ -16,7 +21,10 @@ async function blobLoadJson(key) {
     if (!blobs || !blobs.length) return null;
     const r = await fetch(blobs[0].url, { cache: 'no-store' });
     return r.ok ? await r.json() : null;
-  } catch { return null; }
+  } catch (err) {
+    console.warn('[blob] load failed:', key, err?.message || err);
+    return null;
+  }
 }
 
 async function blobSaveJson(key, value) {
@@ -30,7 +38,10 @@ async function blobSaveJson(key, value) {
       contentType: 'application/json',
     });
     return true;
-  } catch { return false; }
+  } catch (err) {
+    console.warn('[blob] save failed:', key, err?.message || err);
+    return false;
+  }
 }
 
 // ── Подписчики ──────────────────────────────────────────────────
@@ -63,21 +74,36 @@ function tgUrl(method) {
   return `https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/${method}`;
 }
 
+// Таймаут на Telegram API: зависший запрос без него ел бы весь maxDuration
+// функции (fetchHtml свой таймаут имеет, а здесь не было).
+const TG_TIMEOUT_MS = 8000;
+
 async function tgApi(method, body) {
   const r = await fetch(tgUrl(method), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(TG_TIMEOUT_MS),
   });
   let json = null;
   try { json = await r.json(); } catch {}
   return { ok: r.ok && json?.ok !== false, status: r.status, json };
 }
 
+// Фатальные для чата ошибки: бот заблокирован/выкинут (403), чат удалён или
+// мигрировал в супергруппу (400). Повторять отправку бессмысленно — такие
+// чаты broadcast выписывает из Blob-подписки.
+function isFatalChatError(status, json) {
+  if (status === 403) return true;
+  const desc = String(json?.description || '');
+  return status === 400 && /chat not found|group chat was upgraded/i.test(desc);
+}
+
 // Одно сообщение одному чату. 429 — ждём retry_after (кап 3 с, чтобы не
 // упереться в maxDuration функции) и пробуем ещё раз.
+// Возвращает { ok, fatal } — fatal означает «чат мёртв, чистить подписку».
 async function sendMessage(chatId, text, extra = {}) {
-  if (!process.env.TELEGRAM_BOT_TOKEN) return false;
+  if (!process.env.TELEGRAM_BOT_TOKEN) return { ok: false, fatal: false };
   const body = {
     chat_id: chatId,
     text,
@@ -92,31 +118,60 @@ async function sendMessage(chatId, text, extra = {}) {
       await new Promise(r => setTimeout(r, wait * 1000));
       res = await tgApi('sendMessage', body);
     }
-    return res.ok;
-  } catch { return false; }
+    if (!res.ok) console.warn('[tg] sendMessage failed:', chatId, res.status, res.json?.description || '');
+    return { ok: res.ok, fatal: !res.ok && isFatalChatError(res.status, res.json) };
+  } catch (err) {
+    console.warn('[tg] sendMessage error:', chatId, err?.message || err);
+    return { ok: false, fatal: false };
+  }
 }
 
 // Длинный текст — частями ≤4000; extra (inline-кнопки) вешаем только на
 // последнюю часть, чтобы кнопка была внизу сообщения.
+// Возвращает { ok, fatal }; на фатальной ошибке остаток частей не шлём.
 async function sendLong(chatId, text, extra = {}) {
   const parts = chunkText(text);
   let okAll = true;
   for (let i = 0; i < parts.length; i++) {
     const isLast = i === parts.length - 1;
-    const ok = await sendMessage(chatId, parts[i], isLast ? extra : {});
-    okAll = okAll && ok;
+    const r = await sendMessage(chatId, parts[i], isLast ? extra : {});
+    okAll = okAll && r.ok;
+    if (r.fatal) return { ok: false, fatal: true };
   }
-  return okAll;
+  return { ok: okAll, fatal: false };
 }
 
-// Рассылка по списку чатов. Возвращает { sent, failed }.
+// Рассылка по списку чатов: пачками, а не строго последовательно — на
+// десятках получателей последовательная отправка упиралась бы в maxDuration.
+// Чаты с фатальной ошибкой (заблокировали бота) выписываются из
+// Blob-подписки, чтобы не тратить время на них каждый прогон; env-чатов
+// в Blob-списке нет — их чистка не касается. Возвращает { sent, failed }.
+const BROADCAST_CONCURRENCY = 8;
+
 async function broadcast(text, chats, extra = {}) {
   if (!process.env.TELEGRAM_BOT_TOKEN || !chats.length) {
     return { sent: 0, failed: 0, reason: 'telegram_not_configured' };
   }
   let sent = 0, failed = 0;
-  for (const chatId of chats) {
-    (await sendLong(chatId, text, extra)) ? sent++ : failed++;
+  const fatalChats = [];
+  for (let i = 0; i < chats.length; i += BROADCAST_CONCURRENCY) {
+    const batch = chats.slice(i, i + BROADCAST_CONCURRENCY);
+    const results = await Promise.all(batch.map(c => sendLong(c, text, extra)));
+    results.forEach((r, j) => {
+      if (r.ok) sent++;
+      else {
+        failed++;
+        if (r.fatal) fatalChats.push(String(batch[j]));
+      }
+    });
+  }
+  if (fatalChats.length) {
+    const subs = await loadSubscribers();
+    const keep = subs.filter(c => !fatalChats.includes(c));
+    if (keep.length !== subs.length) {
+      await saveSubscribers(keep);
+      console.warn('[tg] отписаны недоступные чаты:', fatalChats.join(', '));
+    }
   }
   return { sent, failed };
 }

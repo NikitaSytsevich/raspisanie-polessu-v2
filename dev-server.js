@@ -68,7 +68,9 @@ function safePath(reqPath) {
   let p = decodeURIComponent(reqPath.split('?')[0]);
   if (p === '/' || p === '') p = '/index.html';
   const abs = path.normalize(path.join(ROOT, p));
-  if (!abs.startsWith(ROOT)) return null; // защита от path traversal
+  // Защита от path traversal. Сравнение с ROOT+sep, а не голым ROOT:
+  // иначе соседняя папка с тем же префиксом имени проходила бы проверку.
+  if (abs !== ROOT && !abs.startsWith(ROOT + path.sep)) return null;
   return abs;
 }
 
