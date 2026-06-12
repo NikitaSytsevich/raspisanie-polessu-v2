@@ -78,7 +78,9 @@ function pairMoves(events) {
 // ── Сообщение об изменениях ─────────────────────────────────────
 // events — после pairMoves (kind: add|rem|mod|move). У события может быть
 // affectsMe:true — строка получает пометку «ваша смена».
-function formatChangesMessage(events, facNames) {
+// opts.closures — переходы «работает ↔ закрыт» из notify.closureTransitions:
+// [{ kind: 'closed'|'reopened', name, notice? }] — идут сразу под заголовком.
+function formatChangesMessage(events, facNames, { closures = [] } = {}) {
   const groups = new Map();
   for (const ev of events) {
     const key = `${ev.facilityId}::${ev.date}`;
@@ -86,6 +88,11 @@ function formatChangesMessage(events, facNames) {
     groups.get(key).push(ev);
   }
   const lines = ['🔔 <b>Расписание ПолесГУ — изменения на сайте</b>'];
+  for (const c of closures) {
+    lines.push('', c.kind === 'closed'
+      ? `⛔ <b>${esc(c.name)}</b> — закрыт${c.notice ? `: ${esc(c.notice)}` : ''}`
+      : `✅ <b>${esc(c.name)}</b> — снова работает`);
+  }
   for (const [key, evs] of groups) {
     const [facId, date] = key.split('::');
     lines.push('', `<b>${esc(facNames[facId] || facId)}</b> · ${fmtDate(date)}`);

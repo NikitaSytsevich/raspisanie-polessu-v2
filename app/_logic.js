@@ -250,45 +250,88 @@ function buildTimelineForDate(shifts, date) {
 }
 
 // ── Schedule diff ───────────────────────────────────────────────
-// Сравнивает два снапшота /api/schedule по парам (facilityId, date)
-// и возвращает массив событий { kind: 'add'|'rem'|'mod', ... }.
-function indexSessionsByFacDate(payload) {
-  const map = new Map();
-  for (const fac of payload?.facilities || []) {
-    for (const s of fac.sessions || []) {
-      const key = `${fac.id}::${s.date}`;
-      if (!map.has(key)) map.set(key, []);
-      map.get(key).push(s);
-    }
-  }
-  return map;
+// Сравнивает два снапшота /api/schedule и возвращает массив событий
+// { kind: 'add'|'rem'|'mod', ... }. Два режима сопоставления:
+//   • обычные объекты — по парам (facilityId, date): на странице конкретные
+//     числа, исчезнувшая/появившаяся дата = реальное изменение;
+//   • weeklyPattern-объекты (гребная база и табличный фолбэк) — по парам
+//     (facilityId, день недели): даты там синтезированы из «Пн-Пт», окно
+//     сдвигается каждый день само, и диф по датам выдавал бы фантомные
+//     add/rem без единого изменения на сайте.
+// Объект пропускается целиком, если хотя бы с одной стороны он не ok
+// (dataQuality template/parse_error/closed или stale-подмена): иначе
+// поломка или закрытие источника = phantom-rem на все его сессии, а
+// восстановление = phantom-add. Сами переходы здоровья/закрытия — не
+// события расписания, их сообщает notify отдельной строкой. Новый объект
+// (в prev отсутствует) диффуется: его первые сессии — честные add.
+
+function isoWeekday(iso) {
+  return new Date(iso + 'T12:00:00Z').getUTCDay();
+}
+
+// Ближайшая дата ≥ todayIso с данным днём недели — дата для rem-события
+// weeklyPattern-объекта, когда в next этого дня недели больше нет.
+function upcomingDateForWeekday(todayIso, wd) {
+  const base = new Date(todayIso + 'T12:00:00Z');
+  base.setUTCDate(base.getUTCDate() + (wd - base.getUTCDay() + 7) % 7);
+  return base.toISOString().slice(0, 10);
 }
 
 function computeScheduleDiff(prev, next) {
-  const before = indexSessionsByFacDate(prev);
-  const after  = indexSessionsByFacDate(next);
-  const keys = new Set([...before.keys(), ...after.keys()]);
+  const facsById = (p) => new Map((p?.facilities || []).map(f => [f.id, f]));
+  const prevFacs = facsById(prev);
+  const nextFacs = facsById(next);
+  const notOk = (f) => Boolean(f && ((f.dataQuality && f.dataQuality !== 'ok') || f.stale));
+  const todayIso = next?.meta?.todayIso || new Date().toISOString().slice(0, 10);
+
   const events = [];
   let eid = 1;
-  for (const key of keys) {
-    const [facilityId, date] = key.split('::');
-    const a = before.get(key) || [];
-    const b = after.get(key) || [];
-    // Сопоставление: ключ по (start,end) — тогда изменение activity = 'mod';
-    // отсутствие пары — 'add'/'rem'.
-    const aByTime = new Map(a.map(s => [`${s.start}|${s.end}`, s]));
-    const bByTime = new Map(b.map(s => [`${s.start}|${s.end}`, s]));
-    for (const [k, sB] of bByTime) {
-      const sA = aByTime.get(k);
-      if (!sA) {
-        events.push({ id: `e${eid++}`, kind: 'add', facilityId, date, start: sB.start, end: sB.end, activity: sB.activity });
-      } else if ((sA.activity || '') !== (sB.activity || '')) {
-        events.push({ id: `e${eid++}`, kind: 'mod', facilityId, date, start: sB.start, end: sB.end, activity: sB.activity, wasActivity: sA.activity });
+  for (const id of new Set([...prevFacs.keys(), ...nextFacs.keys()])) {
+    const pf = prevFacs.get(id);
+    const nf = nextFacs.get(id);
+    if (!nf || notOk(nf) || notOk(pf)) continue;
+    const weekly = Boolean(nf.weeklyPattern || (pf && pf.weeklyPattern));
+
+    // Группа сравнения: дата или день недели; внутри группы — ключ по
+    // (start,end), тогда изменение activity = 'mod', нет пары — 'add'/'rem'.
+    const index = (fac) => {
+      const groups = new Map();
+      for (const s of fac?.sessions || []) {
+        const g = weekly ? String(isoWeekday(s.date)) : s.date;
+        if (!groups.has(g)) groups.set(g, new Map());
+        const byTime = groups.get(g);
+        const k = `${s.start}|${s.end}`;
+        // В weekly-режиме один слот может встретиться на двух неделях —
+        // оставляем ближайшую дату, чтобы событие указывало на скорую.
+        const cur = byTime.get(k);
+        if (!cur || s.date < cur.date) byTime.set(k, s);
       }
-      aByTime.delete(k);
-    }
-    for (const [, sA] of aByTime) {
-      events.push({ id: `e${eid++}`, kind: 'rem', facilityId, date, start: sA.start, end: sA.end, activity: sA.activity });
+      return groups;
+    };
+    const before = index(pf);
+    const after = index(nf);
+
+    for (const g of new Set([...before.keys(), ...after.keys()])) {
+      const aByTime = new Map(before.get(g) || []);
+      const bByTime = after.get(g) || new Map();
+      // Дата rem-события в weekly-режиме: дата из prev могла уже пройти —
+      // берём дату оставшихся сессий этого дня недели, а если день исчез
+      // целиком (выходной/отмена) — ближайшее его вхождение.
+      const remDate = weekly
+        ? (bByTime.size ? bByTime.values().next().value.date : upcomingDateForWeekday(todayIso, Number(g)))
+        : g;
+      for (const [k, sB] of bByTime) {
+        const sA = aByTime.get(k);
+        if (!sA) {
+          events.push({ id: `e${eid++}`, kind: 'add', facilityId: id, date: sB.date, start: sB.start, end: sB.end, activity: sB.activity });
+        } else if ((sA.activity || '') !== (sB.activity || '')) {
+          events.push({ id: `e${eid++}`, kind: 'mod', facilityId: id, date: sB.date, start: sB.start, end: sB.end, activity: sB.activity, wasActivity: sA.activity });
+        }
+        aByTime.delete(k);
+      }
+      for (const [, sA] of aByTime) {
+        events.push({ id: `e${eid++}`, kind: 'rem', facilityId: id, date: remDate, start: sA.start, end: sA.end, activity: sA.activity });
+      }
     }
   }
   // Стабильная сортировка: по дате, потом по времени старта
@@ -391,7 +434,6 @@ module.exports = {
   mergeIntervals,
   facilityDayUsage,
   buildTimelineForDate,
-  indexSessionsByFacDate,
   computeScheduleDiff,
   eventOverlapsShift,
   annotateAffectedShifts,

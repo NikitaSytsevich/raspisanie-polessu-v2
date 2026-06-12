@@ -101,6 +101,69 @@ test('computeScheduleDiff: одинаковые снапшоты → нет со
   assert.equal(L.computeScheduleDiff(s, structuredClone(s)).length, 0);
 });
 
+// ── diff: weeklyPattern (гребная база) ──
+// Даты у таких объектов синтезированы из «Пн-Пт» и сдвигаются каждый день;
+// 2026-06-01 — понедельник, 06-08/06-15 — следующие понедельники.
+const weeklySnap = (sessions, meta) => ({
+  ...(meta ? { meta } : {}),
+  facilities: [{ id: 'rowing_base', weeklyPattern: true, sessions }],
+});
+
+test('computeScheduleDiff: weeklyPattern — сдвиг окна дат без изменений → нет событий', () => {
+  // prev собран в понедельник (пн=08.06, вт=09.06),
+  // next во вторник (вт=09.06, пн уехал на 15.06) — на сайте ничего не менялось.
+  const prev = weeklySnap([
+    { date: '2026-06-08', start: '18:30', end: '19:30', activity: 'зал' },
+    { date: '2026-06-09', start: '18:30', end: '19:30', activity: 'зал' },
+  ]);
+  const next = weeklySnap([
+    { date: '2026-06-09', start: '18:30', end: '19:30', activity: 'зал' },
+    { date: '2026-06-15', start: '18:30', end: '19:30', activity: 'зал' },
+  ]);
+  assert.equal(L.computeScheduleDiff(prev, next).length, 0);
+});
+
+test('computeScheduleDiff: weeklyPattern — изменение времени → rem+add на одну дату (склеиваемо в move)', () => {
+  const prev = weeklySnap([{ date: '2026-06-08', start: '18:30', end: '19:30', activity: 'зал' }]);
+  const next = weeklySnap([{ date: '2026-06-15', start: '19:00', end: '20:00', activity: 'зал' }]);
+  const events = L.computeScheduleDiff(prev, next);
+  assert.deepEqual(events.map(e => e.kind).sort(), ['add', 'rem']);
+  // обе указывают на ближайший понедельник из next — pairMoves сделает move
+  assert.ok(events.every(e => e.date === '2026-06-15'), JSON.stringify(events));
+});
+
+test('computeScheduleDiff: weeklyPattern — день недели исчез (выходной) → rem на ближайшую его дату', () => {
+  // пятница 05.06 была в prev; в next пятницы нет вовсе (на сайте «выходной»)
+  const prev = weeklySnap([{ date: '2026-06-05', start: '18:30', end: '19:30', activity: 'зал' }]);
+  const next = weeklySnap([], { todayIso: '2026-06-09' }); // вторник
+  const events = L.computeScheduleDiff(prev, next);
+  assert.equal(events.length, 1);
+  assert.equal(events[0].kind, 'rem');
+  assert.equal(events[0].date, '2026-06-12'); // ближайшая пятница от todayIso
+});
+
+// ── diff: качество данных ──
+test('computeScheduleDiff: не-ok объект с любой стороны пропускается (нет phantom rem/add)', () => {
+  const ok = { facilities: [{ id: 'small_pool', dataQuality: 'ok', sessions: [
+    { date: '2026-06-10', start: '09:00', end: '10:00', activity: 'плавание' },
+  ] }] };
+  const broken = { facilities: [{ id: 'small_pool', dataQuality: 'template', sessions: [] }] };
+  const closed = { facilities: [{ id: 'small_pool', dataQuality: 'closed', sessions: [] }] };
+  assert.equal(L.computeScheduleDiff(ok, broken).length, 0, 'поломка → не rem-флуд');
+  assert.equal(L.computeScheduleDiff(broken, ok).length, 0, 'восстановление → не add-флуд');
+  assert.equal(L.computeScheduleDiff(ok, closed).length, 0, 'закрытие → не rem-флуд');
+  assert.equal(L.computeScheduleDiff(closed, ok).length, 0, 'открытие → не add-флуд');
+});
+
+test('computeScheduleDiff: новый объект в next → честные add', () => {
+  const prev = { facilities: [] };
+  const next = { facilities: [{ id: 'new_gym', dataQuality: 'ok', sessions: [
+    { date: '2026-06-10', start: '09:00', end: '10:00', activity: 'зал' },
+  ] }] };
+  const events = L.computeScheduleDiff(prev, next);
+  assert.deepEqual(events.map(e => e.kind), ['add']);
+});
+
 test('eventOverlapsShift: пересечение по объекту/дате/времени', () => {
   const ev = { facilityId: 'ice_arena', date: '2026-06-01', start: '09:30', end: '10:30' };
   assert.ok(L.eventOverlapsShift(ev, { facilityId: 'ice_arena', date: '2026-06-01', start: '09:00', end: '10:00' }));

@@ -106,7 +106,9 @@ function parse(html, { todayIso }) {
   if (!unique.length) {
     return { ok: false, reason: 'no_table' };
   }
-  return { ok: true, sessions: unique };
+  // Даты синтезированы из «Понедельник - Пятница» → diff по недельному
+  // паттерну, не по датам (см. weeklyPattern в _common.genericParse).
+  return { ok: true, sessions: unique, weeklyPattern: true };
 }
 
 module.exports = { parse };

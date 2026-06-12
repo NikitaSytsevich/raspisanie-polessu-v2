@@ -67,11 +67,25 @@ async function authorized(req) {
   return false;
 }
 
-// Diff только по объектам с dataQuality 'ok' С ОБЕИХ сторон. Иначе упавший
-// без last-good источник (sessions=[]) дал бы phantom 'rem' на все его
-// сессии — та же защита, что и mock-фолбэк на клиенте.
-function okOnly(payload) {
-  return { facilities: (payload.facilities || []).filter(f => f.dataQuality === 'ok') };
+// Переходы «работает ↔ закрыт» — пользовательское уведомление: в отличие
+// от template/parse_error это содержательное состояние сайта, а не сбой
+// парсера. Сессии закрывшегося/открывшегося объекта в diff не попадают
+// (computeScheduleDiff пропускает не-ok объекты с любой стороны) — иначе
+// закрытие выглядело бы как flood ➖ на каждый слот без объяснения.
+function closureTransitions(prev, next) {
+  if (!prev) return [];
+  const was = new Map((prev.facilities || []).map(f => [f.id, f]));
+  const out = [];
+  for (const f of next.facilities || []) {
+    const a = was.get(f.id);
+    if (!a || a.dataQuality === f.dataQuality) continue;
+    if (f.dataQuality === 'closed' && a.dataQuality === 'ok') {
+      out.push({ kind: 'closed', name: f.name, notice: f.notice || null });
+    } else if (a.dataQuality === 'closed' && f.dataQuality === 'ok') {
+      out.push({ kind: 'reopened', name: f.name });
+    }
+  }
+  return out;
 }
 
 // Здоровье источников: template/parse_error — парсер не понял страницу,
@@ -163,16 +177,21 @@ module.exports = async (req, res) => {
   const recipients = await allRecipients();
 
   let events = [];
+  let closures = [];
   let notified = { sent: 0 };
   if (prev) {
-    events = pairMoves(computeScheduleDiff(okOnly(prev), okOnly(next)));
-    if (events.length) {
+    // computeScheduleDiff сам пропускает объекты, не-ok с любой стороны
+    // (включая закрытые и stale), и сравнивает weeklyPattern-объекты
+    // (гребная база) по дням недели, а не по скользящим датам.
+    events = pairMoves(computeScheduleDiff(prev, next));
+    closures = closureTransitions(prev, next);
+    if (events.length || closures.length) {
       const userShifts = (await blobLoadJson(SHIFTS_KEY))?.shifts;
       markAffected(events, userShifts);
       const facNames = {};
       for (const f of next.facilities) facNames[f.id] = f.name;
       notified = await broadcast(
-        formatChangesMessage(events, facNames),
+        formatChangesMessage(events, facNames, { closures }),
         recipients,
         appButton()
       );
@@ -189,15 +208,18 @@ module.exports = async (req, res) => {
 
   const digest = await maybeSendDigest(next, recipients);
 
-  // Пишем prev только когда есть что записать (baseline, изменения или
-  // смена здоровья — иначе health-алерт повторялся бы каждый прогон) —
-  // не жжём Blob-операции на каждый тихий прогон.
-  if (!prev || events.length || health.length) await blobSaveJson(PREV_KEY, next);
+  // Пишем prev только когда есть что записать (baseline, изменения,
+  // закрытие/открытие или смена здоровья — иначе алерты повторялись бы
+  // каждый прогон) — не жжём Blob-операции на каждый тихий прогон.
+  if (!prev || events.length || closures.length || health.length) {
+    await blobSaveJson(PREV_KEY, next);
+  }
 
   res.status(200).end(JSON.stringify({
     ok: true,
     baseline: !prev,
     events: events.length,
+    closures: closures.length,
     notified: notified.sent,
     recipients: recipients.length,
     digest,

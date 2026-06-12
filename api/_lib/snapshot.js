@@ -69,6 +69,9 @@ async function loadFacility(f, ctx) {
       // отключение воды и т.п.). Каждый range = { from, to, notice } в
       // ISO-формате. Фронт пометит смены, попадающие в окно, как closed.
       closureRanges: Array.isArray(parsed.closureRanges) ? parsed.closureRanges : [],
+      // v4.2 (additive): даты сессий синтезированы из дней недели
+      // («Пн-Пт 18:30…») — diff сравнивает недельный паттерн, не даты.
+      ...(parsed.weeklyPattern ? { weeklyPattern: true } : {}),
     };
   }
   if (parsed.reason === 'closed') {
@@ -138,6 +141,8 @@ async function buildPayload() {
     // v4: facility.closureRanges?: [{from, to, notice}] для частичного
     // закрытия. v4.1 (additive): facility.stale?: true — данные объекта
     // взяты из last-known-good, источник в этот раз не ответил.
+    // v4.2 (additive): facility.weeklyPattern?: true — даты сессий
+    // синтезированы из дней недели, diff идёт по недельному паттерну.
     schemaVersion: 4,
     generatedAt,
     sourceCheckedAt: generatedAt,

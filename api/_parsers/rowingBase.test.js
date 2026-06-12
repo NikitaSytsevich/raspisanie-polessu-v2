@@ -26,6 +26,8 @@ test('rowingBase: исключает дату-выходной из распис
 test('rowingBase: парсит инлайн-формат "Пн-Пт 18.30-19.30"', () => {
   const out = parse(loadFixture('rowing_base.html'), { todayIso: TODAY });
   assert.equal(out.ok, true, `ожидалось ok=true, получили ${JSON.stringify(out)}`);
+  // даты синтезированы из дней недели → diff должен идти по недельному паттерну
+  assert.equal(out.weeklyPattern, true, 'нет флага weeklyPattern');
   assert.ok(out.sessions.length >= 10, `мало сессий: ${out.sessions.length}`);
 
   const slot1 = out.sessions.find(s => s.start === '18:30' && s.end === '19:30');

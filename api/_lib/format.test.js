@@ -84,6 +84,16 @@ test('formatChangesMessage: HTML экранируется', () => {
   assert.match(msg, /&lt;b&gt;хак&lt;\/b&gt;/);
 });
 
+test('formatChangesMessage: closures — «закрыт» и «снова работает», без событий расписания', () => {
+  const msg = formatChangesMessage([], {}, { closures: [
+    { kind: 'closed', name: 'Гребная база', notice: 'ремонт до 01.07' },
+    { kind: 'reopened', name: 'Малый бассейн' },
+  ] });
+  assert.match(msg, /⛔ <b>Гребная база<\/b> — закрыт: ремонт до 01\.07/);
+  assert.match(msg, /✅ <b>Малый бассейн<\/b> — снова работает/);
+  assert.match(msg, /изменения на сайте/);
+});
+
 // ── formatDaySchedule ───────────────────────────────────────────
 test('formatDaySchedule: сеансы, пустой день, закрытие', () => {
   const payload = {

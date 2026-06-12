@@ -120,7 +120,11 @@ function genericParse(html, { todayIso }) {
     seen.add(k);
     return true;
   });
-  return { ok: true, sessions: unique };
+  // weeklyPattern: даты здесь СИНТЕЗИРОВАНЫ из дней недели (страница
+  // описывает повторяющуюся неделю, а не конкретные числа). Окно дат
+  // сдвигается каждый день само по себе, поэтому diff должен сравнивать
+  // паттерн (день недели + время), а не даты — иначе фантомные add/rem.
+  return { ok: true, sessions: unique, weeklyPattern: true };
 }
 
 module.exports = { genericParse, extractContentRoot, extractSessionsFromTable };
