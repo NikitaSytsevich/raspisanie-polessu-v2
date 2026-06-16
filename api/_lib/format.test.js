@@ -94,6 +94,16 @@ test('formatChangesMessage: closures — «закрыт» и «снова раб
   assert.match(msg, /изменения на сайте/);
 });
 
+test('formatChangesMessage: события объекта обёрнуты в blockquote, заголовок — снаружи', () => {
+  const events = [
+    { kind: 'add', facilityId: 'ice_arena', date: '2026-06-10', start: '21:00', end: '22:00', activity: '' },
+    { kind: 'rem', facilityId: 'ice_arena', date: '2026-06-10', start: '08:00', end: '09:00', activity: '' },
+  ];
+  const msg = formatChangesMessage(events, { ice_arena: 'Ледовая арена' });
+  assert.match(msg, /<b>Ледовая арена<\/b> · [^\n]+\n<blockquote>/);
+  assert.match(msg, /<blockquote>➕ 21:00–22:00\n➖ 08:00–09:00<\/blockquote>/);
+});
+
 // ── formatDaySchedule ───────────────────────────────────────────
 test('formatDaySchedule: сеансы, пустой день, закрытие', () => {
   const payload = {
@@ -114,6 +124,21 @@ test('formatDaySchedule: сеансы, пустой день, закрытие',
   assert.match(msg, /Бассейн/);
   assert.match(msg, /⛔ закрыт — нет воды/);
   assert.match(msg, /нет данных/);
+});
+
+test('formatDaySchedule: сеансы обёрнуты в blockquote (развёрнутый), заголовок — снаружи', () => {
+  const payload = { facilities: [
+    { id: 'a', name: 'Арена', dataQuality: 'ok', closureRanges: [], sessions: [
+      { date: '2026-06-10', start: '11:00', end: '12:30', activity: 'Массовое' },
+      { date: '2026-06-10', start: '13:00', end: '14:00', activity: '' },
+    ] },
+  ] };
+  const msg = formatDaySchedule(payload, '2026-06-10');
+  assert.match(msg, /<blockquote>• 11:00–12:30 Массовое\n• 13:00–14:00<\/blockquote>/);
+  // Развёрнута по умолчанию — без атрибута expandable.
+  assert.ok(!msg.includes('<blockquote expandable>'));
+  // Имя объекта — вне цитаты, заголовок виден всегда.
+  assert.match(msg, /<b>Арена<\/b>\n<blockquote>/);
 });
 
 // ── formatStatus ────────────────────────────────────────────────
@@ -151,6 +176,39 @@ test('chunkText: сверхдлинная строка режется жёстк
   const chunks = chunkText(text, 300);
   assert.ok(chunks.every(c => c.length <= 300));
   assert.equal(chunks.join(''), text);
+});
+
+// Баланс тегов: разрыв внутри <blockquote> дал бы Telegram битый HTML (400).
+const bqBalanced = (c) =>
+  (c.match(/<blockquote/g) || []).length === (c.match(/<\/blockquote>/g) || []).length;
+
+test('chunkText: не рвёт blockquote между частями (цитата атомарна)', () => {
+  const bq = (label) => '<blockquote expandable>' +
+    Array.from({ length: 10 }, (_, i) => `• ${label} строка ${i}`).join('\n') +
+    '</blockquote>';
+  const text = `<b>A</b>\n${bq('A')}\n\n<b>B</b>\n${bq('B')}`;
+  const chunks = chunkText(text, 300);
+  assert.ok(chunks.length > 1);                       // реально нарезалось
+  for (const c of chunks) assert.ok(bqBalanced(c), `несбалансированные теги: ${c}`);
+});
+
+test('chunkText: слишком длинный blockquote режется на валидные под-цитаты', () => {
+  const inner = Array.from({ length: 60 }, (_, i) => `• строка номер ${i}`).join('\n');
+  const text = `<blockquote expandable>${inner}</blockquote>`;
+  const chunks = chunkText(text, 200);
+  assert.ok(chunks.length > 1);
+  for (const c of chunks) {
+    assert.ok(c.length <= 200);
+    assert.match(c, /^<blockquote expandable>/);      // каждая часть — целая цитата
+    assert.match(c, /<\/blockquote>$/);
+    assert.equal((c.match(/<blockquote/g) || []).length, 1);
+    assert.equal((c.match(/<\/blockquote>/g) || []).length, 1);
+  }
+  // Содержимое не потеряно: склеив inner всех частей, получаем исходные строки.
+  const restored = chunks
+    .map(c => c.replace(/^<blockquote expandable>/, '').replace(/<\/blockquote>$/, ''))
+    .join('\n');
+  assert.equal(restored, inner);
 });
 
 test('esc: базовое экранирование', () => {

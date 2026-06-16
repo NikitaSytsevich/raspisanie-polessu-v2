@@ -96,6 +96,7 @@ function formatChangesMessage(events, facNames, { closures = [] } = {}) {
   for (const [key, evs] of groups) {
     const [facId, date] = key.split('::');
     lines.push('', `<b>${esc(facNames[facId] || facId)}</b> · ${fmtDate(date)}`);
+    const evLines = [];
     for (const ev of evs.slice(0, 15)) {
       let line;
       if (ev.kind === 'move') {
@@ -109,9 +110,12 @@ function formatChangesMessage(events, facNames, { closures = [] } = {}) {
         if (ev.activity) line += ` (${esc(ev.activity)})`;
       }
       if (ev.affectsMe) line += ' · ⚠️ ваша смена';
-      lines.push(line);
+      evLines.push(line);
     }
-    if (evs.length > 15) lines.push(`… и ещё ${evs.length - 15}`);
+    if (evs.length > 15) evLines.push(`… и ещё ${evs.length - 15}`);
+    // Список изменений объекта — в цитату: визуально отделяет объекты друг от
+    // друга. Не expandable — уведомление об изменениях должно читаться сразу.
+    lines.push(`<blockquote>${evLines.join('\n')}</blockquote>`);
   }
   return lines.join('\n');
 }
@@ -141,9 +145,13 @@ function formatDaySchedule(payload, dateIso, { title = null } = {}) {
       lines.push('— на эту дату сеансов нет');
       continue;
     }
-    for (const s of sessions) {
-      lines.push(`• ${s.start}–${s.end}${s.activity ? ` ${esc(s.activity)}` : ''}`);
-    }
+    // Сеансы объекта — в цитату: группирует список под заголовком и отделяет
+    // объекты друг от друга. Развёрнута по умолчанию (без expandable) —
+    // расписание видно сразу, без тапа «показать ещё».
+    const body = sessions
+      .map(s => `• ${s.start}–${s.end}${s.activity ? ` ${esc(s.activity)}` : ''}`)
+      .join('\n');
+    lines.push(`<blockquote>${body}</blockquote>`);
   }
   return lines.join('\n');
 }
@@ -170,25 +178,77 @@ function formatStatus(payload) {
 }
 
 // ── Разбивка длинного текста на части ≤ limit ───────────────────
-// Режем по границам строк; одиночная строка длиннее лимита режется жёстко.
+// Режем по границам строк. Тонкость: <blockquote>…</blockquote> бывает
+// многострочным (сеансы объекта в /today, группа изменений) — рвать его между
+// частями нельзя: в одной части окажется незакрытый тег, и Telegram отвергнет
+// сообщение как битый HTML. Поэтому blockquote — атомарный сегмент; если он сам
+// длиннее лимита (патология), режем на несколько валидных под-цитат, повторяя
+// открывающий тег.
+const BQ_OPEN = /^<blockquote(?: expandable)?>/;
+const BQ_CLOSE_RE = /<\/blockquote>$/;
+const BQ_CLOSE = '</blockquote>';
+
+function hardSplit(s, limit) {
+  const out = [];
+  for (let i = 0; i < s.length; i += limit) out.push(s.slice(i, i + limit));
+  return out;
+}
+
+// Текст → сегменты: многострочный blockquote целиком одним элементом,
+// остальное — построчно.
+function segmentize(text) {
+  const lines = String(text).split('\n');
+  const segs = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (BQ_OPEN.test(lines[i]) && !BQ_CLOSE_RE.test(lines[i])) {
+      const buf = [lines[i]];
+      while (i + 1 < lines.length && !BQ_CLOSE_RE.test(lines[i])) buf.push(lines[++i]);
+      segs.push(buf.join('\n'));
+    } else {
+      segs.push(lines[i]);
+    }
+  }
+  return segs;
+}
+
+// Слишком длинный blockquote → несколько валидных <blockquote>…</blockquote>,
+// каждый ≤ limit; открывающий тег повторяется в каждой части.
+function splitBlockquote(seg, limit) {
+  const open = BQ_OPEN.exec(seg)[0];
+  const inner = seg.slice(open.length).replace(BQ_CLOSE_RE, '');
+  const budget = Math.max(1, limit - open.length - BQ_CLOSE.length);
+  const pieces = [];
+  let body = '';
+  const flush = () => { if (body) { pieces.push(open + body + BQ_CLOSE); body = ''; } };
+  for (const line of inner.split('\n')) {
+    if (line.length > budget) {
+      flush();
+      for (const part of hardSplit(line, budget)) pieces.push(open + part + BQ_CLOSE);
+      continue;
+    }
+    const candidate = body ? body + '\n' + line : line;
+    if (candidate.length > budget) { flush(); body = line; }
+    else body = candidate;
+  }
+  flush();
+  return pieces;
+}
+
 function chunkText(text, limit = TG_TEXT_LIMIT) {
   if (text.length <= limit) return [text];
   const chunks = [];
   let cur = '';
-  for (const line of String(text).split('\n')) {
-    if (line.length > limit) {
-      // Сверхдлинная строка: дорезаем по символам.
-      if (cur) { chunks.push(cur); cur = ''; }
-      for (let i = 0; i < line.length; i += limit) chunks.push(line.slice(i, i + limit));
-      continue;
-    }
-    const candidate = cur ? cur + '\n' + line : line;
-    if (candidate.length > limit) {
-      chunks.push(cur);
-      cur = line;
-    } else {
-      cur = candidate;
-    }
+  const push = (piece) => {
+    const candidate = cur ? cur + '\n' + piece : piece;
+    if (candidate.length > limit) { if (cur) chunks.push(cur); cur = piece; }
+    else cur = candidate;
+  };
+  for (const seg of segmentize(text)) {
+    if (seg.length <= limit) { push(seg); continue; }
+    // Сегмент длиннее лимита: blockquote — на под-цитаты, прочее — жёстко.
+    if (cur) { chunks.push(cur); cur = ''; }
+    const pieces = BQ_OPEN.test(seg) ? splitBlockquote(seg, limit) : hardSplit(seg, limit);
+    for (const p of pieces) push(p);
   }
   if (cur) chunks.push(cur);
   return chunks;
