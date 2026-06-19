@@ -94,6 +94,23 @@ test('formatChangesMessage: closures — «закрыт» и «снова раб
   assert.match(msg, /изменения на сайте/);
 });
 
+test('formatChangesMessage: заголовок объекта — ссылка при наличии facUrls', () => {
+  const events = [
+    { kind: 'add', facilityId: 'ice_arena', date: '2026-06-10', start: '21:00', end: '22:00', activity: '' },
+  ];
+  const msg = formatChangesMessage(events, { ice_arena: 'Ледовая арена' }, {
+    facUrls: { ice_arena: 'https://www.polessu.by/ice' },
+  });
+  assert.match(msg, /<b><a href="https:\/\/www\.polessu\.by\/ice">Ледовая арена<\/a><\/b> ·/);
+});
+
+test('formatChangesMessage: closure-заголовок — ссылка при наличии sourceUrl', () => {
+  const msg = formatChangesMessage([], {}, { closures: [
+    { kind: 'closed', name: 'Гребная база', sourceUrl: 'https://www.polessu.by/row', notice: 'ремонт' },
+  ] });
+  assert.match(msg, /⛔ <b><a href="https:\/\/www\.polessu\.by\/row">Гребная база<\/a><\/b> — закрыт: ремонт/);
+});
+
 test('formatChangesMessage: события объекта обёрнуты в blockquote, заголовок — снаружи', () => {
   const events = [
     { kind: 'add', facilityId: 'ice_arena', date: '2026-06-10', start: '21:00', end: '22:00', activity: '' },
@@ -139,6 +156,26 @@ test('formatDaySchedule: сеансы обёрнуты в blockquote (развё
   assert.ok(!msg.includes('<blockquote expandable>'));
   // Имя объекта — вне цитаты, заголовок виден всегда.
   assert.match(msg, /<b>Арена<\/b>\n<blockquote>/);
+});
+
+test('formatDaySchedule: имя объекта — ссылка на источник при наличии sourceUrl', () => {
+  const payload = { facilities: [
+    { id: 'a', name: 'Арена', sourceUrl: 'https://www.polessu.by/arena', dataQuality: 'ok', closureRanges: [], sessions: [
+      { date: '2026-06-10', start: '11:00', end: '12:30', activity: '' },
+    ] },
+  ] };
+  const msg = formatDaySchedule(payload, '2026-06-10');
+  assert.match(msg, /<b><a href="https:\/\/www\.polessu\.by\/arena">Арена<\/a><\/b>/);
+});
+
+test('formatDaySchedule: href в ссылке объекта экранируется', () => {
+  const payload = { facilities: [
+    { id: 'a', name: 'A', sourceUrl: 'https://x.test/?a=1&b=2', dataQuality: 'ok', closureRanges: [], sessions: [
+      { date: '2026-06-10', start: '11:00', end: '12:00', activity: '' },
+    ] },
+  ] };
+  const msg = formatDaySchedule(payload, '2026-06-10');
+  assert.match(msg, /href="https:\/\/x\.test\/\?a=1&amp;b=2"/);
 });
 
 // ── formatStatus ────────────────────────────────────────────────

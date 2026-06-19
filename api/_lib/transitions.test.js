@@ -39,6 +39,14 @@ test('closureTransitions: ok → closed и closed → ok', () => {
   ]);
 });
 
+test('closureTransitions: sourceUrl объекта прокидывается в событие (для ссылки в боте)', () => {
+  const ok = payload([fac('rowing_base', 'ok', { sourceUrl: 'https://www.polessu.by/row' })]);
+  const closed = payload([fac('rowing_base', 'closed', { notice: 'ремонт', sourceUrl: 'https://www.polessu.by/row' })]);
+  assert.deepEqual(closureTransitions(ok, closed), [
+    { kind: 'closed', name: 'rowing_base', notice: 'ремонт', sourceUrl: 'https://www.polessu.by/row' },
+  ]);
+});
+
 test('closureTransitions: closed → template это не «снова работает»; новый объект — не переход', () => {
   const closed = payload([fac('rowing_base', 'closed')]);
   const broken = payload([fac('rowing_base', 'template')]);

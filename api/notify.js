@@ -28,7 +28,7 @@ const { buildPayload } = require('./_lib/snapshot');
 const { computeScheduleDiff, eventOverlapsShift } = require('../app/_logic.js');
 const {
   haveBlob, blobLoadJson, blobSaveJson, allRecipients, envChats,
-  broadcast, appButton,
+  broadcast,
 } = require('./_lib/telegram');
 const { pairMoves, formatChangesMessage, formatDaySchedule, esc } = require('./_lib/format');
 const { healthTransitions, closureTransitions } = require('./_lib/transitions');
@@ -118,7 +118,7 @@ async function maybeSendDigest(payload, recipients) {
   const text = formatDaySchedule(payload, today, {
     title: `☀️ <b>Доброе утро! Расписание на сегодня</b>`,
   });
-  const out = await broadcast(text, recipients, appButton());
+  const out = await broadcast(text, recipients);
   if (out.sent) await blobSaveJson(DIGEST_KEY, { lastDate: today });
   return out;
 }
@@ -148,11 +148,11 @@ module.exports = async (req, res) => {
       const userShifts = (await blobLoadJson(SHIFTS_KEY))?.shifts;
       markAffected(events, userShifts);
       const facNames = {};
-      for (const f of next.facilities) facNames[f.id] = f.name;
+      const facUrls = {};
+      for (const f of next.facilities) { facNames[f.id] = f.name; facUrls[f.id] = f.sourceUrl; }
       notified = await broadcast(
-        formatChangesMessage(events, facNames, { closures }),
-        recipients,
-        appButton()
+        formatChangesMessage(events, facNames, { closures, facUrls }),
+        recipients
       );
     }
   }

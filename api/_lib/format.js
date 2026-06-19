@@ -12,6 +12,15 @@ function esc(s) {
   return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+// Имя объекта как ссылка на его страницу-источник (polessu.by). Имя и href
+// экранируются для HTML parse_mode; без url — просто имя (closures без
+// источника, фикстуры тестов). В <b> оборачиваем на месте вызова —
+// Telegram допускает вложенность <b><a>…</a></b>.
+function facilityLink(name, url) {
+  const safe = esc(name);
+  return url ? `<a href="${esc(url)}">${safe}</a>` : safe;
+}
+
 function fmtDate(iso) {
   const d = new Date(iso + 'T12:00:00');
   return `${RU_WD[d.getDay()]}, ${d.getDate()} ${RU_MO[d.getMonth()]}`;
@@ -80,7 +89,7 @@ function pairMoves(events) {
 // affectsMe:true — строка получает пометку «ваша смена».
 // opts.closures — переходы «работает ↔ закрыт» из notify.closureTransitions:
 // [{ kind: 'closed'|'reopened', name, notice? }] — идут сразу под заголовком.
-function formatChangesMessage(events, facNames, { closures = [] } = {}) {
+function formatChangesMessage(events, facNames, { closures = [], facUrls = {} } = {}) {
   const groups = new Map();
   for (const ev of events) {
     const key = `${ev.facilityId}::${ev.date}`;
@@ -89,13 +98,14 @@ function formatChangesMessage(events, facNames, { closures = [] } = {}) {
   }
   const lines = ['🔔 <b>Расписание ПолесГУ — изменения на сайте</b>'];
   for (const c of closures) {
+    const head = facilityLink(c.name, c.sourceUrl);
     lines.push('', c.kind === 'closed'
-      ? `⛔ <b>${esc(c.name)}</b> — закрыт${c.notice ? `: ${esc(c.notice)}` : ''}`
-      : `✅ <b>${esc(c.name)}</b> — снова работает`);
+      ? `⛔ <b>${head}</b> — закрыт${c.notice ? `: ${esc(c.notice)}` : ''}`
+      : `✅ <b>${head}</b> — снова работает`);
   }
   for (const [key, evs] of groups) {
     const [facId, date] = key.split('::');
-    lines.push('', `<b>${esc(facNames[facId] || facId)}</b> · ${fmtDate(date)}`);
+    lines.push('', `<b>${facilityLink(facNames[facId] || facId, facUrls[facId])}</b> · ${fmtDate(date)}`);
     const evLines = [];
     for (const ev of evs.slice(0, 15)) {
       let line;
@@ -124,7 +134,7 @@ function formatChangesMessage(events, facNames, { closures = [] } = {}) {
 function formatDaySchedule(payload, dateIso, { title = null } = {}) {
   const lines = [title || `📅 <b>Расписание ПолесГУ · ${fmtDate(dateIso)}</b>`];
   for (const f of payload.facilities || []) {
-    lines.push('', `<b>${esc(f.name)}</b>${f.stale ? ' · ⚠️ данные могли устареть' : ''}`);
+    lines.push('', `<b>${facilityLink(f.name, f.sourceUrl)}</b>${f.stale ? ' · ⚠️ данные могли устареть' : ''}`);
     if (f.dataQuality === 'closed') {
       lines.push(`⛔ закрыт${f.notice ? ` — ${esc(f.notice)}` : ''}`);
       continue;

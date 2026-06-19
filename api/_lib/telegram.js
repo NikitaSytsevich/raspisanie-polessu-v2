@@ -176,12 +176,6 @@ async function broadcast(text, chats, extra = {}) {
   return { sent, failed };
 }
 
-// Inline-кнопка «открыть приложение» под сообщением.
-function appButton() {
-  const url = process.env.APP_URL || 'https://raspisanie-polessu-v2.vercel.app';
-  return { reply_markup: { inline_keyboard: [[{ text: '📲 Открыть приложение', url }]] } };
-}
-
 module.exports = {
   haveBlob,
   blobLoadJson,
@@ -194,5 +188,4 @@ module.exports = {
   sendMessage,
   sendLong,
   broadcast,
-  appButton,
 };

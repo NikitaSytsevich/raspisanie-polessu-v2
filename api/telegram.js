@@ -15,7 +15,7 @@
 
 const { buildPayload } = require('./_lib/snapshot');
 const {
-  tgApi, sendLong, appButton, loadSubscribers, saveSubscribers, envChats,
+  tgApi, sendLong, loadSubscribers, saveSubscribers, envChats,
 } = require('./_lib/telegram');
 const { formatDaySchedule, formatStatus } = require('./_lib/format');
 const { safeEqual } = require('./_lib/auth');
@@ -68,7 +68,7 @@ const HELP = [
 
 async function handleCommand(cmd, chatId, { isPrivate = false, explicit = false } = {}) {
   if (cmd === 'start' || cmd === 'help') {
-    return sendLong(chatId, HELP, appButton());
+    return sendLong(chatId, HELP);
   }
   if (cmd === 'subscribe') {
     // env-чаты получают рассылку и так — не дублируем их в Blob-список.
@@ -98,7 +98,7 @@ async function handleCommand(cmd, chatId, { isPrivate = false, explicit = false 
   if (cmd === 'today' || cmd === 'tomorrow') {
     const payload = await cachedPayload();
     const date = isoMinskOffset(cmd === 'tomorrow' ? 1 : 0);
-    return sendLong(chatId, formatDaySchedule(payload, date), appButton());
+    return sendLong(chatId, formatDaySchedule(payload, date));
   }
   if (cmd === 'status') {
     const payload = await cachedPayload();
