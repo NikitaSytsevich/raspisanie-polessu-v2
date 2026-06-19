@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 
 const {
   pairMoves, formatChangesMessage, formatDaySchedule, formatStatus, chunkText, esc,
+  laneInfo, formatNow, formatWeek, dayNavKeyboard, settingsKeyboard,
 } = require('./format');
 
 // ── pairMoves ───────────────────────────────────────────────────
@@ -250,4 +251,94 @@ test('chunkText: слишком длинный blockquote режется на в
 
 test('esc: базовое экранирование', () => {
   assert.equal(esc('<a & b>'), '&lt;a &amp; b&gt;');
+});
+
+// ── laneInfo / дорожки в расписании ─────────────────────────────
+test('laneInfo: большой бассейн отдаёт «N/M», ограничение крайних учтено', () => {
+  assert.equal(laneInfo('sports_pool', ''), '🏊 свободно 10/10');
+  assert.equal(laneInfo('sports_pool', 'Свободное плавание, без 2 крайних дорожек'), '🏊 свободно 8/10');
+});
+
+test('laneInfo: не-бассейновые объекты без дорожек → пусто', () => {
+  assert.equal(laneInfo('ice_arena', 'Хоккей'), '');
+  assert.equal(laneInfo('rowing_base', 'Тренажёрный зал'), '');
+});
+
+test('formatDaySchedule: у большого бассейна в строке сеанса — свободные дорожки', () => {
+  const payload = { facilities: [
+    { id: 'sports_pool', name: 'Большой бассейн', dataQuality: 'ok', closureRanges: [], sessions: [
+      { date: '2026-06-10', start: '07:00', end: '08:00', activity: '' },
+    ] },
+  ] };
+  const msg = formatDaySchedule(payload, '2026-06-10');
+  assert.match(msg, /• 07:00–08:00 · 🏊 свободно 10\/10/);
+});
+
+test('formatDaySchedule: only фильтрует объекты', () => {
+  const payload = { facilities: [
+    { id: 'a', name: 'Арена', dataQuality: 'ok', closureRanges: [], sessions: [{ date: '2026-06-10', start: '11:00', end: '12:00', activity: '' }] },
+    { id: 'b', name: 'Бассейн', dataQuality: 'ok', closureRanges: [], sessions: [{ date: '2026-06-10', start: '07:00', end: '08:00', activity: '' }] },
+  ] };
+  const msg = formatDaySchedule(payload, '2026-06-10', { only: ['a'] });
+  assert.match(msg, /Арена/);
+  assert.ok(!msg.includes('Бассейн'));
+});
+
+// ── formatNow ───────────────────────────────────────────────────
+test('formatNow: текущий и следующий сеанс, потом — «больше нет»', () => {
+  const payload = { facilities: [
+    { id: 'a', name: 'Арена', dataQuality: 'ok', closureRanges: [], sessions: [
+      { date: '2026-06-10', start: '10:00', end: '11:00', activity: 'Хоккей' },
+      { date: '2026-06-10', start: '14:00', end: '15:00', activity: 'Массовое' },
+    ] },
+  ] };
+  const at1030 = formatNow(payload, 630, '2026-06-10');
+  assert.match(at1030, /🕘 <b>Сейчас · 10:30<\/b>/);
+  assert.match(at1030, /🟢 идёт 10:00–11:00 Хоккей/);
+  assert.match(at1030, /→ далее 14:00–15:00 Массовое/);
+
+  const at1600 = formatNow(payload, 960, '2026-06-10');
+  assert.match(at1600, /⚪ сейчас ничего/);
+  assert.match(at1600, /на сегодня сеансов больше нет/);
+});
+
+// ── formatWeek ──────────────────────────────────────────────────
+test('formatWeek: по дню — диапазоны объекта, пустые дни помечены', () => {
+  const payload = { facilities: [
+    { id: 'a', name: 'Арена', dataQuality: 'ok', closureRanges: [], sessions: [
+      { date: '2026-06-10', start: '10:00', end: '11:00', activity: '' },
+      { date: '2026-06-10', start: '19:00', end: '20:00', activity: '' },
+    ] },
+  ] };
+  const msg = formatWeek(payload, '2026-06-10');
+  assert.match(msg, /📆 <b>Расписание на неделю<\/b>/);
+  assert.match(msg, /10 июня<\/b> · сегодня/);
+  assert.match(msg, /<blockquote>Арена: 10:00–11:00, 19:00–20:00<\/blockquote>/);
+  assert.match(msg, /— сеансов нет/); // дни без сеансов
+});
+
+// ── Инлайн-клавиатуры ───────────────────────────────────────────
+test('dayNavKeyboard: соседние дни в callback_data, «Сегодня» только не на сегодня', () => {
+  const kb = dayNavKeyboard('2026-06-10', '2026-06-10');
+  assert.equal(kb.inline_keyboard[0][0].callback_data, 'd:2026-06-09');
+  assert.equal(kb.inline_keyboard[0][1].callback_data, 'r:2026-06-10');
+  assert.equal(kb.inline_keyboard[0][2].callback_data, 'd:2026-06-11');
+  assert.ok(!JSON.stringify(kb).includes('Сегодня'));
+
+  const kb2 = dayNavKeyboard('2026-06-12', '2026-06-10');
+  assert.ok(JSON.stringify(kb2).includes('"callback_data":"d:2026-06-10"'));
+});
+
+test('settingsKeyboard: галочки и тумблеры отражают prefs', () => {
+  const facs = [{ id: 'a', name: 'Арена' }, { id: 'b', name: 'Бассейн' }];
+  const all = settingsKeyboard({ objects: null, digest: true, subscribed: true }, facs);
+  assert.match(all.inline_keyboard[0][0].text, /✅ Арена/);
+  assert.equal(all.inline_keyboard[0][0].callback_data, 's:o:a');
+  assert.match(JSON.stringify(all), /🔔 Утренний дайджест: вкл/);
+
+  const some = settingsKeyboard({ objects: ['a'], digest: false, subscribed: false }, facs);
+  assert.match(some.inline_keyboard[0][0].text, /✅ Арена/);
+  assert.match(some.inline_keyboard[1][0].text, /⬜ Бассейн/);
+  assert.match(JSON.stringify(some), /Утренний дайджест: выкл/);
+  assert.match(JSON.stringify(some), /Уведомления: выкл/);
 });

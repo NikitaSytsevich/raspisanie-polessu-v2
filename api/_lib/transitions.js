@@ -46,9 +46,9 @@ function closureTransitions(prev, next) {
     const a = was.get(f.id);
     if (!a || a.dataQuality === f.dataQuality) continue;
     if (f.dataQuality === 'closed' && a.dataQuality === 'ok') {
-      out.push({ kind: 'closed', name: f.name, notice: f.notice || null, ...(f.sourceUrl ? { sourceUrl: f.sourceUrl } : {}) });
+      out.push({ kind: 'closed', id: f.id, name: f.name, notice: f.notice || null, ...(f.sourceUrl ? { sourceUrl: f.sourceUrl } : {}) });
     } else if (a.dataQuality === 'closed' && f.dataQuality === 'ok') {
-      out.push({ kind: 'reopened', name: f.name, ...(f.sourceUrl ? { sourceUrl: f.sourceUrl } : {}) });
+      out.push({ kind: 'reopened', id: f.id, name: f.name, ...(f.sourceUrl ? { sourceUrl: f.sourceUrl } : {}) });
     }
   }
   return out;

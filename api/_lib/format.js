@@ -1,5 +1,9 @@
 // Чистое форматирование сообщений Telegram-бота (без сети и Blob) —
-// покрывается node-тестами (format.test.js).
+// покрывается node-тестами (format.test.js). Тянет только чистую логику
+// (_logic — дорожки/время, timeParse — сдвиг дат), без сети и хранилищ.
+
+const { inferSessionIndicator, minutesToHHMM } = require('../../app/_logic');
+const { isoOffset } = require('./timeParse');
 
 const RU_WD = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
 const RU_MO = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
@@ -24,6 +28,24 @@ function facilityLink(name, url) {
 function fmtDate(iso) {
   const d = new Date(iso + 'T12:00:00');
   return `${RU_WD[d.getDay()]}, ${d.getDate()} ${RU_MO[d.getMonth()]}`;
+}
+
+// Короткая дата для подписи кнопок навигации: «пт 19.06».
+function shortDate(iso) {
+  const d = new Date(iso + 'T12:00:00');
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  return `${RU_WD[d.getDay()]} ${dd}.${mm}`;
+}
+
+// Свободные дорожки — только большой бассейн (единственный объект, для
+// которого inferSessionIndicator отдаёт {free,total}). Для прочих объектов
+// и не-дорожечных сессий — пустая строка. Та же эвристика, что в приложении.
+function laneInfo(facilityId, activity) {
+  const ind = inferSessionIndicator(facilityId, activity);
+  if (ind?.type === 'lanes') return `🏊 свободно ${ind.free}/${ind.total}`;
+  if (ind?.type === 'lanes-free') return '🏊 вся вода свободна';
+  return '';
 }
 
 function toMin(hhmm) {
@@ -131,9 +153,9 @@ function formatChangesMessage(events, facNames, { closures = [], facUrls = {} } 
 }
 
 // ── Расписание на день (/today, /tomorrow, дайджест) ────────────
-function formatDaySchedule(payload, dateIso, { title = null } = {}) {
+function formatDaySchedule(payload, dateIso, { title = null, only = null } = {}) {
   const lines = [title || `📅 <b>Расписание ПолесГУ · ${fmtDate(dateIso)}</b>`];
-  for (const f of payload.facilities || []) {
+  for (const f of (payload.facilities || []).filter(f => !only || only.includes(f.id))) {
     lines.push('', `<b>${facilityLink(f.name, f.sourceUrl)}</b>${f.stale ? ' · ⚠️ данные могли устареть' : ''}`);
     if (f.dataQuality === 'closed') {
       lines.push(`⛔ закрыт${f.notice ? ` — ${esc(f.notice)}` : ''}`);
@@ -159,9 +181,77 @@ function formatDaySchedule(payload, dateIso, { title = null } = {}) {
     // объекты друг от друга. Развёрнута по умолчанию (без expandable) —
     // расписание видно сразу, без тапа «показать ещё».
     const body = sessions
-      .map(s => `• ${s.start}–${s.end}${s.activity ? ` ${esc(s.activity)}` : ''}`)
+      .map(s => {
+        const lanes = laneInfo(f.id, s.activity);
+        return `• ${s.start}–${s.end}${s.activity ? ` ${esc(s.activity)}` : ''}${lanes ? ` · ${lanes}` : ''}`;
+      })
       .join('\n');
     lines.push(`<blockquote>${body}</blockquote>`);
+  }
+  return lines.join('\n');
+}
+
+// ── «Сейчас» (/now) ─────────────────────────────────────────────
+// Что идёт на объектах прямо сейчас и что ближайшее впереди. nowMin —
+// минуты от полуночи в минском поясе, todayIso — сегодня (Минск).
+function formatNow(payload, nowMin, todayIso, { only = null } = {}) {
+  const lines = [`🕘 <b>Сейчас · ${minutesToHHMM(nowMin)}</b>`];
+  for (const f of (payload.facilities || []).filter(f => !only || only.includes(f.id))) {
+    lines.push('', `<b>${facilityLink(f.name, f.sourceUrl)}</b>${f.stale ? ' · ⚠️ данные могли устареть' : ''}`);
+    if (f.dataQuality === 'closed') {
+      lines.push(`⛔ закрыт${f.notice ? ` — ${esc(f.notice)}` : ''}`);
+      continue;
+    }
+    if (f.dataQuality !== 'ok') { lines.push('— нет данных'); continue; }
+    const closure = (f.closureRanges || []).find(r => todayIso >= r.from && todayIso <= r.to);
+    if (closure) {
+      lines.push(`⛔ закрыт${closure.notice ? ` — ${esc(closure.notice)}` : ''}`);
+      continue;
+    }
+    const sessions = (f.sessions || [])
+      .filter(s => s.date === todayIso)
+      .sort((a, b) => toMin(a.start) - toMin(b.start));
+    const current = sessions.find(s => toMin(s.start) <= nowMin && toMin(s.end) > nowMin);
+    const next = sessions.find(s => toMin(s.start) > nowMin);
+    if (current) {
+      const lanes = laneInfo(f.id, current.activity);
+      lines.push(`🟢 идёт ${current.start}–${current.end}${current.activity ? ` ${esc(current.activity)}` : ''}${lanes ? ` · ${lanes}` : ''}`);
+    } else {
+      lines.push('⚪ сейчас ничего');
+    }
+    if (next) {
+      const lanes = laneInfo(f.id, next.activity);
+      lines.push(`→ далее ${next.start}–${next.end}${next.activity ? ` ${esc(next.activity)}` : ''}${lanes ? ` · ${lanes}` : ''}`);
+    } else if (!current) {
+      lines.push('на сегодня сеансов больше нет');
+    }
+  }
+  return lines.join('\n');
+}
+
+// ── Неделя (/week) ──────────────────────────────────────────────
+// Компактный обзор на 7 дней от сегодня: по дню — объекты с сеансами,
+// одной строкой с диапазонами времени. Имена без ссылок — иначе обзор
+// раздувается (за ссылками ходят из /today).
+function formatWeek(payload, todayIso, { only = null } = {}) {
+  const facs = (payload.facilities || []).filter(f => !only || only.includes(f.id));
+  const lines = ['📆 <b>Расписание на неделю</b>'];
+  for (let i = 0; i < 7; i++) {
+    const date = isoOffset(todayIso, i);
+    lines.push('', `<b>${fmtDate(date)}</b>${i === 0 ? ' · сегодня' : ''}`);
+    const dayLines = [];
+    for (const f of facs) {
+      if (f.dataQuality === 'closed') { dayLines.push(`⛔ ${esc(f.name)} — закрыт`); continue; }
+      if (f.dataQuality !== 'ok') continue;
+      const closure = (f.closureRanges || []).find(r => date >= r.from && date <= r.to);
+      if (closure) { dayLines.push(`⛔ ${esc(f.name)} — закрыт`); continue; }
+      const sessions = (f.sessions || [])
+        .filter(s => s.date === date)
+        .sort((a, b) => toMin(a.start) - toMin(b.start));
+      if (!sessions.length) continue;
+      dayLines.push(`${esc(f.name)}: ${sessions.map(s => `${s.start}–${s.end}`).join(', ')}`);
+    }
+    lines.push(dayLines.length ? `<blockquote>${dayLines.join('\n')}</blockquote>` : '— сеансов нет');
   }
   return lines.join('\n');
 }
@@ -264,14 +354,54 @@ function chunkText(text, limit = TG_TEXT_LIMIT) {
   return chunks;
 }
 
+// ── Инлайн-клавиатуры ───────────────────────────────────────────
+// Навигация под расписанием: ‹ пред. день · 🔄 · след. день › + «Неделя»
+// и «Сегодня» (если ушли с сегодняшней даты). callback_data: d:<iso> —
+// показать день, r:<iso> — обновить день, w — неделя.
+function dayNavKeyboard(dateIso, todayIso) {
+  const prev = isoOffset(dateIso, -1);
+  const next = isoOffset(dateIso, 1);
+  const row2 = [{ text: '📆 Неделя', callback_data: 'w' }];
+  if (dateIso !== todayIso) row2.push({ text: '↩︎ Сегодня', callback_data: `d:${todayIso}` });
+  return { inline_keyboard: [
+    [
+      { text: `‹ ${shortDate(prev)}`, callback_data: `d:${prev}` },
+      { text: '🔄', callback_data: `r:${dateIso}` },
+      { text: `${shortDate(next)} ›`, callback_data: `d:${next}` },
+    ],
+    row2,
+  ] };
+}
+
+// Меню /settings: тумблер на каждый объект (s:o:<id>), утренний дайджест
+// (s:digest) и подписка на изменения (s:sub). facilities — [{id,name}],
+// prefs — { objects: string[]|null, digest: bool, subscribed: bool }.
+// objects=null означает «все объекты».
+function settingsKeyboard(prefs, facilities) {
+  const objs = prefs.objects;
+  const rows = facilities.map(f => {
+    const on = !objs || objs.includes(f.id);
+    return [{ text: `${on ? '✅' : '⬜'} ${f.name}`, callback_data: `s:o:${f.id}` }];
+  });
+  rows.push([{ text: `${prefs.digest ? '🔔' : '🔕'} Утренний дайджест: ${prefs.digest ? 'вкл' : 'выкл'}`, callback_data: 's:digest' }]);
+  rows.push([{ text: prefs.subscribed ? '🔔 Уведомления: вкл' : '🔕 Уведомления: выкл', callback_data: 's:sub' }]);
+  return { inline_keyboard: rows };
+}
+
 module.exports = {
   esc,
   fmtDate,
+  shortDate,
   toMin,
+  laneInfo,
   pairMoves,
   formatChangesMessage,
   formatDaySchedule,
+  formatNow,
+  formatWeek,
   formatStatus,
+  dayNavKeyboard,
+  settingsKeyboard,
   chunkText,
   TG_TEXT_LIMIT,
 };

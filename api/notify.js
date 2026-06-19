@@ -28,7 +28,7 @@ const { buildPayload } = require('./_lib/snapshot');
 const { computeScheduleDiff, eventOverlapsShift } = require('../app/_logic.js');
 const {
   haveBlob, blobLoadJson, blobSaveJson, allRecipients, envChats,
-  broadcast,
+  broadcast, broadcastPerChat, loadSubsData, resolvePrefs,
 } = require('./_lib/telegram');
 const { pairMoves, formatChangesMessage, formatDaySchedule, esc } = require('./_lib/format');
 const { healthTransitions, closureTransitions } = require('./_lib/transitions');
@@ -105,9 +105,19 @@ function minskTodayIso() {
   }).format(new Date());
 }
 
+// Тихие часы: ночные уведомления об изменениях доставляем без звука
+// (disable_notification), а не молча копим — так ничего не теряется и не
+// дублируется. Окно 22:00–07:59 Минск; выключается TELEGRAM_QUIET=off.
+// Утренний дайджест под это не попадает (его окно 07:50–08:35 шлём со звуком).
+function isQuietNow() {
+  if (process.env.TELEGRAM_QUIET === 'off') return false;
+  const { h } = minskNow();
+  return h >= 22 || h < 8;
+}
+
 // Утренний дайджест: окно 07:50–08:35 Минска (ловит и Vercel-cron в 08:00,
 // и 10-минутный пингер), дедуп по дате через Blob.
-async function maybeSendDigest(payload, recipients) {
+async function maybeSendDigest(payload, recipients, prefs) {
   if (process.env.TELEGRAM_DIGEST === 'off') return { sent: 0, skipped: 'disabled' };
   const { h, m } = minskNow();
   const inWindow = (h === 7 && m >= 50) || (h === 8 && m <= 35);
@@ -115,11 +125,20 @@ async function maybeSendDigest(payload, recipients) {
   const today = minskTodayIso();
   const state = await blobLoadJson(DIGEST_KEY);
   if (state?.lastDate === today) return { sent: 0, skipped: 'already_sent' };
-  const text = formatDaySchedule(payload, today, {
-    title: `☀️ <b>Доброе утро! Расписание на сегодня</b>`,
+  // По чату: уважаем тумблер дайджеста и фильтр объектов из /settings.
+  const out = await broadcastPerChat(recipients, (chatId) => {
+    const p = resolvePrefs(prefs, chatId);
+    // Дайджест выключен или объекты сняты все — слать нечего.
+    if (!p.digest || (Array.isArray(p.objects) && p.objects.length === 0)) return null;
+    return formatDaySchedule(payload, today, {
+      title: '☀️ <b>Доброе утро! Расписание на сегодня</b>',
+      only: p.objects,
+    });
   });
-  const out = await broadcast(text, recipients);
-  if (out.sent) await blobSaveJson(DIGEST_KEY, { lastDate: today });
+  // Дедуп по дате ставим, если получателей вообще обработали (отправили или
+  // сознательно пропустили) — иначе пингер пытался бы слать весь утренний
+  // период, когда дайджест у всех выключен.
+  if (out.sent || out.skipped) await blobSaveJson(DIGEST_KEY, { lastDate: today });
   return out;
 }
 
@@ -134,6 +153,7 @@ module.exports = async (req, res) => {
   const next = await buildPayload();
   const prev = await blobLoadJson(PREV_KEY);
   const recipients = await allRecipients();
+  const { prefs } = await loadSubsData();
 
   let events = [];
   let closures = [];
@@ -150,10 +170,16 @@ module.exports = async (req, res) => {
       const facNames = {};
       const facUrls = {};
       for (const f of next.facilities) { facNames[f.id] = f.name; facUrls[f.id] = f.sourceUrl; }
-      notified = await broadcast(
-        formatChangesMessage(events, facNames, { closures, facUrls }),
-        recipients
-      );
+      // По чату: шлём только выбранные в /settings объекты (objects=null — все),
+      // ночью — без звука (тихие часы). Чат без релевантных событий пропускаем.
+      const quiet = isQuietNow() ? { disable_notification: true } : {};
+      notified = await broadcastPerChat(recipients, (chatId) => {
+        const objs = resolvePrefs(prefs, chatId).objects;
+        const evs = objs ? events.filter(e => objs.includes(e.facilityId)) : events;
+        const cls = objs ? closures.filter(c => objs.includes(c.id)) : closures;
+        if (!evs.length && !cls.length) return null;
+        return formatChangesMessage(evs, facNames, { closures: cls, facUrls });
+      }, quiet);
     }
   }
 
@@ -165,7 +191,7 @@ module.exports = async (req, res) => {
     adminNotified = await broadcast(msg, envChats('TELEGRAM_ADMIN_CHAT_ID'));
   }
 
-  const digest = await maybeSendDigest(next, recipients);
+  const digest = await maybeSendDigest(next, recipients, prefs);
 
   // Пишем prev только когда есть что записать (baseline, изменения,
   // закрытие/открытие или смена здоровья — иначе алерты повторялись бы

@@ -32,10 +32,10 @@ test('closureTransitions: ok → closed и closed → ok', () => {
   const ok = payload([fac('rowing_base', 'ok')]);
   const closed = payload([fac('rowing_base', 'closed', { notice: 'ремонт' })]);
   assert.deepEqual(closureTransitions(ok, closed), [
-    { kind: 'closed', name: 'rowing_base', notice: 'ремонт' },
+    { kind: 'closed', id: 'rowing_base', name: 'rowing_base', notice: 'ремонт' },
   ]);
   assert.deepEqual(closureTransitions(closed, ok), [
-    { kind: 'reopened', name: 'rowing_base' },
+    { kind: 'reopened', id: 'rowing_base', name: 'rowing_base' },
   ]);
 });
 
@@ -43,7 +43,7 @@ test('closureTransitions: sourceUrl объекта прокидывается в
   const ok = payload([fac('rowing_base', 'ok', { sourceUrl: 'https://www.polessu.by/row' })]);
   const closed = payload([fac('rowing_base', 'closed', { notice: 'ремонт', sourceUrl: 'https://www.polessu.by/row' })]);
   assert.deepEqual(closureTransitions(ok, closed), [
-    { kind: 'closed', name: 'rowing_base', notice: 'ремонт', sourceUrl: 'https://www.polessu.by/row' },
+    { kind: 'closed', id: 'rowing_base', name: 'rowing_base', notice: 'ремонт', sourceUrl: 'https://www.polessu.by/row' },
   ]);
 });
 

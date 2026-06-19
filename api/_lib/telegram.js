@@ -44,19 +44,97 @@ async function blobSaveJson(key, value) {
   }
 }
 
-// ── Подписчики ──────────────────────────────────────────────────
+// ── Подписчики и настройки чатов ─────────────────────────────────
 // /subscribe в боте дописывает chat_id сюда — получатели добавляются без
 // правки env и редеплоя. env TELEGRAM_CHAT_ID остаётся «вшитым» списком.
-async function loadSubscribers() {
-  const data = await blobLoadJson(SUBSCRIBERS_KEY);
-  return Array.isArray(data?.chats) ? data.chats.map(String) : [];
+// Blob: { chats: [...], prefs: { [chatId]: { objects, digest } } }:
+//   objects — id объектов для уведомлений (null/нет = все объекты);
+//   digest  — слать ли утренний дайджест (нет = да).
+const DEFAULT_PREFS = { objects: null, digest: true };
+
+async function loadSubsData() {
+  const data = (await blobLoadJson(SUBSCRIBERS_KEY)) || {};
+  return {
+    chats: Array.isArray(data.chats) ? data.chats.map(String) : [],
+    prefs: (data.prefs && typeof data.prefs === 'object') ? data.prefs : {},
+  };
 }
 
-async function saveSubscribers(chats) {
+async function saveSubsData({ chats, prefs }) {
   return blobSaveJson(SUBSCRIBERS_KEY, {
     updatedAt: new Date().toISOString(),
-    chats: [...new Set(chats.map(String))],
+    chats: [...new Set((chats || []).map(String))],
+    prefs: prefs || {},
   });
+}
+
+async function loadSubscribers() {
+  return (await loadSubsData()).chats;
+}
+
+// Сохраняет список подписчиков, не затирая prefs (чистка фатальных чатов,
+// /subscribe и /unsubscribe идут через него).
+async function saveSubscribers(chats) {
+  const data = await loadSubsData();
+  return saveSubsData({ chats, prefs: data.prefs });
+}
+
+// Эффективные настройки чата из сырого prefs-объекта (с дефолтами).
+function resolvePrefs(prefs, chatId) {
+  const p = prefs[String(chatId)] || {};
+  return {
+    objects: Array.isArray(p.objects) ? p.objects : DEFAULT_PREFS.objects,
+    digest: p.digest !== false,
+  };
+}
+
+// Полные настройки чата для /settings: objects/digest + подписан ли он
+// (env-чаты подписаны всегда и из Blob-списка не управляются).
+async function getChatSettings(chatId) {
+  const data = await loadSubsData();
+  const id = String(chatId);
+  const isEnv = envChats().includes(id);
+  return {
+    ...resolvePrefs(data.prefs, id),
+    subscribed: isEnv || data.chats.includes(id),
+    isEnv,
+  };
+}
+
+// ── Мутаторы настроек (callback-кнопки /settings) ───────────────
+async function setChatPrefs(chatId, patch) {
+  const data = await loadSubsData();
+  const id = String(chatId);
+  data.prefs[id] = { ...resolvePrefs(data.prefs, id), ...patch };
+  await saveSubsData(data);
+}
+
+// Тумблер объекта. allIds — полный список объектов: если после клика
+// выбраны все — храним null («все»), иначе явный список.
+async function toggleObject(chatId, allIds, facilityId) {
+  const cur = (await getChatSettings(chatId)).objects;
+  const set = new Set(cur || allIds);
+  if (set.has(facilityId)) set.delete(facilityId); else set.add(facilityId);
+  const objects = set.size === allIds.length ? null : [...set];
+  await setChatPrefs(chatId, { objects });
+  return getChatSettings(chatId);
+}
+
+async function toggleDigest(chatId) {
+  const cur = (await getChatSettings(chatId)).digest;
+  await setChatPrefs(chatId, { digest: !cur });
+  return getChatSettings(chatId);
+}
+
+// Подписка на изменения (членство в Blob-списке). Для env-чатов — no-op.
+async function toggleSubscribed(chatId) {
+  const data = await loadSubsData();
+  const id = String(chatId);
+  if (envChats().includes(id)) return getChatSettings(chatId);
+  const has = data.chats.includes(id);
+  const chats = has ? data.chats.filter(c => c !== id) : [...data.chats, id];
+  await saveSubsData({ chats, prefs: data.prefs });
+  return getChatSettings(chatId);
 }
 
 function envChats(name = 'TELEGRAM_CHAT_ID') {
@@ -176,16 +254,84 @@ async function broadcast(text, chats, extra = {}) {
   return { sent, failed };
 }
 
+// ── Callback-кнопки ─────────────────────────────────────────────
+// answerCallbackQuery гасит «часики» на нажатой кнопке (без него Telegram
+// крутит спиннер ~30 c). editMessageText/ReplyMarkup правят уже отправленное
+// сообщение на месте — навигация по дням и тумблеры /settings не плодят новые.
+async function answerCallback(callbackQueryId, text = '') {
+  return tgApi('answerCallbackQuery', {
+    callback_query_id: callbackQueryId,
+    ...(text ? { text } : {}),
+  });
+}
+
+async function editMessageText(chatId, messageId, text, extra = {}) {
+  return tgApi('editMessageText', {
+    chat_id: chatId, message_id: messageId, text,
+    parse_mode: 'HTML', disable_web_page_preview: true, ...extra,
+  });
+}
+
+async function editMessageReplyMarkup(chatId, messageId, reply_markup) {
+  return tgApi('editMessageReplyMarkup', {
+    chat_id: chatId, message_id: messageId, reply_markup,
+  });
+}
+
+// Рассылка с индивидуальным текстом на чат (фильтр по объектам). buildText(chatId)
+// → строка или null/'' (пропустить чат). Пачками, с чисткой фатальных чатов.
+// Возвращает { sent, failed, skipped }.
+async function broadcastPerChat(chats, buildText, extra = {}) {
+  if (!process.env.TELEGRAM_BOT_TOKEN || !chats.length) {
+    return { sent: 0, failed: 0, skipped: 0, reason: 'telegram_not_configured' };
+  }
+  let sent = 0, failed = 0, skipped = 0;
+  const fatalChats = [];
+  for (let i = 0; i < chats.length; i += BROADCAST_CONCURRENCY) {
+    const batch = chats.slice(i, i + BROADCAST_CONCURRENCY);
+    const results = await Promise.all(batch.map(async (c) => {
+      const text = await buildText(c);
+      if (!text) return { skip: true };
+      return sendLong(c, text, extra);
+    }));
+    results.forEach((r, j) => {
+      if (r.skip) { skipped++; return; }
+      if (r.ok) sent++;
+      else { failed++; if (r.fatal) fatalChats.push(String(batch[j])); }
+    });
+  }
+  if (fatalChats.length) {
+    const subs = await loadSubscribers();
+    const keep = subs.filter(c => !fatalChats.includes(c));
+    if (keep.length !== subs.length) {
+      await saveSubscribers(keep);
+      console.warn('[tg] отписаны недоступные чаты:', fatalChats.join(', '));
+    }
+  }
+  return { sent, failed, skipped };
+}
+
 module.exports = {
   haveBlob,
   blobLoadJson,
   blobSaveJson,
+  loadSubsData,
+  saveSubsData,
   loadSubscribers,
   saveSubscribers,
+  resolvePrefs,
+  getChatSettings,
+  toggleObject,
+  toggleDigest,
+  toggleSubscribed,
   envChats,
   allRecipients,
   tgApi,
   sendMessage,
   sendLong,
   broadcast,
+  broadcastPerChat,
+  answerCallback,
+  editMessageText,
+  editMessageReplyMarkup,
 };

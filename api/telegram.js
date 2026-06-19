@@ -5,19 +5,31 @@
 //   /start, /help   — что умеет бот
 //   /today          — расписание объектов на сегодня (по сайту)
 //   /tomorrow       — на завтра
+//   /now            — что идёт прямо сейчас (+ свободные дорожки бассейна)
+//   /week           — обзор на неделю
 //   /status         — здоровье источников парсера
+//   /settings       — объекты уведомлений + утренний дайджест (инлайн-меню)
 //   /subscribe      — подписать ЭТОТ чат на уведомления об изменениях
 //   /unsubscribe    — отписать
+// Инлайн-кнопки (callback_query): навигация по дням под расписанием,
+// тумблеры в /settings.
 //
 // Защита: заголовок X-Telegram-Bot-Api-Secret-Token должен совпадать с
 // env TELEGRAM_WEBHOOK_SECRET (Telegram шлёт его сам, см. setWebhook).
 // Всегда отвечаем 200 — на не-200 Telegram ретраит и копит очередь.
 
 const { buildPayload } = require('./_lib/snapshot');
+const { FACILITIES } = require('./_parsers');
 const {
   tgApi, sendLong, loadSubscribers, saveSubscribers, envChats,
+  blobLoadJson, blobSaveJson,
+  getChatSettings, toggleObject, toggleDigest, toggleSubscribed,
+  answerCallback, editMessageText, editMessageReplyMarkup,
 } = require('./_lib/telegram');
-const { formatDaySchedule, formatStatus } = require('./_lib/format');
+const {
+  formatDaySchedule, formatStatus, formatNow, formatWeek,
+  dayNavKeyboard, settingsKeyboard,
+} = require('./_lib/format');
 const { safeEqual } = require('./_lib/auth');
 
 const TZ = 'Europe/Minsk';
@@ -25,15 +37,35 @@ const TZ = 'Europe/Minsk';
 // /today и /status дёргаются людьми и должны отвечать быстро, а buildPayload —
 // это 4 живых фетча polessu.by (худший случай ~12 с). Кэш в памяти warm-инстанса
 // на минуту сглаживает повторные команды; свежесть для чата некритична.
+// Два слоя кэша: память warm-инстанса (минута) и общий Blob-снапшот (две
+// минуты). Холодный инстанс берёт свежий результат из Blob вместо повторных
+// 4 фетчей polessu.by — /today/now/week отвечают мгновенно. Свежесть для
+// чата некритична (изменения и так ловит /api/notify).
 const PAYLOAD_TTL_MS = 60_000;
+const PAYLOAD_BLOB_TTL_MS = 120_000;
+const PAYLOAD_CACHE_KEY = 'tg-payload-cache.json';
 let _payloadCache = null; // { at, payload }
 async function cachedPayload() {
   if (_payloadCache && Date.now() - _payloadCache.at < PAYLOAD_TTL_MS) {
     return _payloadCache.payload;
   }
+  const blob = await blobLoadJson(PAYLOAD_CACHE_KEY);
+  if (blob?.at && blob.payload && Date.now() - new Date(blob.at).getTime() < PAYLOAD_BLOB_TTL_MS) {
+    _payloadCache = { at: Date.now(), payload: blob.payload };
+    return blob.payload;
+  }
   const payload = await buildPayload();
   _payloadCache = { at: Date.now(), payload };
+  await blobSaveJson(PAYLOAD_CACHE_KEY, { at: new Date().toISOString(), payload });
   return payload;
+}
+
+// Текущее время в минутах от полуночи (минский пояс) — для /now.
+function minskNowMinutes() {
+  const [h, m] = new Intl.DateTimeFormat('en-GB', {
+    timeZone: TZ, hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).format(new Date()).split(':').map(Number);
+  return h * 60 + m;
 }
 
 // username бота — чтобы понимать, нам ли адресована команда /cmd@bot.
@@ -61,14 +93,29 @@ const HELP = [
   '<b>Команды:</b>',
   '/today — расписание на сегодня',
   '/tomorrow — на завтра',
+  '/now — что идёт прямо сейчас',
+  '/week — обзор на неделю',
   '/status — здоровье источников',
-  '/subscribe — получать уведомления об изменениях в этот чат',
+  '/settings — объекты уведомлений и дайджест',
+  '/subscribe — подписаться на изменения',
   '/unsubscribe — отписаться',
+].join('\n');
+
+const SETTINGS_INTRO = [
+  '⚙️ <b>Настройки уведомлений</b>',
+  '',
+  'Отметьте объекты, об изменениях которых присылать уведомления, и включите/выключите утренний дайджест.',
 ].join('\n');
 
 async function handleCommand(cmd, chatId, { isPrivate = false, explicit = false } = {}) {
   if (cmd === 'start' || cmd === 'help') {
-    return sendLong(chatId, HELP);
+    const today = isoMinskOffset(0);
+    return sendLong(chatId, HELP, { reply_markup: { inline_keyboard: [
+      [{ text: '📅 Сегодня', callback_data: `d:${today}` },
+       { text: 'Завтра ›', callback_data: `d:${isoMinskOffset(1)}` }],
+      [{ text: '🕘 Сейчас', callback_data: 'n' },
+       { text: '📆 Неделя', callback_data: 'w' }],
+    ] } });
   }
   if (cmd === 'subscribe') {
     // env-чаты получают рассылку и так — не дублируем их в Blob-список.
@@ -97,8 +144,26 @@ async function handleCommand(cmd, chatId, { isPrivate = false, explicit = false 
   }
   if (cmd === 'today' || cmd === 'tomorrow') {
     const payload = await cachedPayload();
+    const today = isoMinskOffset(0);
     const date = isoMinskOffset(cmd === 'tomorrow' ? 1 : 0);
-    return sendLong(chatId, formatDaySchedule(payload, date));
+    return sendLong(chatId, formatDaySchedule(payload, date),
+      { reply_markup: dayNavKeyboard(date, today) });
+  }
+  if (cmd === 'now') {
+    const payload = await cachedPayload();
+    return sendLong(chatId, formatNow(payload, minskNowMinutes(), isoMinskOffset(0)),
+      { reply_markup: { inline_keyboard: [[{ text: '🔄 Обновить', callback_data: 'n' }]] } });
+  }
+  if (cmd === 'week') {
+    const payload = await cachedPayload();
+    const today = isoMinskOffset(0);
+    return sendLong(chatId, formatWeek(payload, today),
+      { reply_markup: { inline_keyboard: [[{ text: '📅 Сегодня', callback_data: `d:${today}` }]] } });
+  }
+  if (cmd === 'settings') {
+    const st = await getChatSettings(chatId);
+    const facs = FACILITIES.map(f => ({ id: f.id, name: f.name }));
+    return sendLong(chatId, SETTINGS_INTRO, { reply_markup: settingsKeyboard(st, facs) });
   }
   if (cmd === 'status') {
     const payload = await cachedPayload();
@@ -113,6 +178,55 @@ async function handleCommand(cmd, chatId, { isPrivate = false, explicit = false 
   return null;
 }
 
+// Нажатия инлайн-кнопок (callback_query). data:
+//   d:<iso> — показать день, r:<iso> — обновить, w — неделя, n — сейчас;
+//   s:o:<id> — тумблер объекта, s:digest — дайджест, s:sub — подписка.
+// editMessageText/ReplyMarkup правят то же сообщение, answerCallback гасит
+// «часики». Всегда отвечаем на callback — иначе у пользователя крутится спиннер.
+async function handleCallback(cb) {
+  const chatId = cb.message?.chat?.id;
+  const messageId = cb.message?.message_id;
+  const data = String(cb.data || '');
+  if (!chatId || !messageId) { await answerCallback(cb.id); return; }
+  const today = isoMinskOffset(0);
+
+  const mDay = /^([dr]):(\d{4}-\d{2}-\d{2})$/.exec(data);
+  if (mDay) {
+    const date = mDay[2];
+    const payload = await cachedPayload();
+    await editMessageText(chatId, messageId, formatDaySchedule(payload, date),
+      { reply_markup: dayNavKeyboard(date, today) });
+    await answerCallback(cb.id, mDay[1] === 'r' ? 'Обновлено' : '');
+    return;
+  }
+  if (data === 'w') {
+    const payload = await cachedPayload();
+    await editMessageText(chatId, messageId, formatWeek(payload, today),
+      { reply_markup: { inline_keyboard: [[{ text: '📅 Сегодня', callback_data: `d:${today}` }]] } });
+    await answerCallback(cb.id);
+    return;
+  }
+  if (data === 'n') {
+    const payload = await cachedPayload();
+    await editMessageText(chatId, messageId, formatNow(payload, minskNowMinutes(), today),
+      { reply_markup: { inline_keyboard: [[{ text: '🔄 Обновить', callback_data: 'n' }]] } });
+    await answerCallback(cb.id, 'Обновлено');
+    return;
+  }
+  if (data.startsWith('s:')) {
+    const facs = FACILITIES.map(f => ({ id: f.id, name: f.name }));
+    let st;
+    if (data === 's:digest') st = await toggleDigest(chatId);
+    else if (data === 's:sub') st = await toggleSubscribed(chatId);
+    else if (data.startsWith('s:o:')) st = await toggleObject(chatId, FACILITIES.map(f => f.id), data.slice(4));
+    else { await answerCallback(cb.id); return; }
+    await editMessageReplyMarkup(chatId, messageId, settingsKeyboard(st, facs));
+    await answerCallback(cb.id, 'Сохранено');
+    return;
+  }
+  await answerCallback(cb.id);
+}
+
 // Однократная (и идемпотентная) регистрация webhook'а у Telegram —
 // GET /api/telegram?setup=<TELEGRAM_WEBHOOK_SECRET>. Токен бота знает
 // только сервер (sensitive env, из CLI не читается), поэтому setWebhook
@@ -125,15 +239,19 @@ async function handleSetup(req, res) {
     url: `https://${host}/api/telegram`,
     secret_token: process.env.TELEGRAM_WEBHOOK_SECRET,
     // channel_post — обработчик читает и посты каналов (подписка канала
-    // через /subscribe в нём); без этого Telegram их просто не доставит.
-    allowed_updates: ['message', 'channel_post'],
+    // через /subscribe в нём); callback_query — нажатия инлайн-кнопок
+    // (навигация по дням, /settings); без этого Telegram их не доставит.
+    allowed_updates: ['message', 'channel_post', 'callback_query'],
     drop_pending_updates: true,
   });
   const commands = await tgApi('setMyCommands', {
     commands: [
       { command: 'today',       description: 'Расписание на сегодня' },
       { command: 'tomorrow',    description: 'Расписание на завтра' },
+      { command: 'now',         description: 'Что идёт прямо сейчас' },
+      { command: 'week',        description: 'Обзор на неделю' },
       { command: 'status',      description: 'Здоровье источников' },
+      { command: 'settings',    description: 'Объекты уведомлений и дайджест' },
       { command: 'subscribe',   description: 'Получать уведомления об изменениях' },
       { command: 'unsubscribe', description: 'Отписаться' },
       { command: 'help',        description: 'Что умеет бот' },
@@ -175,21 +293,25 @@ module.exports = async (req, res) => {
 
   try {
     const update = req.body || {};
-    const msg = update.message || update.channel_post || null;
-    const chatId = msg?.chat?.id;
-    const text = (msg?.text || '').trim();
-    // Реагируем только на команды — обычный текст молча игнорируем,
-    // чтобы бот не спамил в группах на каждое сообщение.
-    const m = /^\/([a-z_]+)(?:@(\w+))?/i.exec(text);
-    if (chatId && m) {
-      const mention = (m[2] || '').toLowerCase();
-      // /cmd@ДругойБот privacy mode доставляет и нам — это не наша команда.
-      const mine = !mention || mention === (await botUsername()).toLowerCase();
-      if (mine) {
-        await handleCommand(m[1].toLowerCase(), chatId, {
-          isPrivate: msg?.chat?.type === 'private',
-          explicit: Boolean(mention),
-        });
+    if (update.callback_query) {
+      await handleCallback(update.callback_query);
+    } else {
+      const msg = update.message || update.channel_post || null;
+      const chatId = msg?.chat?.id;
+      const text = (msg?.text || '').trim();
+      // Реагируем только на команды — обычный текст молча игнорируем,
+      // чтобы бот не спамил в группах на каждое сообщение.
+      const m = /^\/([a-z_]+)(?:@(\w+))?/i.exec(text);
+      if (chatId && m) {
+        const mention = (m[2] || '').toLowerCase();
+        // /cmd@ДругойБот privacy mode доставляет и нам — это не наша команда.
+        const mine = !mention || mention === (await botUsername()).toLowerCase();
+        if (mine) {
+          await handleCommand(m[1].toLowerCase(), chatId, {
+            isPrivate: msg?.chat?.type === 'private',
+            explicit: Boolean(mention),
+          });
+        }
       }
     }
   } catch (err) {
